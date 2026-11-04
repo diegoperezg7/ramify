@@ -8,6 +8,9 @@ import type { Worktree } from '../types'
 
 const LANE = 18
 const PAD = 16
+// The graph column is shared by the svg, the rows and the "Graph" header label:
+// it must never be narrower than that label, even with a single lane.
+const GRAPH_MIN = 76
 
 export function Graph() {
   const state = useStore((s) => s.state)!
@@ -34,7 +37,7 @@ export function Graph() {
   const dimmed = (owner: string | null) => selectedBranch !== null && owner !== null && owner !== selectedBranch
   const x = (col: number) => PAD + col * LANE
   const y = (row: number) => row * ROW + ROW / 2
-  const graphWidth = PAD * 2 + (g.lanes - 1) * LANE
+  const graphWidth = Math.max(GRAPH_MIN, PAD * 2 + (g.lanes - 1) * LANE)
   const delay = (row: number) => (first ? `${Math.min(row, 40) * 28}ms` : '0ms')
 
   const liveTips = new Map<string, string>()

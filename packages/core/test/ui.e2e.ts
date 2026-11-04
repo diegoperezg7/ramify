@@ -106,6 +106,13 @@ describe('web UI', () => {
           const rc = el.getBoundingClientRect()
           if (rc.width && rc.right > box.getBoundingClientRect().right + 1) out.push(String((el as HTMLElement).className))
         }
+        // Column headers must fit their own column (a narrow graph column once let "Graph" run into "Description").
+        for (const cell of document.querySelectorAll('.graph-cols > span')) {
+          const c = cell as HTMLElement
+          if (c.offsetWidth && c.scrollWidth > c.clientWidth + 1 && getComputedStyle(c).textOverflow !== 'ellipsis') out.push(`header ${c.textContent}`)
+          const next = c.nextElementSibling as HTMLElement | null
+          if (next?.offsetWidth && c.getBoundingClientRect().right > next.getBoundingClientRect().left + 1) out.push(`header overlap ${c.textContent}`)
+        }
         return out
       })
       assert.deepEqual(clipped, [], `clipped at ${width}px`)
