@@ -1,5 +1,5 @@
 import { AlertTriangle, ArrowDownToLine, BookOpen, Check, ExternalLink, FolderGit2, GitMerge, GitPullRequest, Loader2, MoreHorizontal, Play, Plus, SquareTerminal, Trash2 } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from 'react'
 import { bridge } from '../bridge'
 import { useStore } from '../store'
 import type { AgentSession, BranchHealth, Health, PullRequest } from '../types'
@@ -21,6 +21,7 @@ export function ControlCenter() {
   const sessions = useStore((s) => s.sessions)
   const setModal = useStore((s) => s.setModal)
   const setRepo = useStore((s) => s.setRepo)
+  const setView = useStore((s) => s.setView)
   const select = useStore((s) => s.select)
   const toast = useStore((s) => s.toast)
   const [boards, setBoards] = useState<Board[] | null>(null)
@@ -121,7 +122,7 @@ export function ControlCenter() {
         </div>
       )}
 
-      <Heatmap days={days} />
+      <Heatmap days={days} onOpen={() => setView('sessions')} />
 
       {boards === null && <p className="muted small"><Loader2 size={14} className="spin" /> {t('loadingRepo')}</p>}
       {boards?.length === 0 && (
@@ -133,7 +134,7 @@ export function ControlCenter() {
 
       {boards?.map((board) => (
         <section key={board.repo} className="repo-card cc-board">
-          <header>
+          <header className="cc-clickable" onClick={(e) => { if (!fromControl(e)) setRepo(board.repo) }}>
             <FolderGit2 size={15} /><b>{board.name}</b><span className="muted small">⎇ {board.health.base}</span>
             <span className="repo-card-actions">
               {board.github && <a className="icon-link" href={`https://github.com/${board.github}`} target="_blank" rel="noreferrer" title={board.github}><GithubIcon size={14} /></a>}
@@ -150,11 +151,11 @@ export function ControlCenter() {
               const size = b.added + b.deleted
               const key = `${board.repo}#${b.branch}`
               return (
-                <li key={b.path} className={`cc-row${b.main ? ' is-main' : ''}`}>
+                <li key={b.path} className={`cc-row cc-clickable${b.main ? ' is-main' : ''}`} onClick={(e) => { if (!fromControl(e)) act('open', board, b) }}>
                   {agent ? <AgentBadge agent={agent} size={24} live={state === 'working'} /> : <span className="cc-noagent" />}
                   <span className="row-main">
                     <span className="row-top">
-                      <b className="cc-branch">{b.main ? t('ccMainCheckout', { base: board.health.base }) : b.branch}</b>
+                      <button type="button" className="cc-branch" onClick={() => act('open', board, b)}>{b.main ? t('ccMainCheckout', { base: board.health.base }) : b.branch}</button>
                       {state && <span className={`state-chip is-${state}`}>{t(state === 'working' ? 'stateWorking' : state === 'waiting' ? 'stateWaiting' : 'stateIdle')}</span>}
                       {b.merged && <span className="chip chip-ok"><Check size={11} />{t('ccMerged')}</span>}
                     </span>
@@ -213,6 +214,9 @@ export function ControlCenter() {
     </main>
   )
 }
+
+/** A click on a button, link or menu inside a card does its own thing, not the card's. */
+const fromControl = (e: ReactMouseEvent) => !!(e.target as HTMLElement).closest('button, a, [role="menu"]')
 
 function relative(lang: string, unix: number): string {
   const diff = unix - Math.floor(Date.now() / 1000)

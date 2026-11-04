@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useMemo, type KeyboardEvent } from 'react'
 import { levels } from '../logic'
 import { useStore } from '../store'
 
@@ -8,7 +8,7 @@ const WEEKS = 26
 const dayStart = (d: Date) => Math.floor(new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() / 1000)
 
 /** The contribution grid: one square per day for the last 26 weeks, columns are weeks. */
-export function Heatmap({ days }: { days: Record<number, number> }) {
+export function Heatmap({ days, onOpen }: { days: Record<number, number>; onOpen?: () => void }) {
   const t = useStore((s) => s.t)
   const lang = useStore((s) => s.lang)
   const grid = useMemo(() => {
@@ -32,7 +32,8 @@ export function Heatmap({ days }: { days: Record<number, number> }) {
   const weeks = Array.from({ length: Math.ceil(grid.cells.length / 7) }, (_, w) => grid.cells.slice(w * 7, w * 7 + 7))
 
   return (
-    <figure className="heatmap" aria-label={t('heatTitle')}>
+    <figure className={`heatmap${onOpen ? ' cc-clickable' : ''}`} aria-label={t('heatTitle')}
+      {...(onOpen && { role: 'button', tabIndex: 0, onClick: onOpen, onKeyDown: (e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen() } } })}>
       <figcaption>
         <b>{t('heatTotal', { n: grid.total })}</b>
         <span className="muted">{t('heatActive', { n: grid.active, w: WEEKS })}</span>

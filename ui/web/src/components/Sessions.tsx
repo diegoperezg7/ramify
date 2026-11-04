@@ -1,5 +1,5 @@
 import { AppWindow, Code2, Download, FolderGit2, GitBranch, GitPullRequest, Loader2, MoreHorizontal, SquareTerminal, Trash2, Upload } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { bridge } from '../bridge'
 import { useStore } from '../store'
 import type { AgentSession } from '../types'
@@ -130,6 +130,28 @@ export function Sessions() {
     return [...cards.values()].sort((a, b) => Number(a.key.startsWith('~')) - Number(b.key.startsWith('~')) || Number(busy(b)) - Number(busy(a)) || a.title.localeCompare(b.title))
   }, [groups, t])
 
+  // Cards fill columns of equal height (the shortest column takes the next card), so no column ends
+  // in a hole. The repositories not on GitHub yet are one more card.
+  const [cols, setCols] = useState(2)
+  const observer = useRef<ResizeObserver | null>(null)
+  const gridRef = useCallback((el: HTMLDivElement | null) => {
+    observer.current?.disconnect()
+    if (!el) return
+    observer.current = new ResizeObserver(([e]) => setCols(Math.max(1, Math.floor((e.contentRect.width + 12) / 372))))
+    observer.current.observe(el)
+  }, [])
+  type Card = (typeof liveByRepo)[number] | 'unpublished'
+  const columns = useMemo(() => {
+    const cards: Card[] = [...liveByRepo, ...(unpublished.length ? ['unpublished' as const] : [])]
+    const out = Array.from({ length: Math.max(1, Math.min(cols, cards.length)) }, () => ({ h: 0, cards: [] as Card[] }))
+    for (const c of cards) {
+      const col = out.reduce((a, b) => (b.h < a.h ? b : a))
+      col.cards.push(c)
+      col.h += 1.2 + (c === 'unpublished' ? unpublished.length * 0.9 : c.rows.length)
+    }
+    return out.map((c) => c.cards)
+  }, [liveByRepo, unpublished, cols])
+
   return (
     <main className="sessions">
       <header className="sessions-head">
@@ -184,8 +206,22 @@ export function Sessions() {
 
           <section className="sessions-section">
             {live.length === 0 && <p className="muted small">{sessions.length ? t('sessionsNoneLive') : t('sessionsNone')}</p>}
-            <div className="repo-cards">
-              {liveByRepo.map((c) => (
+            <div className="repo-cards" ref={gridRef}>
+              {columns.map((col, i) => (
+              <div key={i} className="repo-col">
+              {col.map((c) => c === 'unpublished' ? (
+                <article key="~unpublished" className="repo-card unpub-card">
+                  <header><Upload size={15} /><b>{t('notOnGithub')}</b></header>
+                  <ul>
+                    {unpublished.map((r) => (
+                      <li key={r}>
+                        <FolderGit2 size={14} /><b>{base(r)}</b><span className="muted mono small" title={r}>{tilde(r)}</span>
+                        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPublishing(r)}><Upload size={13} />{t('publish')}</button>
+                      </li>
+                    ))}
+                  </ul>
+                </article>
+              ) : (
                 <article key={c.key} className="repo-card">
                   <header>
                     {c.key === '~apps' ? <AppWindow size={15} /> : <FolderGit2 size={15} />}
@@ -219,22 +255,10 @@ export function Sessions() {
                   </ul>
                 </article>
               ))}
+              </div>
+              ))}
             </div>
           </section>
-
-          {unpublished.length > 0 && (
-            <section className="sessions-section">
-              <h2 className="pane-kicker">{t('notOnGithub')}</h2>
-              <ul className="unpub">
-                {unpublished.map((r) => (
-                  <li key={r}>
-                    <FolderGit2 size={14} /><b>{base(r)}</b><span className="muted mono small" title={r}>{tilde(r)}</span>
-                    <button type="button" className="btn btn-ghost" onClick={() => setPublishing(r)}><Upload size={14} />{t('publish')}</button>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
 
           <section className="sessions-section">
             <h2 className="pane-kicker">{t('sessionsHistory')}</h2>
