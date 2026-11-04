@@ -79,6 +79,8 @@ describe('engine', () => {
     const own = new Engine({ bin: BIN, env: { ...env, RAMIFY_ROOT: P(T2, 'wts') } })
     const R = P(T2, 'built')
     sh(T2, 'init', '-q', '-b', 'main', R)
+    // Same bytes on every runner: Windows checkouts would turn LF into CRLF (core.autocrlf).
+    sh(R, 'config', 'core.autocrlf', 'false')
     writeFileSync(join(R, 'a.txt'), 'a\n'); writeFileSync(join(R, 'b.txt'), 'b\n')
     mkdirSync(join(R, 'dist')); writeFileSync(join(R, 'dist', 'out.txt'), 'a\nb\n')
     writeFileSync(join(R, '.gitattributes'), 'dist/** ramify-generated\n')
