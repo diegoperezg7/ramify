@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import { existsSync, readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
+import { normPath } from './engine.ts'
 import type { GithubRepo } from './types.ts'
 
 // Finding the projects a person works on: running agents, local clones and GitHub.
@@ -75,7 +76,7 @@ const SKIP = new Set(['node_modules', 'Library', 'Pods', 'DerivedData', 'build',
 export function scanRepos(dir: string, depth = 3): string[] {
   const found: string[] = []
   const walk = (d: string, level: number) => {
-    if (existsSync(join(d, '.git'))) { found.push(d); return }
+    if (existsSync(join(d, '.git'))) { found.push(normPath(d)); return }
     if (level >= depth) return
     let names: string[] = []
     try { names = readdirSync(d) } catch { return }
