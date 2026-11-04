@@ -3,17 +3,17 @@
   color-scheme: light;
   --bg: #ffffff;
   --surface: #ffffff;
-  --surface-hover: #f7f7f9;
-  --border: #e6e6ea;
-  --border-strong: #d4d4da;
-  --shadow: 0 1px 2px rgb(0 0 0 / 0.04), 0 4px 16px rgb(0 0 0 / 0.04);
-  --text: #0c0c10;
-  --text-2: #3f3f46;
-  --muted: #71717a;
+  --surface-hover: #f6f3fd;
+  --border: #e9e4f5;
+  --border-strong: #d6cdee;
+  --shadow: 0 1px 2px rgb(46 16 101 / 0.05), 0 6px 20px rgb(76 29 149 / 0.06);
+  --text: #0f0a1e;
+  --text-2: #3b3552;
+  --muted: #6f6987;
   --accent: #7c3aed;
   --accent-text: #6d28d9;
-  --accent-soft: rgb(124 58 237 / 0.08);
-  --accent-ring: rgb(124 58 237 / 0.35);
+  --accent-soft: rgb(124 58 237 / 0.09);
+  --accent-ring: rgb(124 58 237 / 0.38);
   --on-accent: #ffffff;
   --good: #1a7f37;
   --warn: #9a6700;
@@ -21,14 +21,14 @@
   --bad-soft: rgb(207 34 46 / 0.08);
   --add-bg: rgb(26 127 55 / 0.09);
   --del-bg: rgb(207 34 46 / 0.08);
-  --lane-base: #8a8a94;
+  --lane-base: #8e86a8;
   --agent-1: #2a78d6;
   --agent-2: #eb6834;
   --agent-3: #1baf7a;
   --agent-4: #eda100;
   --agent-5: #e87ba4;
   --agent-6: #008300;
-  --agent-other: #8a8a94;
+  --agent-other: #8e86a8;
   --radius: 12px;
   --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -38,18 +38,18 @@
   :root:not([data-theme='light']) {
     color-scheme: dark;
     --bg: #000000;
-    --surface: #0a0a0b;
-    --surface-hover: #141416;
-    --border: #232327;
-    --border-strong: #34343a;
-    --shadow: 0 0 0 1px rgb(255 255 255 / 0.02);
-    --text: #f4f4f5;
-    --text-2: #d4d4d8;
-    --muted: #a1a1aa;
+    --surface: #09061a;
+    --surface-hover: #140e2b;
+    --border: #221a3d;
+    --border-strong: #352a5c;
+    --shadow: 0 0 0 1px rgb(139 92 246 / 0.04), 0 8px 30px rgb(30 11 75 / 0.35);
+    --text: #f3f0ff;
+    --text-2: #d4cdee;
+    --muted: #9a92b8;
     --accent: #a78bfa;
     --accent-text: #c4b5fd;
-    --accent-soft: rgb(167 139 250 / 0.12);
-    --accent-ring: rgb(167 139 250 / 0.4);
+    --accent-soft: rgb(167 139 250 / 0.13);
+    --accent-ring: rgb(167 139 250 / 0.42);
     --on-accent: #0c0c10;
     --good: #3fb950;
     --warn: #d29922;
@@ -57,32 +57,32 @@
     --bad-soft: rgb(248 81 73 / 0.12);
     --add-bg: rgb(63 185 80 / 0.14);
     --del-bg: rgb(248 81 73 / 0.13);
-    --lane-base: #8b8b96;
+    --lane-base: #8f87ad;
     --agent-1: #3987e5;
     --agent-2: #d95926;
     --agent-3: #199e70;
     --agent-4: #c98500;
     --agent-5: #d55181;
     --agent-6: #008300;
-    --agent-other: #8b8b96;
+    --agent-other: #8f87ad;
   }
 }
 
 :root[data-theme='dark'] {
   color-scheme: dark;
   --bg: #000000;
-  --surface: #0a0a0b;
-  --surface-hover: #141416;
-  --border: #232327;
-  --border-strong: #34343a;
-  --shadow: 0 0 0 1px rgb(255 255 255 / 0.02);
-  --text: #f4f4f5;
-  --text-2: #d4d4d8;
-  --muted: #a1a1aa;
+  --surface: #09061a;
+  --surface-hover: #140e2b;
+  --border: #221a3d;
+  --border-strong: #352a5c;
+  --shadow: 0 0 0 1px rgb(139 92 246 / 0.04), 0 8px 30px rgb(30 11 75 / 0.35);
+  --text: #f3f0ff;
+  --text-2: #d4cdee;
+  --muted: #9a92b8;
   --accent: #a78bfa;
   --accent-text: #c4b5fd;
-  --accent-soft: rgb(167 139 250 / 0.12);
-  --accent-ring: rgb(167 139 250 / 0.4);
+  --accent-soft: rgb(167 139 250 / 0.13);
+  --accent-ring: rgb(167 139 250 / 0.42);
   --on-accent: #0c0c10;
   --good: #3fb950;
   --warn: #d29922;
@@ -90,14 +90,14 @@
   --bad-soft: rgb(248 81 73 / 0.12);
   --add-bg: rgb(63 185 80 / 0.14);
   --del-bg: rgb(248 81 73 / 0.13);
-  --lane-base: #8b8b96;
+  --lane-base: #8f87ad;
   --agent-1: #3987e5;
   --agent-2: #d95926;
   --agent-3: #199e70;
   --agent-4: #c98500;
   --agent-5: #d55181;
   --agent-6: #008300;
-  --agent-other: #8b8b96;
+  --agent-other: #8f87ad;
 }
 
 * { box-sizing: border-box; }
@@ -646,6 +646,15 @@ kbd {
 
 /* settings toggles */
 .form .toggles { gap: 10px; }
+
+/* brand: the logo's violet-to-indigo gradient and its glow */
+:root { --brand-grad: linear-gradient(135deg, #8b5cf6 0%, #6d28d9 55%, #4338ca 100%); --brand-glow: 0 6px 18px rgb(109 40 217 / 0.28); }
+.btn-primary { background: var(--brand-grad); border-color: transparent; color: #ffffff; box-shadow: var(--brand-glow), inset 0 1px 0 rgb(255 255 255 / 0.18); }
+.btn-primary:hover:not(:disabled) { background: var(--brand-grad); filter: brightness(1.08); }
+.btn-primary kbd { border-color: rgb(255 255 255 / 0.35); background: rgb(255 255 255 / 0.14); color: #ffffff; }
+.repo-item.is-active, .wt-row.is-selected { box-shadow: inset 0 0 0 1px var(--accent-ring); }
+.sidebar { background: radial-gradient(120% 40% at 0% 0%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 70%), var(--bg); }
+.logo-mark { filter: drop-shadow(0 4px 14px rgb(109 40 217 / 0.45)); border-radius: 22%; }
 
 /* personality: agent monograms, live tips, activity feed */
 .agent-badge {

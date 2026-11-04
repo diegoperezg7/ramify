@@ -7,8 +7,8 @@
 <circle cx="56" cy="18" r="5.5" fill="#30363d"/>
 <text x="379.5" y="22" fill="#7d8590" text-anchor="middle">~/code/shop</text>
 <text x="22.0" y="54" fill="#7ee787" font-weight="700" textLength="7.8" lengthAdjust="spacingAndGlyphs">$</text>
-<text x="37.6" y="54" fill="#e6edf3" textLength="62.6" lengthAdjust="spacingAndGlyphs">agent-wt</text>
-<text x="108.0" y="54" fill="#e6edf3" textLength="39.1" lengthAdjust="spacingAndGlyphs">graph</text>
+<text x="37.6" y="54" fill="#e6edf3" textLength="46.9" lengthAdjust="spacingAndGlyphs">ramify</text>
+<text x="92.4" y="54" fill="#e6edf3" textLength="39.1" lengthAdjust="spacingAndGlyphs">graph</text>
 <text x="22.0" y="74" fill="#e6edf3" font-weight="700" textLength="54.7" lengthAdjust="spacingAndGlyphs">agents:</text>
 <text x="37.6" y="94" fill="#d2a8ff" textLength="31.3" lengthAdjust="spacingAndGlyphs">main</text>
 <text x="84.6" y="94" fill="#e6edf3" textLength="39.1" lengthAdjust="spacingAndGlyphs">(main</text>

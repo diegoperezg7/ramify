@@ -7,17 +7,17 @@
 <circle cx="56" cy="18" r="5.5" fill="#30363d"/>
 <text x="442.0" y="22" fill="#7d8590" text-anchor="middle">~/code/shop</text>
 <text x="22.0" y="54" fill="#7ee787" font-weight="700" textLength="7.8" lengthAdjust="spacingAndGlyphs">$</text>
-<text x="37.6" y="54" fill="#e6edf3" textLength="62.6" lengthAdjust="spacingAndGlyphs">agent-wt</text>
-<text x="108.0" y="54" fill="#e6edf3" textLength="23.5" lengthAdjust="spacingAndGlyphs">new</text>
-<text x="139.3" y="54" fill="#e6edf3" textLength="93.8" lengthAdjust="spacingAndGlyphs">feat/coupons</text>
-<text x="241.0" y="54" fill="#e6edf3" textLength="15.6" lengthAdjust="spacingAndGlyphs">-a</text>
-<text x="264.4" y="54" fill="#e6edf3" textLength="54.7" lengthAdjust="spacingAndGlyphs">copilot</text>
-<text x="327.0" y="54" fill="#e6edf3" textLength="15.6" lengthAdjust="spacingAndGlyphs">-p</text>
-<text x="350.4" y="54" fill="#e6edf3" textLength="31.3" lengthAdjust="spacingAndGlyphs">&quot;add</text>
-<text x="389.5" y="54" fill="#e6edf3" textLength="46.9" lengthAdjust="spacingAndGlyphs">coupon</text>
-<text x="444.3" y="54" fill="#e6edf3" textLength="39.1" lengthAdjust="spacingAndGlyphs">codes</text>
-<text x="491.2" y="54" fill="#e6edf3" textLength="15.6" lengthAdjust="spacingAndGlyphs">to</text>
-<text x="514.7" y="54" fill="#e6edf3" textLength="70.4" lengthAdjust="spacingAndGlyphs">checkout&quot;</text>
+<text x="37.6" y="54" fill="#e6edf3" textLength="46.9" lengthAdjust="spacingAndGlyphs">ramify</text>
+<text x="92.4" y="54" fill="#e6edf3" textLength="23.5" lengthAdjust="spacingAndGlyphs">new</text>
+<text x="123.7" y="54" fill="#e6edf3" textLength="93.8" lengthAdjust="spacingAndGlyphs">feat/coupons</text>
+<text x="225.3" y="54" fill="#e6edf3" textLength="15.6" lengthAdjust="spacingAndGlyphs">-a</text>
+<text x="248.8" y="54" fill="#e6edf3" textLength="54.7" lengthAdjust="spacingAndGlyphs">copilot</text>
+<text x="311.3" y="54" fill="#e6edf3" textLength="15.6" lengthAdjust="spacingAndGlyphs">-p</text>
+<text x="334.8" y="54" fill="#e6edf3" textLength="31.3" lengthAdjust="spacingAndGlyphs">&quot;add</text>
+<text x="373.9" y="54" fill="#e6edf3" textLength="46.9" lengthAdjust="spacingAndGlyphs">coupon</text>
+<text x="428.6" y="54" fill="#e6edf3" textLength="39.1" lengthAdjust="spacingAndGlyphs">codes</text>
+<text x="475.6" y="54" fill="#e6edf3" textLength="15.6" lengthAdjust="spacingAndGlyphs">to</text>
+<text x="499.0" y="54" fill="#e6edf3" textLength="70.4" lengthAdjust="spacingAndGlyphs">checkout&quot;</text>
 <text x="22.0" y="74" fill="#3fb950" textLength="7.8" lengthAdjust="spacingAndGlyphs">+</text>
 <text x="37.6" y="74" fill="#e6edf3" font-weight="700" textLength="93.8" lengthAdjust="spacingAndGlyphs">feat-coupons</text>
 <text x="147.1" y="74" fill="#e6edf3" textLength="46.9" lengthAdjust="spacingAndGlyphs">branch</text>
@@ -25,8 +25,8 @@
 <text x="311.3" y="74" fill="#e6edf3" textLength="39.1" lengthAdjust="spacingAndGlyphs">ports</text>
 <text x="358.3" y="74" fill="#e6edf3" textLength="70.4" lengthAdjust="spacingAndGlyphs">4140-4149</text>
 <text x="22.0" y="94" fill="#7ee787" font-weight="700" textLength="7.8" lengthAdjust="spacingAndGlyphs">$</text>
-<text x="37.6" y="94" fill="#e6edf3" textLength="62.6" lengthAdjust="spacingAndGlyphs">agent-wt</text>
-<text x="108.0" y="94" fill="#e6edf3" textLength="15.6" lengthAdjust="spacingAndGlyphs">ls</text>
+<text x="37.6" y="94" fill="#e6edf3" textLength="46.9" lengthAdjust="spacingAndGlyphs">ramify</text>
+<text x="92.4" y="94" fill="#e6edf3" textLength="15.6" lengthAdjust="spacingAndGlyphs">ls</text>
 <text x="22.0" y="114" fill="#e6edf3" font-weight="700" textLength="62.6" lengthAdjust="spacingAndGlyphs">WORKTREE</text>
 <text x="186.2" y="114" fill="#e6edf3" font-weight="700" textLength="46.9" lengthAdjust="spacingAndGlyphs">BRANCH</text>
 <text x="381.7" y="114" fill="#e6edf3" font-weight="700" textLength="39.1" lengthAdjust="spacingAndGlyphs">AGENT</text>
