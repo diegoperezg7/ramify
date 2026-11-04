@@ -30,6 +30,7 @@ ${B}Usage${N}
   agent-wt open <name>   [-a agent] [-i ide] [-p prompt] [--tmux] [-- agent args]
   agent-wt ls [--json]            worktrees, agent, activity, changes, ports
   agent-wt ui [--port N]          live web dashboard (needs python3)
+  agent-wt app                    open this repository in the desktop app
   agent-wt graph [-n N]           branch graph of every worktree
   agent-wt path <name>            print a worktree path
   agent-wt rm <name> [--force]    remove a worktree (never deletes unmerged commits)
@@ -428,6 +429,17 @@ cmd_ui() {
       done
 }
 
+# Open the desktop app on this repository (or worktree) through its agent-wt:// link.
+cmd_app() {
+  local dir url
+  dir=$(pwd -P)
+  main_checkout "$dir" >/dev/null
+  [ "$(uname)" = Darwin ] || die "the desktop app is macOS only; use: agent-wt ui"
+  open -Ra agent-wt 2>/dev/null || die "agent-wt.app is not installed (see apps/desktop in the repository)"
+  url="agent-wt://open?path=$(printf '%s' "$dir" | jq -sRr @uri 2>/dev/null || python3 -I -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1]))' "$dir")"
+  open "$url"
+}
+
 cmd_hook() {
   local input name cwd wt main
   command -v jq >/dev/null || die "jq is required for hook mode"
@@ -509,6 +521,7 @@ case "$sub" in
   ls|list) cmd_ls "$@" ;;
   graph) cmd_graph "$@" ;;
   ui) cmd_ui "$@" ;;
+  app) cmd_app ;;
   path)
     [ $# -gt 0 ] || { usage; exit 1; }
     main=$(main_checkout "$PWD"); find_wt "$main" "$1" ;;

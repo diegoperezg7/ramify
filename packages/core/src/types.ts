@@ -92,6 +92,12 @@ export interface Settings {
   projectsDir: string
   /** Add repositories automatically when an agent starts working in them. */
   autoDetect: boolean
+  /** Desktop: notify when an agent finishes. */
+  notifications?: boolean
+  /** Desktop: start at login (hidden, in the menu bar). */
+  openAtLogin?: boolean
+  /** Desktop: show the agent count in the menu bar. */
+  menuBar?: boolean
 }
 
 /** What the current host can do. The browser build (agent-wt ui) is single-repo. */
@@ -123,4 +129,6 @@ export interface Bridge {
   addRepoPath(path: string): Promise<RepoInfo>
   settings(): Promise<Settings>
   saveSettings(s: Settings): Promise<void>
+  /** Host-initiated events: open a repository/worktree, show the "new worktree" form. */
+  onEvent(cb: (e: { repo?: string; path?: string; event?: string }) => void): void
 }

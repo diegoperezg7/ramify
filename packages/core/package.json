@@ -5,11 +5,13 @@
   "type": "module",
   "main": "src/index.ts",
   "scripts": {
-    "test": "node --test test/*.test.ts",
-    "typecheck": "tsc -p ."
+    "test": "node --test test/engine.test.ts",
+    "typecheck": "tsc -p .",
+    "test:e2e": "node --test --test-concurrency=1 test/ui.e2e.ts"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
+    "playwright": "^1.64.1",
     "typescript": "^7.0.2"
   }
 }

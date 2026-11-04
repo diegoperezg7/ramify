@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import * as vscode from 'vscode'
-import { Engine, IDES } from '../../../packages/core/src/index.ts'
-import type { Capabilities, CreateRequest } from '../../../packages/core/src/types.ts'
+import { createHandlers, dispatch, Engine, IDES } from '../../../packages/core/src/index.ts'
+import { webviewHtml } from './html.ts'
 
 let panel: vscode.WebviewPanel | undefined
 
@@ -41,33 +41,15 @@ export function activate(ctx: vscode.ExtensionContext) {
     term.sendText(command)
   }
 
-  const handlers: Record<string, (...args: never[]) => unknown> = {
-    capabilities: (): Capabilities => ({ host: 'vscode', multiRepo: false, create: true, settings: false, github: false, ides: IDES }),
-    state: async () => engine.state(await need(repoOf)),
-    worktree: async (_r: string, path: string) => engine.worktree(await need(repoOf), path),
-    diff: async (_r: string, path: string, file: string) => ({ diff: await engine.diff(await need(repoOf), path, file) }),
-    open: async (_r: string, path: string, ide: string) => {
-      const repo = await need(repoOf)
-      if (ide === 'code' || ide === 'cursor') {
-        // "This editor": open the worktree in a new window of the same app.
-        await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(path), { forceNewWindow: true })
-        return { message: path }
-      }
-      return { message: await engine.openIde(repo, path, ide) }
-    },
-    merge: async (_r: string, path: string) => ({ message: await engine.merge(await need(repoOf), path) }),
-    remove: async (_r: string, path: string, force: boolean) => ({ message: await engine.remove(await need(repoOf), path, force) }),
-    create: async (_r: string, req: CreateRequest) => {
-      const created = await engine.create(await need(repoOf), req)
-      if (created.command) terminal(req.branch, created.path, created.command)
-      return { path: created.path, message: req.branch }
-    },
-    launch: async (_r: string, path: string, agent: string, prompt?: string) => {
-      const repo = await need(repoOf)
-      if (!(await engine.worktrees(repo)).some((w) => w.path === path)) throw new Error('unknown worktree')
-      terminal(agent, path, engine.launchCommand(path, agent, prompt))
-      return { message: agent }
-    },
+  const handlers = {
+    ...createHandlers({
+      engine,
+      capabilities: { host: 'vscode', multiRepo: false, create: true, settings: false, github: false, ides: IDES },
+      repo: () => need(repoOf),
+      runInTerminal: terminal,
+      // "VS Code" / "Cursor" mean this editor: open the worktree in a new window of it.
+      openFolder: { ides: ['code', 'cursor'], open: async (path) => { await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(path), { forceNewWindow: true }) } },
+    }),
     repos: () => [],
   }
 
@@ -78,12 +60,10 @@ export function activate(ctx: vscode.ExtensionContext) {
       enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [ui],
     })
     panel.iconPath = vscode.Uri.joinPath(ctx.extensionUri, 'media', 'icon.png')
-    panel.webview.html = html(panel.webview, ui)
+    panel.webview.html = webviewHtml(readFileSync(join(ui.fsPath, 'index.html'), 'utf8'), panel.webview.asWebviewUri(ui).toString(), panel.webview.cspSource)
     panel.webview.onDidReceiveMessage(async (msg: { id: number; method: string; args: unknown[] }) => {
       try {
-        const fn = handlers[msg.method]
-        if (!fn) throw new Error(`not available in the editor: ${msg.method}`)
-        const result = await (fn as (...a: unknown[]) => unknown)(...msg.args)
+        const result = await dispatch(handlers, msg.method, msg.args)
         void panel?.webview.postMessage({ id: msg.id, result })
       } catch (e) {
         void panel?.webview.postMessage({ id: msg.id, error: (e as Error).message })
@@ -105,21 +85,6 @@ async function need(repoOf: () => Promise<string | null>): Promise<string> {
   const repo = await repoOf()
   if (!repo) throw new Error('Open a folder that is inside a git repository')
   return repo
-}
-
-function html(webview: vscode.Webview, ui: vscode.Uri): string {
-  const base = webview.asWebviewUri(ui).toString()
-  const csp = [
-    `default-src 'none'`,
-    `img-src ${webview.cspSource} data:`,
-    `script-src ${webview.cspSource}`,
-    `style-src ${webview.cspSource} 'unsafe-inline' https://fonts.googleapis.com`,
-    `font-src ${webview.cspSource} https://fonts.gstatic.com`,
-  ].join('; ')
-  return readFileSync(join(ui.fsPath, 'index.html'), 'utf8')
-    .replace(/ crossorigin/g, '')
-    .replace(/(src|href)="\.\/assets\//g, `$1="${base}/assets/`)
-    .replace('<head>', `<head><meta http-equiv="Content-Security-Policy" content="${csp}">`)
 }
 
 export function deactivate() {}

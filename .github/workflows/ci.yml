@@ -35,3 +35,5 @@ jobs:
         run: ./scripts/sync-plugin.sh && git diff --stat --exit-code -- claude-plugin
       - name: VS Code extension packages
         run: npm run package -w apps/vscode
+      - name: UI end-to-end
+        run: npx playwright install --with-deps chromium && npm run test:e2e -w packages/core

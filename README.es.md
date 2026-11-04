@@ -52,6 +52,7 @@ agent-wt open fix/cart -a gemini                  # reabrir un worktree con otro
 agent-wt ls                                       # todos los worktrees de un vistazo
 agent-wt graph                                    # grafo de ramas con el agente de cada una
 agent-wt ui                                       # panel web en vivo
+agent-wt app                                      # abre este repo en la app de escritorio
 agent-wt rm fix/cart                              # se niega si algo se perdería
 agent-wt prune                                    # borra los worktrees limpios ya mergeados
 ```
@@ -95,7 +96,7 @@ La misma interfaz corre en cuatro sitios, y todas leen el repositorio en vivo ca
 
 | | Qué tienes |
 |---|---|
-| **App de escritorio** (macOS) | Todos tus repos en una ventana. Los repos donde hay un agente trabajando aparecen solos en *Trabajando ahora*, y tus repos de GitHub están a un clic (añadir el clon local o clonarlo). Creas un worktree, eliges agente y se abre en Terminal, iTerm o Ghostty. Paleta de comandos ⌘K, ⌘N nuevo worktree, ↑/↓ para moverte. |
+| **App de escritorio** (macOS) | Vive en la barra de menús con el número de agentes trabajando, lo pone en el icono del Dock y te avisa cuando un agente termina (pulsas y ves sus cambios). `agent-wt app` abre el repo en el que estés. Todos tus repos en una ventana. Los repos donde hay un agente trabajando aparecen solos en *Trabajando ahora*, y tus repos de GitHub están a un clic (añadir el clon local o clonarlo). Creas un worktree, eliges agente y se abre en Terminal, iTerm o Ghostty. Paleta de comandos ⌘K, ⌘N nuevo worktree, ↑/↓ para moverte. |
 | **Extensión VS Code / Cursor** | El panel como pestaña del editor (`agent-wt: Open dashboard`, ⌘⌥W), los agentes en el terminal integrado y un contador de agentes trabajando en la barra de estado. |
 | **Plugin de Claude Code** | Todos los worktrees de Claude Code (`--worktree`, sesiones en segundo plano, `/batch`, subagentes) los crea agent-wt, más `/agent-wt:status` y `/agent-wt:ui`. |
 | **Navegador** (`agent-wt ui`) | Panel de un repositorio desde el terminal: solo 127.0.0.1 y token de un solo uso. |
@@ -209,10 +210,12 @@ worktrees de los subagentes al terminar, así que conviene lanzar `agent-wt prun
 ## Tests
 
 ```bash
-bash tests/run.sh
+bash tests/run.sh             # CLI, contra repos desechables con agentes simulados (macOS y Linux)
+npm run test:core             # motor
+npm run test:e2e -w packages/core   # la UI real en Chromium: navegador, editor y nada cortado de 390 a 1920 px
 ```
 
-Tests de punta a punta contra repositorios desechables con agentes simulados, en macOS y Linux en la CI.
+Todos corren en la CI.
 
 ## Licencia
 

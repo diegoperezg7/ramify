@@ -459,16 +459,11 @@ html, body, #root { height: 100%; }
 
 /* Medium content width: two columns, detail slides in from the right. */
 .app:is(.is-md, .is-sm) .layout { grid-template-columns: clamp(240px, 30%, 320px) minmax(0, 1fr); }
-.app:is(.is-md, .is-sm) .detail-pane {
-    position: fixed; z-index: 30; top: 0; right: 0; bottom: 0; width: min(480px, 100vw);
-    border-radius: 0; border-width: 0 0 0 1px; box-shadow: -20px 0 60px rgb(0 0 0 / 0.18);
-    transform: translateX(105%); transition: transform 0.3s cubic-bezier(0.2, 0.7, 0.2, 1); visibility: hidden;
-  }
-.app:is(.is-md, .is-sm) .layout.has-selection .detail-pane { transform: none; visibility: visible; }
-.app:is(.is-md, .is-sm) .detail-pane.placeholder { display: none; }
-.app:is(.is-md, .is-sm) .drawer-scrim { display: block; position: fixed; inset: 0; z-index: 29; background: rgb(0 0 0 / 0.28); opacity: 0; pointer-events: none; transition: opacity 0.25s; }
-.app:is(.is-md, .is-sm) .layout.has-selection .drawer-scrim { opacity: 1; pointer-events: auto; }
-[data-host='desktop'] .app:is(.is-md, .is-sm) .detail-head { padding-top: 22px; }
+/* Master-detail: picking a worktree swaps the tree for the inspector; closing it brings the tree back. */
+.app:is(.is-md, .is-sm) .detail-pane { display: none; }
+.app:is(.is-md, .is-sm) .layout.has-selection .graph-pane { display: none; }
+.app:is(.is-md, .is-sm) .layout.has-selection .detail-pane { display: flex; animation: card-in 0.25s ease-out both; }
+.app:is(.is-md, .is-sm) .drawer-scrim { display: none; }
 
 .app.is-sm .live-label, .app.is-sm .live-ago { display: none; }
 .app.is-sm .new-btn span { display: none; }
@@ -511,7 +506,6 @@ html, body, #root { height: 100%; }
   .sidebar-scrim.is-open { opacity: 1; pointer-events: auto; }
   .layout { display: flex; flex-direction: column; }
   .graph-pane { height: 72vh; }
-  .detail-pane { width: 100vw; border-left: 0; }
   .pane-head { flex-wrap: wrap; }
   .legend { justify-content: flex-start; }
   .repo { font-size: 15px; }
@@ -649,6 +643,9 @@ kbd {
 .palette-empty { padding: 16px; margin: 0; }
 .palette-foot { display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 14px; border-top: 1px solid var(--border); font: 500 11px var(--mono); color: var(--muted); }
 
+/* settings toggles */
+.form .toggles { gap: 10px; }
+
 /* sidebar brand */
 .side-brand { flex: none; display: flex; align-items: center; gap: 10px; padding: 2px 8px 10px; }
 .side-brand .logo { width: 26px; height: 26px; border-radius: 7px; box-shadow: 0 0 0 1px rgb(255 255 255 / 0.08), 0 6px 18px color-mix(in srgb, var(--accent) 40%, transparent); }
@@ -691,7 +688,6 @@ kbd {
 .app.is-sm .metrics, .app.is-sm .palette-trigger span, .app.is-sm .palette-trigger kbd, .app.is-sm .new-btn kbd, .app.is-sm .sb-keys, .app.is-sm .sb-path { display: none; }
 .app.is-sm .palette-trigger { width: 34px; padding: 0; justify-content: center; }
 .app:is(.is-md, .is-sm) .layout { grid-template-columns: clamp(240px, 30%, 320px) minmax(0, 1fr); }
-.app:is(.is-md, .is-sm) .detail-pane { border-left: 1px solid var(--border); }
 .app.is-sm .graph-cols .col-date, .app.is-sm .graph-cols .col-hash { display: none; }
 @media (max-width: 760px) {
   .layout { border: 0; border-radius: 0; background: none; gap: var(--gap); overflow: visible; }

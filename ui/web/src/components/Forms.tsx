@@ -114,10 +114,24 @@ export function SettingsDialog() {
           <input value={draft.projectsDir} onChange={(e) => setDraft({ ...draft, projectsDir: e.target.value })} spellCheck={false} />
           <small className="muted">{t('projectsDirHint')}</small>
         </label>
-        <label className="check">
-          <input type="checkbox" checked={draft.autoDetect} onChange={(e) => setDraft({ ...draft, autoDetect: e.target.checked })} />
-          {t('autoDetect')}
-        </label>
+        <fieldset className="toggles">
+          <label className="check">
+            <input type="checkbox" checked={draft.autoDetect} onChange={(e) => setDraft({ ...draft, autoDetect: e.target.checked })} />
+            {t('autoDetect')}
+          </label>
+          <label className="check">
+            <input type="checkbox" checked={draft.notifications ?? true} onChange={(e) => setDraft({ ...draft, notifications: e.target.checked })} />
+            {t('notifyFinished')}
+          </label>
+          <label className="check">
+            <input type="checkbox" checked={draft.menuBar ?? true} onChange={(e) => setDraft({ ...draft, menuBar: e.target.checked })} />
+            {t('menuBar')}
+          </label>
+          <label className="check">
+            <input type="checkbox" checked={draft.openAtLogin ?? false} onChange={(e) => setDraft({ ...draft, openAtLogin: e.target.checked })} />
+            {t('openAtLogin')}
+          </label>
+        </fieldset>
         <div className="dialog-actions">
           <button type="button" className="btn btn-ghost" onClick={() => setModal(null)}>{t('cancel')}</button>
           <button type="submit" className="btn btn-primary">{t('save')}</button>

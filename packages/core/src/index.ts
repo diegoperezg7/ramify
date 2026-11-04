@@ -1,4 +1,5 @@
 export * from './engine.ts'
 export * from './terminal.ts'
 export * from './projects.ts'
+export * from './host.ts'
 export type * from './types.ts'

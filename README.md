@@ -57,6 +57,7 @@ agent-wt open fix/cart -a gemini                  # reopen an existing worktree 
 agent-wt ls                                       # every worktree at a glance
 agent-wt graph                                    # branch graph with the agent on each branch
 agent-wt ui                                       # live web dashboard
+agent-wt app                                      # open this repository in the desktop app
 agent-wt rm fix/cart                              # refuses if anything would be lost
 agent-wt prune                                    # remove clean worktrees that are already merged
 ```
@@ -100,7 +101,7 @@ The same interface runs in four places. All of them read the repository live, ev
 
 | | What you get |
 |---|---|
-| **Desktop app** (macOS) | Every repository in one window. Repositories where an agent is running right now appear by themselves under *Working now*; your GitHub repositories are one click away (add the local clone or clone it). Create a worktree, pick the agent and it opens in Terminal, iTerm or Ghostty. ⌘K command palette, ⌘N new worktree, ↑/↓ to move. |
+| **Desktop app** (macOS) | Lives in the menu bar with the number of agents working, puts it on the Dock icon and notifies you when an agent finishes (click to review its changes). `agent-wt app` opens the repository you are in. Every repository in one window. Repositories where an agent is running right now appear by themselves under *Working now*; your GitHub repositories are one click away (add the local clone or clone it). Create a worktree, pick the agent and it opens in Terminal, iTerm or Ghostty. ⌘K command palette, ⌘N new worktree, ↑/↓ to move. |
 | **VS Code / Cursor extension** | The dashboard as an editor tab (`agent-wt: Open dashboard`, ⌘⌥W), agents launched in the integrated terminal, a status bar counter of agents working. |
 | **Claude Code plugin** | Every Claude Code worktree (`--worktree`, background sessions, `/batch`, subagents) is created by agent-wt, plus `/agent-wt:status` and `/agent-wt:ui`. |
 | **Browser** (`agent-wt ui`) | Single repository dashboard from the terminal: 127.0.0.1 only, one-time token. |
@@ -214,10 +215,12 @@ after they finish, so run `agent-wt prune` now and then.
 ## Tests
 
 ```bash
-bash tests/run.sh
+bash tests/run.sh             # CLI, against throwaway repositories with stub agents (macOS and Linux)
+npm run test:core             # engine
+npm run test:e2e -w packages/core   # the real UI in Chromium: browser host, editor host, no clipping 390–1920px
 ```
 
-End-to-end tests against throwaway repositories with stub agents, run on macOS and Linux in CI.
+All of them run in CI.
 
 ## License
 

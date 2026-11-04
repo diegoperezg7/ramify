@@ -36,6 +36,14 @@
       {
         "from": "../../agent-wt",
         "to": "bin/agent-wt"
+      },
+      {
+        "from": "resources/trayTemplate.png",
+        "to": "trayTemplate.png"
+      },
+      {
+        "from": "resources/trayTemplate@2x.png",
+        "to": "trayTemplate@2x.png"
       }
     ],
     "mac": {
@@ -50,13 +58,24 @@
         }
       ],
       "identity": null,
-      "darkModeSupport": true
+      "darkModeSupport": true,
+      "extendInfo": {
+        "LSUIElement": false
+      }
     },
     "dmg": {
       "title": "agent-wt",
       "iconSize": 96
     },
     "electronVersion": "45.2.2",
-    "electronDist": "../../node_modules/electron/dist"
+    "electronDist": "../../node_modules/electron/dist",
+    "protocols": [
+      {
+        "name": "agent-wt",
+        "schemes": [
+          "agent-wt"
+        ]
+      }
+    ]
   }
 }

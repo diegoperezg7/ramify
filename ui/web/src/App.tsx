@@ -9,6 +9,7 @@ import { StatusBar } from './components/Stats'
 import { CommandPalette } from './components/CommandPalette'
 import { TopBar } from './components/TopBar'
 import { sortWorktrees, WorktreeList } from './components/WorktreeList'
+import { bridge } from './bridge'
 import { useStore } from './store'
 
 const POLL_MS = 2500
@@ -51,11 +52,8 @@ export function App() {
         if (next) s.select(next.path)
       }
     }
-    // The editor extension asks for the "new worktree" form through a message.
-    const onMessage = (e: MessageEvent) => { if ((e.data as { command?: string })?.command === 'new') useStore.getState().setModal('create') }
     window.addEventListener('keydown', onKey)
-    window.addEventListener('message', onMessage)
-    return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('message', onMessage) }
+    return () => window.removeEventListener('keydown', onKey)
   }, [])
 
   // Layout follows the width actually available to the app (window minus sidebar):
@@ -71,6 +69,20 @@ export function App() {
     })
     ro.observe(el)
     return () => ro.disconnect()
+  }, [])
+
+  // Host events: a notification or the menu bar opens a worktree, the editor asks for the "new" form.
+  useEffect(() => {
+    bridge.onEvent(async (e) => {
+      const s = useStore.getState()
+      if (e.repo && e.repo !== s.repo) {
+        await s.refreshRepos()
+        s.setRepo(e.repo)
+        await s.poll()
+      }
+      if (e.path) useStore.getState().select(e.path)
+      if (e.event === 'new') useStore.getState().setModal('create')
+    })
   }, [])
 
   useEffect(() => {

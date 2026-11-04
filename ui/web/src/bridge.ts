@@ -17,12 +17,14 @@ type Invoke = (method: string, args: unknown[]) => Promise<unknown>
 
 declare global {
   interface Window {
-    agentWt?: { invoke: Invoke }
+    agentWt?: { invoke: Invoke; on?: (cb: (payload: unknown) => void) => void }
     acquireVsCodeApi?: () => { postMessage(msg: unknown): void }
   }
 }
 
-function rpc(invoke: Invoke): Bridge {
+type HostEvent = { repo?: string; path?: string; event?: string }
+
+function rpc(invoke: Invoke, subscribe: (cb: (e: HostEvent) => void) => void): Bridge {
   const call = <T>(method: string, ...args: unknown[]) => invoke(method, args) as Promise<T>
   return {
     capabilities: () => call<Capabilities>('capabilities'),
@@ -42,6 +44,7 @@ function rpc(invoke: Invoke): Bridge {
     addRepoPath: (path) => call<RepoInfo>('addRepoPath', path),
     settings: () => call<Settings>('settings'),
     saveSettings: (s) => call<void>('saveSettings', s),
+    onEvent: subscribe,
   }
 }
 
@@ -117,11 +120,18 @@ function httpBridge(): Bridge {
     addRepoPath: unsupported,
     settings: unsupported,
     saveSettings: unsupported,
+    onEvent: () => {},
   }
 }
 
+const electronEvents = (cb: (e: HostEvent) => void) => window.agentWt?.on?.((p) => cb(p as HostEvent))
+const vscodeEvents = (cb: (e: HostEvent) => void) => window.addEventListener('message', (e: MessageEvent) => {
+  const d = e.data as { command?: string; id?: number }
+  if (d && typeof d.id !== 'number' && d.command) cb({ event: d.command })
+})
+
 export const bridge: Bridge = window.agentWt
-  ? rpc(electronInvoke())
+  ? rpc(electronInvoke(), electronEvents)
   : window.acquireVsCodeApi
-    ? rpc(vscodeInvoke())
+    ? rpc(vscodeInvoke(), vscodeEvents)
     : httpBridge()
