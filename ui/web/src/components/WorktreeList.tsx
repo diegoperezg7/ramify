@@ -1,3 +1,4 @@
+import { Plus } from 'lucide-react'
 import { agentVar } from '../agents'
 import { AgentBadge } from './AgentBadge'
 import { useStore } from '../store'
@@ -17,7 +18,7 @@ export function WorktreeList() {
       </header>
       <div className="wt-list">
         {worktrees.map((w) => <WorktreeRow key={w.path} w={w} />)}
-        {onlyMain && <GettingStarted />}
+        {onlyMain ? <GettingStarted /> : <AddAgent />}
       </div>
     </section>
   )
@@ -31,6 +32,19 @@ export function upstreamLabel(w: Worktree, t: ReturnType<typeof useStore.getStat
   if (w.upstream === 'pushed') return t('pushed')
   if (w.upstream === 'local') return t('local')
   return `${w.upstream.replace('+', '')} ${t('unpushed')}`
+}
+
+/** Fills the room under a short list with the way to add the next agent. */
+function AddAgent() {
+  const t = useStore((s) => s.t)
+  const caps = useStore((s) => s.caps)
+  const setModal = useStore((s) => s.setModal)
+  if (!caps?.create) return null
+  return (
+    <button type="button" className="wt-add" onClick={() => setModal('create')}>
+      <Plus size={16} /><b>{t('newWorktree')}</b><span>{t('wtAddHint')}</span>
+    </button>
+  )
 }
 
 function GettingStarted() {

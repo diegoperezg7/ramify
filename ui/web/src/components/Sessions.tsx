@@ -140,6 +140,10 @@ export function Sessions() {
     observer.current = new ResizeObserver(([e]) => setCols(Math.max(1, Math.floor((e.contentRect.width + 12) / 372))))
     observer.current.observe(el)
   }, [])
+  // Not on GitHub: the first few, the rest behind "show more" so the card does not outgrow the others.
+  const UNPUB = 3
+  const [allUnpub, setAllUnpub] = useState(false)
+  const shownUnpub = allUnpub ? unpublished : unpublished.slice(0, UNPUB)
   type Card = (typeof liveByRepo)[number] | 'unpublished'
   const columns = useMemo(() => {
     const cards: Card[] = [...liveByRepo, ...(unpublished.length ? ['unpublished' as const] : [])]
@@ -147,10 +151,10 @@ export function Sessions() {
     for (const c of cards) {
       const col = out.reduce((a, b) => (b.h < a.h ? b : a))
       col.cards.push(c)
-      col.h += 1.2 + (c === 'unpublished' ? unpublished.length * 0.9 : c.rows.length)
+      col.h += 1.2 + (c === 'unpublished' ? shownUnpub.length * 0.9 + (unpublished.length > UNPUB ? 0.5 : 0) : c.rows.length)
     }
     return out.map((c) => c.cards)
-  }, [liveByRepo, unpublished, cols])
+  }, [liveByRepo, unpublished, shownUnpub, cols])
 
   return (
     <main className="sessions">
@@ -213,13 +217,18 @@ export function Sessions() {
                 <article key="~unpublished" className="repo-card unpub-card">
                   <header><Upload size={15} /><b>{t('notOnGithub')}</b></header>
                   <ul>
-                    {unpublished.map((r) => (
+                    {shownUnpub.map((r) => (
                       <li key={r}>
                         <FolderGit2 size={14} /><b>{base(r)}</b><span className="muted mono small" title={r}>{tilde(r)}</span>
                         <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPublishing(r)}><Upload size={13} />{t('publish')}</button>
                       </li>
                     ))}
                   </ul>
+                  {unpublished.length > UNPUB && (
+                    <button type="button" className="link unpub-more" onClick={() => setAllUnpub(!allUnpub)}>
+                      {allUnpub ? t('showLess') : t('showMore', { n: unpublished.length - UNPUB })}
+                    </button>
+                  )}
                 </article>
               ) : (
                 <article key={c.key} className="repo-card">
