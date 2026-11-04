@@ -6,7 +6,8 @@ import type { AgentSession, BranchHealth, Health, PullRequest } from '../types'
 import { AgentBadge } from './AgentBadge'
 import { Dialog } from './Dialog'
 import { GithubIcon } from './GithubIcon'
-import { Heatmap } from './Heatmap'
+import { ActivityCharts, DayPanel, NowPanel } from './Dashboard'
+import { HEAT_DAYS, Heatmap } from './Heatmap'
 import { nextAction, type Action } from '../logic'
 
 /** Pull requests of ~400 changed lines or more are hard to review: say so. */
@@ -22,11 +23,14 @@ export function ControlCenter() {
   const sessions = useStore((s) => s.sessions)
   const setModal = useStore((s) => s.setModal)
   const setRepo = useStore((s) => s.setRepo)
-  const setView = useStore((s) => s.setView)
   const select = useStore((s) => s.select)
   const toast = useStore((s) => s.toast)
   const [boards, setBoards] = useState<Board[] | null>(null)
   const [days, setDays] = useState<Record<number, number> | null>(null)
+  const [picked, setPicked] = useState<number | null>(null)
+  // "started 5 min ago" and the charts' today move on their own.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => { const id = setInterval(() => setNow(Date.now()), 30_000); return () => clearInterval(id) }, [])
   const [shell, setShell] = useState<{ installed: boolean } | null>(null)
   // Several actions can run at once (one per branch): each keeps its own spinner.
   const [busy, setBusy] = useState<ReadonlySet<string>>(new Set())
@@ -85,7 +89,7 @@ export function ControlCenter() {
     void (async () => {
       const merged: Record<number, number> = {}
       for (const path of reposKey ? reposKey.split('\n') : []) {
-        try { for (const [d, n] of Object.entries(await bridge.commitDays(path, 182))) merged[Number(d)] = (merged[Number(d)] ?? 0) + n } catch { /* skip */ }
+        try { for (const [d, n] of Object.entries(await bridge.commitDays(path, HEAT_DAYS))) merged[Number(d)] = (merged[Number(d)] ?? 0) + n } catch { /* skip */ }
       }
       if (alive) setDays(merged)
     })()
@@ -111,6 +115,9 @@ export function ControlCenter() {
     if (action === 'update') { void run(key, () => bridge.updateFromBase(board.repo, b.path)); return }
     setConfirm({ action, board, b })
   }
+
+  // Branch health by `${repo}#${branch}`, for the changes shown on each working agent.
+  const branchIndex = useMemo(() => new Map((boards ?? []).flatMap((x) => x.health.branches.map((b) => [`${x.repo}#${b.branch}`, b] as const))), [boards])
 
   const totals = useMemo(() => {
     const all = (boards ?? []).flatMap((x) => x.health.branches.filter((b) => !b.main))
@@ -149,7 +156,14 @@ export function ControlCenter() {
         </div>
       )}
 
-      <Heatmap days={days} onOpen={() => setView('sessions')} />
+      <NowPanel sessions={sessions} branches={branchIndex} now={now} />
+
+      <ActivityCharts sessions={sessions} now={now} />
+
+      <Heatmap days={days} picked={picked} onPick={setPicked} />
+      {picked !== null && <DayPanel day={picked} sessions={sessions} onClose={() => setPicked(null)} />}
+
+      {boards && boards.length > 0 && <h2 className="cc-h2">{t('ccBranchesTitle')}</h2>}
 
       {boards === null && <BoardsSkeleton label={t('loadingRepo')} />}
       {boards?.length === 0 && (

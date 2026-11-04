@@ -512,6 +512,23 @@ export class Engine {
     return counts
   }
 
+  /**
+   * Commits of one local day (`day` = its midnight, unix seconds) on every branch, newest first.
+   * It walks the same window as commitDays and filters the day here: `--since` stops at the first older
+   * commit, so a narrow window can skip commits whose dates are out of order (rebases, cherry-picks) and
+   * the day would show fewer commits than its square in the grid.
+   */
+  async dayCommits(repo: string, day: number): Promise<TimelineCommit[]> {
+    const since = Math.min(day, Math.floor(Date.now() / 1000) - 371 * 86400)
+    const out = await this.git(repo, 'log', '--all', '--no-ext-diff', `--since=${since}`, '--format=%H%x1f%ct%x1f%s%x1e', '--')
+    const d = new Date(day * 1000)
+    const next = Math.floor(new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime() / 1000)
+    return out.split('\x1e').map((l) => l.trim()).filter(Boolean).map((l) => {
+      const [hash, ct, subject] = l.split('\x1f')
+      return { hash, time: Number(ct), subject }
+    }).filter((c) => c.time >= day && c.time < next).sort((a, b) => b.time - a.time).slice(0, 300)
+  }
+
   // --- timeline ----------------------------------------------------------------
 
   private async commitsOf(repo: string, ...range: string[]): Promise<TimelineCommit[]> {

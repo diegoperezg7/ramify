@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { levels, nextAction, parseDiff, taskSlug } from '../../../ui/web/src/logic.ts'
+import { agentTimeByDay, lastActivity, lastDays, levels, nextAction, parseDiff, taskSlug, timeBy, unionMs } from '../../../ui/web/src/logic.ts'
 import type { BranchHealth, PullRequest } from '../src/types.ts'
 
 const branch = (o: Partial<BranchHealth>): BranchHealth => ({
@@ -68,5 +68,42 @@ describe('diff view: parsing what git prints', () => {
   })
   it('gives nothing for an empty answer (a new folder), so the view can say so', () => {
     assert.deepEqual(parseDiff(''), [])
+  })
+})
+
+describe('control center: time with AI', () => {
+  const H = 3600_000
+  const day = new Date(2026, 9, 20).getTime() // a local midnight
+  const s = (agent: string, repo: string | null, start: number, end: number | null, via = 'terminal') => ({ agent, repo, via, start, end })
+
+  it('counts overlapping time once', () => {
+    assert.equal(unionMs([[0, 10], [5, 15], [20, 25]]), 20)
+    assert.equal(unionMs([]), 0)
+  })
+  it('gives calendar days, oldest first, ending today', () => {
+    const days = lastDays(3, day + 5 * H)
+    assert.equal(days.length, 3)
+    assert.equal(days[2], day)
+    assert.ok(days.every((d) => new Date(d).getHours() === 0))
+  })
+  it('splits a session across midnight and counts parallel sessions of one agent once', () => {
+    const days = [day - 24 * H, day]
+    const rows = agentTimeByDay([
+      s('claude', '/r', day - 2 * H, day + 1 * H), // 2 h yesterday, 1 h today
+      s('claude', '/r', day, day + 1 * H),         // same agent, same hour: not twice
+      s('codex', '/r', day + 2 * H, null),         // still running
+      s('chatgpt', null, day, day + 5 * H, 'app'), // an open AI app is not work
+    ], days, day + 3 * H)
+    assert.deepEqual(rows[0].byAgent, { claude: 2 * H })
+    assert.deepEqual(rows[1].byAgent, { claude: 1 * H, codex: 1 * H })
+  })
+  it('ranks projects by time inside the range', () => {
+    const rows = timeBy([s('claude', '/a', day - 10 * H, day + H), s('codex', '/b', day, day + 3 * H)], (x) => x.repo, day, day + 4 * H)
+    assert.deepEqual(rows.map((r) => [r.key, r.ms / H]), [['/b', 3], ['/a', 1]])
+  })
+  it('tells when and with which agents each project was last worked on', () => {
+    const rows = lastActivity([s('claude', '/a', day - 48 * H, day - 47 * H), s('codex', '/b', day, day + H), s('gemini', '/b', day + H, day + 2 * H)], day - 24 * H, day + 5 * H)
+    assert.deepEqual(rows.map((r) => [r.repo, r.agents.sort()]), [['/b', ['codex', 'gemini']], ['/a', []]])
+    assert.equal(rows[0].last, day + 2 * H)
   })
 })

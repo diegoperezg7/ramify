@@ -87,4 +87,18 @@ describe('control center', () => {
     const total = Object.values(days).reduce((s, n) => s + n, 0)
     assert.ok(total >= 6, `got ${total}`)
   })
+
+  it('lists the commits of one local day, newest first, and nothing from the next day', async () => {
+    const day = new Date(2026, 2, 10) // a fixed past day, local midnight
+    const at = (h: number, m: number) => `${Math.floor(new Date(2026, 2, 10, h, m).getTime() / 1000)} +0000`
+    const R = `${T}/days`
+    execFileSync('git', ['init', '-q', '-b', 'main', R])
+    for (const [i, when] of [[1, at(9, 0)], [2, at(23, 59)], [3, at(24, 1)]] as const) {
+      writeFileSync(join(R, 'f.txt'), `${i}\n`)
+      git(R, 'add', '.')
+      execFileSync('git', ['-C', R, 'commit', '-qm', `c${i}`], { env: { ...process.env, ...env, GIT_AUTHOR_DATE: when, GIT_COMMITTER_DATE: when } })
+    }
+    const list = await engine.dayCommits(R, Math.floor(day.getTime() / 1000))
+    assert.deepEqual(list.map((c) => c.subject), ['c2', 'c1'])
+  })
 })
