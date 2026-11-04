@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { levels, nextAction, taskSlug } from '../../../ui/web/src/logic.ts'
+import { levels, nextAction, parseDiff, taskSlug } from '../../../ui/web/src/logic.ts'
 import type { BranchHealth, PullRequest } from '../src/types.ts'
 
 const branch = (o: Partial<BranchHealth>): BranchHealth => ({
@@ -45,5 +45,28 @@ describe('contribution grid', () => {
     assert.equal(level(20), 4)
     assert.ok(level(5) >= 2 && level(5) <= 3)
     assert.equal(levels([])(3), 4)
+  })
+})
+
+describe('diff view: parsing what git prints', () => {
+  it('numbers added, removed and context lines from the hunk header', () => {
+    const rows = parseDiff('diff --git a/x b/x\nindex 1..2 100644\n--- a/x\n+++ b/x\n@@ -10,3 +10,3 @@ fn\n keep\n-old\n+new\n')
+    assert.deepEqual(rows.map((r) => [r.kind, r.old, r.new, r.text]), [
+      ['hunk', null, null, '@@ -10,3 +10,3 @@ fn'], ['ctx', 10, 10, 'keep'], ['del', 11, null, 'old'], ['add', null, 11, 'new'],
+    ])
+  })
+  it('reads hunk headers without counts and the "no newline" marker', () => {
+    const rows = parseDiff('@@ -1 +1 @@\n-a\n\\ No newline at end of file\n+b\n')
+    assert.deepEqual(rows.map((r) => [r.kind, r.text]), [['hunk', '@@ -1 +1 @@'], ['del', 'a'], ['meta', 'No newline at end of file'], ['add', 'b']])
+  })
+  it('never shows the git header as code when there is no hunk', () => {
+    const binary = parseDiff('diff --git a/logo.png b/logo.png\nnew file mode 100644\nindex 0000000..e69de29\nBinary files /dev/null and b/logo.png differ\n')
+    assert.deepEqual(binary.map((r) => [r.kind, r.text]), [['meta', 'new file mode 100644'], ['meta', 'Binary files /dev/null and b/logo.png differ']])
+    const chmod = parseDiff('diff --git a/run.sh b/run.sh\nold mode 100644\nnew mode 100755\n')
+    assert.deepEqual(chmod.map((r) => r.text), ['old mode 100644', 'new mode 100755'])
+    assert.ok(chmod.every((r) => r.old === null && r.new === null))
+  })
+  it('gives nothing for an empty answer (a new folder), so the view can say so', () => {
+    assert.deepEqual(parseDiff(''), [])
   })
 })

@@ -48,10 +48,16 @@ export function App() {
       const s = useStore.getState()
       const mod = e.metaKey || e.ctrlKey
       const typing = (e.target as HTMLElement)?.closest('input, textarea, select, dialog')
-      if (mod && e.key.toLowerCase() === 'k') { e.preventDefault(); s.setModal(s.modal === 'palette' ? null : 'palette'); return }
+      // ⌘K toggles the palette, but never replaces another open dialog (its form would be lost).
+      if (mod && e.key.toLowerCase() === 'k') {
+        if (s.modal && s.modal !== 'palette') return
+        e.preventDefault(); s.setModal(s.modal === 'palette' ? null : 'palette'); return
+      }
       if (typing || s.modal) return
       if (mod && e.key.toLowerCase() === 'n' && s.caps?.create && s.state) { e.preventDefault(); s.setModal('create') }
       else if (mod && e.key === ',' && s.caps?.settings) { e.preventDefault(); s.setModal('settings') }
+      // The worktree list only exists in the repository view: elsewhere arrows scroll and Esc does nothing.
+      else if (s.view !== 'repo') return
       else if (e.key === 'Escape' && s.selected) s.select(null)
       else if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && s.state && !mod) {
         e.preventDefault()
@@ -89,7 +95,8 @@ export function App() {
         s.setRepo(e.repo)
         await s.poll()
       }
-      if (e.path) useStore.getState().select(e.path)
+      // A worktree opened from a notification or the menu bar is shown in the repository view.
+      if (e.path) { const st = useStore.getState(); if (st.view !== 'repo') st.setView('repo'); st.select(e.path) }
       if (e.event === 'new') useStore.getState().setModal('create')
       if (e.event === 'sessions') useStore.getState().setView('sessions')
     })
@@ -152,7 +159,8 @@ export function App() {
               <WorktreeList />
               <Graph />
               <div className="drawer-scrim" onClick={() => select(null)} />
-              <Detail />
+              {/* Keyed by worktree: a merge or remove dialog (and its "force") never carries over to another one. */}
+              <Detail key={selected ?? ''} />
             </main>
           </>
         )}

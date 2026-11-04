@@ -61,7 +61,9 @@ export function CreateDialog() {
   const [base, setBase] = useState('')
 
   const where = caps?.host === 'vscode' ? t('integratedTerminal') : settings?.terminal ?? 'Terminal'
-  const valid = /^[\w./-]+$/.test(branch) && !branch.startsWith('-') && !!repo || (!caps?.multiRepo && /^[\w./-]+$/.test(branch))
+  // A name git accepts (git check-ref-format): no leading "-", "." or "/", no "..", "//", "/." or trailing "/" "." ".lock".
+  const nameOk = /^[\w./-]+$/.test(branch) && !/^[-./]|[./]$|\.\.|\/\/|\/\.|\.lock$/.test(branch)
+  const valid = nameOk && (!!repo || !caps?.multiRepo)
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -132,11 +134,20 @@ export function SettingsDialog() {
   const saveSettings = useStore((s) => s.saveSettings)
   const caps = useStore((s) => s.caps)
   const setModal = useStore((s) => s.setModal)
+  const toast = useStore((s) => s.toast)
   const [draft, setDraft] = useState<Settings>(settings ?? { terminal: 'Terminal', defaultAgent: 'claude', projectsDir: '', autoDetect: true })
+  const [saving, setSaving] = useState(false)
+  // One save at a time; a failed save says why and keeps the dialog open with the draft.
+  const save = async (e: FormEvent) => {
+    e.preventDefault()
+    if (saving) return
+    setSaving(true)
+    try { await saveSettings(draft); setModal(null) } catch (err) { toast('error', (err as Error).message) } finally { setSaving(false) }
+  }
 
   return (
     <Modal title={t('settings')} onClose={() => setModal(null)}>
-      <form className="form" onSubmit={async (e) => { e.preventDefault(); await saveSettings(draft); setModal(null) }}>
+      <form className="form" onSubmit={save}>
         {caps?.platform !== 'win32' && (
           <label>
             <span>{t('terminal')}</span>
@@ -216,7 +227,7 @@ export function SettingsDialog() {
           {caps?.sessions && <button type="button" className="btn btn-ghost" onClick={() => setModal('onboarding')}>{t('obReplay')}</button>}
           <span className="sb-spacer" />
           <button type="button" className="btn btn-ghost" onClick={() => setModal(null)}>{t('cancel')}</button>
-          <button type="submit" className="btn btn-primary">{t('save')}</button>
+          <button type="submit" className="btn btn-primary" disabled={saving}>{saving && <Loader2 size={14} className="spin" />}{t('save')}</button>
         </div>
       </form>
     </Modal>
