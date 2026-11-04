@@ -1,4 +1,4 @@
-<p align="center"><img src="docs/logo.png" width="120" alt="Ramify"></p>
+<p align="center"><img src="docs/logo.png" width="160" alt="Ramify logo"></p>
 
 <h1 align="center">Ramify</h1>
 
