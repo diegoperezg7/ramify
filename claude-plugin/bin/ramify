@@ -523,7 +523,7 @@ commit_dir() {
   [ -n "$dir" ] || dir=$(printf '%s' "$cmd" | sed -nE 's/^[[:space:]]*cd[[:space:]]+("([^"]*)"|'"'"'([^'"'"']*)'"'"'|([^[:space:];&]+))[[:space:]]*(&&|;).*/\2\3\4/p' | head -1)
   case "$dir" in
     '') dir="$cwd" ;;
-    '~'|'~/'*) dir="$HOME${dir#\~}" ;;
+    \~|\~/*) dir="$HOME${dir#\~}" ;;
     /*|[A-Za-z]:*) ;;
     *) dir="$cwd/$dir" ;;
   esac
