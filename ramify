@@ -624,7 +624,7 @@ cmd_move() {
     create "$branch" "" 1 "$agent"; printf '%s\n' "$CREATED_WT"; return 0
   fi
   git -C "$main" stash push --include-untracked -m "ramify: moved to $branch" >/dev/null || die "could not stash the changes"
-  stash=$(git -C "$main" rev-parse stash@{0})
+  stash=$(git -C "$main" rev-parse 'stash@{0}')
   # The branch starts where the work started: the commit the changes were made on.
   create "$branch" "" 1 "$agent"; wt=$CREATED_WT
   if ! git -C "$wt" stash apply --index "$stash" >/dev/null 2>&1 && ! git -C "$wt" stash apply "$stash" >/dev/null 2>&1; then

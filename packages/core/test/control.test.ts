@@ -4,14 +4,17 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { Engine, normPath } from '../src/engine.ts'
+import { Engine, gitBash, normPath } from '../src/engine.ts'
 
 const BIN = resolve(import.meta.dirname, '../../../ramify')
 const T = normPath(realpathSync(mkdtempSync(join(tmpdir(), 'ramify-control-'))))
 const REPO = `${T}/shop`
 const env = { RAMIFY_ROOT: `${T}/wts`, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.com', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.com' }
 const git = (cwd: string, ...a: string[]) => execFileSync('git', ['-C', cwd, ...a], { env: { ...process.env, ...env } }).toString()
-const rw = (...a: string[]) => execFileSync(BIN, a, { cwd: REPO, env: { ...process.env, ...env, NO_COLOR: '1' } }).toString().trim()
+// The ramify script runs through Git Bash on Windows, as the engine does.
+const rw = (...a: string[]) => (process.platform === 'win32'
+  ? execFileSync(gitBash(), [BIN.replace(/\\/g, '/'), ...a], { cwd: REPO, env: { ...process.env, ...env, NO_COLOR: '1' } })
+  : execFileSync(BIN, a, { cwd: REPO, env: { ...process.env, ...env, NO_COLOR: '1' } })).toString().trim().split('\n').pop() ?? ''
 const engine = new Engine({ bin: BIN, env })
 let a = ''
 let b = ''
