@@ -104,6 +104,37 @@ export interface Settings {
   ignored?: string[]
 }
 
+export interface GithubAccount {
+  /** The GitHub App is configured in this build. */
+  configured: boolean
+  status: 'signed-out' | 'waiting' | 'signed-in' | 'error'
+  user?: { login: string; name: string | null; avatarUrl: string }
+  error?: string
+  /** Tokens are kept encrypted by the OS keychain (false: this session only). */
+  keychain: boolean
+  /** Page where the user picks which repositories Ramify can see. */
+  installUrl: string | null
+}
+
+export interface SyncedRepo {
+  nameWithOwner: string
+  owner: string
+  ownerType: 'User' | 'Organization'
+  url: string
+  description: string
+  isPrivate: boolean
+  isFork: boolean
+  pushedAt: string
+  language: string | null
+  /** Local clone on this machine. */
+  local: string | null
+  added: boolean
+  /** Agents working in it right now. */
+  live: string[]
+}
+
+export interface GithubSync { installations: number; repos: SyncedRepo[] }
+
 export interface InstalledTools {
   agents: string[]
   editors: string[]
@@ -176,6 +207,14 @@ export interface Bridge {
   settings(): Promise<Settings>
   saveSettings(s: Settings): Promise<void>
   sessions(): Promise<AgentSession[]>
+  /** GitHub sign-in (desktop): state of the account. Never carries the token. */
+  githubAccount(): Promise<GithubAccount>
+  /** Start the device flow: the code to type at github.com/login/device (the page opens by itself). */
+  githubSignIn(): Promise<{ userCode: string; verificationUri: string; expiresAt: number }>
+  githubCancel(): Promise<void>
+  githubSignOut(): Promise<void>
+  /** Repositories the signed-in account shares with Ramify, matched with this machine. */
+  githubSync(): Promise<GithubSync>
   /** Agent CLIs, editors, terminals and AI apps installed on this machine. */
   tools(): Promise<InstalledTools>
   /** Repositories found in the projects folder that are not in the app yet, most recently used first. */

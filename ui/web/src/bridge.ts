@@ -1,4 +1,4 @@
-import type { AgentSession, Bridge, Capabilities, InstalledTools, Detail, GithubRepo, RepoInfo, Settings, State } from './types'
+import type { AgentSession, Bridge, Capabilities, GithubAccount, GithubSync, InstalledTools, Detail, GithubRepo, RepoInfo, Settings, State } from './types'
 
 // One UI, three hosts:
 //  - desktop app: Electron preload exposes window.ramify.invoke
@@ -46,6 +46,11 @@ function rpc(invoke: Invoke, subscribe: (cb: (e: HostEvent) => void) => void): B
     saveSettings: (s) => call<void>('saveSettings', s),
     sessions: () => call<AgentSession[]>('sessions'),
     tools: () => call<InstalledTools>('tools'),
+    githubAccount: () => call<GithubAccount>('githubAccount'),
+    githubSignIn: () => call<{ userCode: string; verificationUri: string; expiresAt: number }>('githubSignIn'),
+    githubCancel: () => call<void>('githubCancel'),
+    githubSignOut: () => call<void>('githubSignOut'),
+    githubSync: () => call<GithubSync>('githubSync'),
     suggestRepos: () => call<{ path: string; name: string }[]>('suggestRepos'),
     addRepos: (paths) => call<void>('addRepos', paths),
     exportSessions: (format) => call<{ message: string }>('exportSessions', format),
@@ -128,6 +133,11 @@ function httpBridge(): Bridge {
     saveSettings: unsupported,
     sessions: async () => [],
     tools: unsupported,
+    githubAccount: unsupported,
+    githubSignIn: unsupported,
+    githubCancel: unsupported,
+    githubSignOut: unsupported,
+    githubSync: unsupported,
     suggestRepos: async () => [],
     addRepos: unsupported,
     exportSessions: unsupported,

@@ -1,13 +1,15 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, screen, shell, Tray } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, safeStorage, screen, shell, Tray } from 'electron'
 import { execFileSync } from 'node:child_process'
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
   cloneGithub, createHandlers, defaultProjectsDir, dispatch, Engine, EngineError, githubRepos, IDES, openInTerminal, originSlug,
-  installedTools, publishGithub, pullRequestFor, scanRepos, scanSessions, SessionLog, sessionsCsv, type Resolved,
+  accessibleRepos, AuthError, currentUser, installedTools, pollForTokens, publishGithub, pullRequestFor, pullRequestWithToken,
+  refreshTokens, requestDeviceCode, scanRepos, scanSessions, SessionLog, sessionsCsv, type Resolved, type Tokens,
 } from '../../../packages/core/src/index.ts'
-import type { AgentSession, GithubRepo, RepoInfo, Settings } from '../../../packages/core/src/types.ts'
+import { GITHUB_APP } from './github-app.ts'
+import type { AgentSession, GithubAccount, GithubRepo, GithubSync, RepoInfo, Settings } from '../../../packages/core/src/types.ts'
 
 // Apps started from Finder get a minimal PATH: borrow the login shell's so agents,
 // xcodegen, npm and friends are found exactly as in the terminal.
@@ -186,7 +188,9 @@ async function drainPrs() {
     while (prQueue.length) {
       const key = prQueue.shift()!
       const [slug, branch] = key.split('#')
-      prCache.set(key, { at: Date.now(), pr: await pullRequestFor(slug, branch, env) })
+      const token = await githubToken()
+      const pr = token ? await pullRequestWithToken(token, slug, branch).catch(() => null) : await pullRequestFor(slug, branch, env)
+      prCache.set(key, { at: Date.now(), pr })
     }
   } finally { prBusy = false }
 }
@@ -269,15 +273,109 @@ function updateTray(count: number) {
 // --- GitHub ---------------------------------------------------------------------
 
 let githubCache: { at: number; repos: GithubRepo[] } | null = null
-async function listGithub(refresh: boolean): Promise<GithubRepo[]> {
-  if (!refresh && githubCache && Date.now() - githubCache.at < 60_000) return githubCache.repos
-  const remote = await githubRepos(env)
+// --- GitHub account (device flow) ---------------------------------------------------
+// The token is encrypted with the OS keychain (safeStorage) in a 0600 file, refreshed before it expires,
+// never logged and never sent to the renderer: the UI only sees the login and the avatar.
+
+const tokenFile = join(app.getPath('userData'), 'github-auth.bin')
+let tokens: Tokens | null = null
+let account: GithubAccount['user'] | undefined
+let authState: { status: GithubAccount['status']; error?: string } = { status: 'signed-out' }
+let authAbort: AbortController | null = null
+
+function loadTokens(): Tokens | null {
+  if (!safeStorage.isEncryptionAvailable()) return null
+  try { return JSON.parse(safeStorage.decryptString(readFileSync(tokenFile))) as Tokens } catch { return null }
+}
+function saveTokens(t: Tokens | null) {
+  tokens = t
+  if (!t) { rmSync(tokenFile, { force: true }); return }
+  // Without a keychain the token lives in memory for this session only: never written in plain text.
+  if (safeStorage.isEncryptionAvailable()) writeFileSync(tokenFile, safeStorage.encryptString(JSON.stringify(t)), { mode: 0o600 })
+}
+
+/** A valid access token, refreshed when needed; null when signed out. */
+async function githubToken(): Promise<string | null> {
+  if (!GITHUB_APP.clientId) return null
+  tokens ??= loadTokens()
+  if (!tokens) return null
+  try {
+    const fresh = await refreshTokens(GITHUB_APP.clientId, tokens)
+    if (fresh !== tokens) saveTokens(fresh)
+    return fresh.accessToken
+  } catch (e) {
+    // Revoked or expired for good: forget it; a network error keeps it for the next try.
+    if (e instanceof AuthError && e.code !== 'network') { saveTokens(null); account = undefined; authState = { status: 'signed-out' } }
+    return null
+  }
+}
+
+async function githubAccount(): Promise<GithubAccount> {
+  const base = {
+    configured: !!GITHUB_APP.clientId, keychain: safeStorage.isEncryptionAvailable(),
+    installUrl: GITHUB_APP.slug ? `https://github.com/apps/${GITHUB_APP.slug}/installations/new` : null,
+  }
+  if (authState.status === 'waiting' || authState.status === 'error') return { ...base, ...authState }
+  const token = await githubToken()
+  if (!token) return { ...base, status: 'signed-out' }
+  if (!account) { try { account = await currentUser(token) } catch { /* offline: still signed in */ } }
+  return { ...base, status: 'signed-in', user: account }
+}
+
+async function githubSignIn() {
+  if (!GITHUB_APP.clientId) throw new EngineError(es() ? 'Esta versión no tiene configurada la app de GitHub' : 'This build has no GitHub App configured')
+  authAbort?.abort()
+  const abort = new AbortController()
+  authAbort = abort
+  const code = await requestDeviceCode(GITHUB_APP.clientId)
+  authState = { status: 'waiting' }
+  // Only ever open GitHub's own page.
+  if (/^https:\/\/github\.com\//.test(code.verificationUri)) void shell.openExternal(code.verificationUri)
+  void pollForTokens(GITHUB_APP.clientId, code, abort.signal).then(async (t) => {
+    saveTokens(t)
+    account = await currentUser(t.accessToken).catch(() => undefined)
+    authState = { status: 'signed-in' }
+    githubCache = null
+  }).catch((e: unknown) => {
+    if (abort.signal.aborted) return
+    authState = { status: 'error', error: e instanceof AuthError ? e.code : 'network' }
+  })
+  return { userCode: code.userCode, verificationUri: code.verificationUri, expiresAt: code.expiresAt }
+}
+
+async function localSlugs(): Promise<Map<string, string>> {
   const local = new Map<string, string>()
   const candidates = [...new Set([...config.repos, ...scanRepos(config.settings.projectsDir)])]
   await Promise.all(candidates.map(async (p) => {
-    const slug = await originSlug(p, env)
+    const slug = await cachedSlug(p)
     if (slug && !local.has(slug.toLowerCase())) local.set(slug.toLowerCase(), p)
   }))
+  return local
+}
+
+async function githubSync(): Promise<GithubSync> {
+  const token = await githubToken()
+  if (!token) throw new EngineError('signed-out')
+  const [{ installations, repos }, local] = await Promise.all([accessibleRepos(token), localSlugs()])
+  const liveByRepo = new Map<string, string[]>()
+  for (const s of sessionLog.sessions) if (s.end === null && s.repo) liveByRepo.set(s.repo, [...new Set([...(liveByRepo.get(s.repo) ?? []), s.agent])])
+  return {
+    installations,
+    repos: repos.filter((r) => !r.isArchived).map((r) => {
+      const path = local.get(r.nameWithOwner.toLowerCase()) ?? null
+      return { ...r, local: path, added: !!path && config.repos.includes(path), live: path ? liveByRepo.get(path) ?? [] : [] }
+    }),
+  }
+}
+
+async function listGithub(refresh: boolean): Promise<GithubRepo[]> {
+  if (!refresh && githubCache && Date.now() - githubCache.at < 60_000) return githubCache.repos
+  // Signed in: the repositories shared with Ramify. Otherwise the gh CLI's own session.
+  const token = await githubToken()
+  const remote = token
+    ? (await accessibleRepos(token)).repos.filter((r) => !r.isArchived).map(({ owner: _o, ownerType: _t, isArchived: _a, ...r }) => r)
+    : await githubRepos(env)
+  const local = await localSlugs()
   const repos = remote.map((r) => {
     const path = local.get(r.nameWithOwner.toLowerCase()) ?? null
     return { ...r, local: path, added: !!path && config.repos.includes(path) }
@@ -379,6 +477,11 @@ const handlers = {
     return { message: `github.com/${github}`, github }
   },
   tools: () => installedTools(env),
+  githubAccount: () => githubAccount(),
+  githubSignIn: () => githubSignIn(),
+  githubCancel: () => { authAbort?.abort(); authAbort = null; authState = { status: 'signed-out' } },
+  githubSignOut: () => { authAbort?.abort(); saveTokens(null); account = undefined; authState = { status: 'signed-out' }; githubCache = null },
+  githubSync: () => githubSync(),
   suggestRepos: () => {
     const used = (p: string) => { try { return statSync(join(p, '.git')).mtimeMs } catch { return 0 } }
     return scanRepos(config.settings.projectsDir)
