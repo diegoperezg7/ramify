@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, Plus, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Loader2, Plus, XCircle } from 'lucide-react'
 import { Logo, Wordmark } from './components/Logo'
 import { useEffect, useRef, useState } from 'react'
 import { Detail } from './components/Detail'
@@ -140,6 +140,9 @@ export function App() {
           </div>
         )}
         {view === 'timeline' && caps?.timeline && !noRepos && <Timeline />}
+        {view === 'repo' && !state && !noRepos && conn === 'ok' && (
+          <div className="loading-repo" role="status"><Loader2 size={18} className="spin" />{t('loadingRepo')}</div>
+        )}
         {view === 'repo' && state && !noRepos && (
           <>
             <main className={`layout${selected ? ' has-selection' : ''}`}>

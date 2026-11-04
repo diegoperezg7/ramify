@@ -12,6 +12,8 @@ import { GithubIcon } from './GithubIcon'
 type Range = 'today' | 'week' | 'all'
 
 const base = (p: string | null) => (p ? p.split('/').filter(Boolean).pop() ?? p : '')
+/** ['claude', 'claude', 'codex'] → "claude ×2, codex" */
+const countAgents = (list: string[]) => [...new Set(list)].map((a) => { const n = list.filter((x) => x === a).length; return n > 1 ? `${a} ×${n}` : a }).join(', ')
 /** /Users/me/x → ~/x (also /home/me and C:/Users/me). */
 const tilde = (p: string) => p.replace(/^(?:\/Users\/|\/home\/|[A-Za-z]:\/Users\/)[^/]+/, '~')
 
@@ -80,7 +82,8 @@ export function Sessions() {
     const out: { key: string; kind: 'shared' | 'main'; repo: string; branch: string; agents: string[] }[] = []
     const byPlace = new Map<string, AgentSession[]>()
     for (const s of live) {
-      if (s.inferred || !s.repo || !s.branch) continue
+      // Paused sessions are not touching files: only the ones working (or waiting on you) can collide.
+      if (s.inferred || !s.repo || !s.branch || s.state === 'idle') continue
       // git checks a branch out in one folder only: same repo and branch means same files.
       const k = `${s.repo}#${s.branch}`
       byPlace.set(k, [...(byPlace.get(k) ?? []), s])
@@ -154,7 +157,7 @@ export function Sessions() {
               <div>
                 <b>{w.kind === 'shared' ? t('shared', { n: w.agents.length }) : t('onMain', { branch: w.branch })}</b>
                 <p>{w.kind === 'shared'
-                  ? t('sharedText', { agents: w.agents.join(', '), repo: base(w.repo), branch: w.branch })
+                  ? t('sharedText', { agents: countAgents(w.agents), repo: base(w.repo), branch: w.branch })
                   : t('onMainText', { agent: w.agents[0], repo: base(w.repo) })}</p>
               </div>
               <button type="button" className="btn btn-primary" onClick={() => giveBranch(w.repo, w.agents[w.agents.length - 1])}>

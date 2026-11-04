@@ -993,3 +993,4 @@ kbd {
 .app.is-sm .timeline { padding: 14px 16px 20px; }
 .btn-ide-main { border-color: var(--accent-ring); background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
 .btn-ide-main:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.loading-repo { flex: 1; display: flex; align-items: center; justify-content: center; gap: 10px; color: var(--muted); font-size: 14px; }

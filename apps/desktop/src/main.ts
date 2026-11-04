@@ -165,12 +165,14 @@ async function scan(): Promise<Live[]> {
   return [...found.values()]
 }
 
+const countAgents = (list: string[]) => [...new Set(list)].map((a) => { const n = list.filter((x) => x === a).length; return n > 1 ? `${a} ×${n}` : a }).join(', ')
+
 // Two agents on the same branch of the same folder overwrite each other: say so once, as it happens.
 const warned = new Set<string>()
-function warnSharedBranches(sessions: (Resolved & { inferred: boolean; agent: string; worktree: string | null })[]) {
+function warnSharedBranches(sessions: (Resolved & { inferred: boolean; agent: string; worktree: string | null; state?: string })[]) {
   const byPlace = new Map<string, { repo: string; branch: string; agents: string[] }>()
   for (const s of sessions) {
-    if (s.inferred || !s.repo || !s.worktree) continue
+    if (s.inferred || !s.repo || !s.worktree || s.state === 'idle') continue // paused sessions are not editing
     const key = `${s.worktree}#${s.branch}`
     const e = byPlace.get(key) ?? { repo: s.repo, branch: s.branch ?? '', agents: [] }
     e.agents.push(s.agent)
@@ -184,7 +186,7 @@ function warnSharedBranches(sessions: (Resolved & { inferred: boolean; agent: st
     const n = new Notification({
       title: es() ? `${e.agents.length} agentes en la misma rama` : `${e.agents.length} agents on the same branch`,
       subtitle: `${e.repo.split('/').pop()} · ${e.branch}`,
-      body: es() ? `${e.agents.join(', ')} se pisarán los cambios. Pulsa para darle a uno su propia rama.` : `${e.agents.join(', ')} will overwrite each other. Click to give one its own branch.`,
+      body: es() ? `${countAgents(e.agents)} se pisarán los cambios. Pulsa para darle a uno su propia rama.` : `${countAgents(e.agents)} will overwrite each other. Click to give one its own branch.`,
     })
     n.on('click', () => focus({ event: 'sessions' }))
     n.show()
@@ -652,6 +654,14 @@ function createWindow() {
     webPreferences: { preload: join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true },
   })
   win.once('ready-to-show', () => win?.show())
+  // Smoke test of a packaged build (npm run smoke): did the interface really render? Exit 0 or 1.
+  if (process.env.RAMIFY_SMOKE_TEST) {
+    win.webContents.once('did-finish-load', () => setTimeout(async () => {
+      const ok = await win?.webContents.executeJavaScript("!!document.querySelector('.shell .app') && getComputedStyle(document.body).fontFamily.length > 0").catch(() => false)
+      console.log(ok ? 'SMOKE OK' : 'SMOKE FAIL: the interface did not render')
+      app.exit(ok ? 0 : 1)
+    }, 3000))
+  }
   win.webContents.on('did-finish-load', () => { if (pending) { const p = pending; pending = null; setTimeout(() => send(p), 300) } })
   win.webContents.on('will-navigate', (e) => e.preventDefault())
   win.webContents.setWindowOpenHandler(({ url }) => {

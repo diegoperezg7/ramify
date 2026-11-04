@@ -6,7 +6,8 @@ export function Metrics() {
   const t = useStore((s) => s.t)
   if (!state) return null
   const wts = state.worktrees.filter((w) => !w.main)
-  const live = wts.filter((w) => w.running.length).length
+  // The main checkout counts too: an agent working there is working.
+  const live = state.worktrees.filter((w) => w.running.length).length
   const dirty = state.worktrees.reduce((n, w) => n + w.changes, 0)
   const ahead = wts.reduce((n, w) => n + w.commits, 0)
   return (
