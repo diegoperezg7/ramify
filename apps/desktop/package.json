@@ -40,6 +40,18 @@
         "to": "bin/ramify"
       },
       {
+        "from": "../../snippets",
+        "to": "bin/snippets"
+      },
+      {
+        "from": "../../.claude-plugin",
+        "to": "claude-marketplace/.claude-plugin"
+      },
+      {
+        "from": "../../claude-plugin",
+        "to": "claude-marketplace/claude-plugin"
+      },
+      {
         "from": "resources/trayTemplate.png",
         "to": "trayTemplate.png"
       },

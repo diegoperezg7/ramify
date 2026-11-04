@@ -39,7 +39,7 @@ ${B}Usage${N}
   ramify rm <name> [--force]    remove a worktree (never deletes unmerged commits)
   ramify prune                  remove clean, merged worktrees
   ramify install [claude-hooks|instructions|shell|all]
-  ramify uninstall shell        stop giving agents their own branch from the terminal
+  ramify uninstall [shell|instructions]  undo install shell / install instructions
   ramify run <agent> [args]     open an agent; from a main checkout it gets its own branch first
   ramify move <branch> [-a agent]  move the main checkout's uncommitted work to a branch of its own
   ramify hook create|remove|session-start|guard   Claude Code hooks
@@ -744,6 +744,20 @@ shell_rc() {
   esac
 }
 
+# Remove the "## Worktrees (ramify)" section that install_instructions added (up to the next heading or blank line).
+uninstall_instructions() {
+  local f tmp
+  for f in "$HOME/.claude/CLAUDE.md" "$HOME/.codex/AGENTS.md" "$HOME/.gemini/GEMINI.md" \
+           "$HOME/.config/opencode/AGENTS.md" "$HOME/.copilot/copilot-instructions.md" \
+           "$HOME/.config/amp/AGENTS.md"; do
+    grep -qE '^## .*\((ramify|agent-wt)\)' "$f" 2>/dev/null || continue
+    cp "$f" "$f.bak-ramify"
+    tmp="$f.ramify-tmp"
+    awk '/^## .*\((ramify|agent-wt)\)/ { skip = 1; next } skip && (/^$/ || /^#/) { skip = 0 } !skip { print }' "$f" > "$tmp" && mv "$tmp" "$f"
+    log "${G}-${N} $f"
+  done
+}
+
 install_shell() {
   local rc bin
   rc=$(shell_rc); bin=$(cd "$SELF_DIR" && pwd)/ramify
@@ -821,7 +835,8 @@ case "$sub" in
   uninstall)
     case "${1:-}" in
       shell) uninstall_shell ;;
-      *) die "usage: ramify uninstall shell" ;;
+      instructions) uninstall_instructions ;;
+      *) die "usage: ramify uninstall [shell|instructions]" ;;
     esac ;;
   -v|--version|version) echo "ramify $VERSION" ;;
   ""|-h|--help|help) usage ;;
