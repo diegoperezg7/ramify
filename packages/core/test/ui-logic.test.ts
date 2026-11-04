@@ -131,8 +131,8 @@ describe('control center: one day hour by hour', () => {
 describe('merge notification', () => {
   const ctx = { branch: 'feat/x', base: 'main', path: '/wts/feat-x' }
   it('says it in one line instead of git output, and another when generated files were rebuilt', async () => {
-    assert.deepEqual(await friendlyMerge(async () => ({ message: ' a.ts | 3 ++-\n 1 file changed' }), ctx, 'ok', 'rebuilt'), { message: 'ok' })
-    assert.deepEqual(await friendlyMerge(async () => ({ message: 'merged feat/x; regenerated: ui/dist/index.html' }), ctx, 'ok', 'rebuilt'), { message: 'rebuilt' })
+    assert.deepEqual(await friendlyMerge(async () => ({ message: ' a.ts | 3 ++-\n 1 file changed' }), ctx, 'ok', 'rebuilt'), { message: 'ok', rebuilt: false })
+    assert.deepEqual(await friendlyMerge(async () => ({ message: 'merged feat/x; regenerated: ui/dist/index.html' }), ctx, 'ok', 'rebuilt'), { message: 'rebuilt', rebuilt: true })
   })
   it('turns a failed merge into the reason and the files, for a dialog', async () => {
     const conflict = 'merge conflict, nothing was changed:\nconflict: src/a.ts\nconflict: README.md\nCONFLICT (content): Merge conflict in src/a.ts'

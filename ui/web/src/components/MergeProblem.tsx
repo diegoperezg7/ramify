@@ -73,3 +73,32 @@ export function MergeProblemDialog() {
     </dialog>
   )
 }
+
+/** A merge that went through: a short dialog to close with one click, so it is not missed if the toast is. */
+export function MergeDoneDialog() {
+  const t = useStore((s) => s.t)
+  const d = useStore((s) => s.mergeDone)
+  const close = useStore((s) => s.setMergeDone)
+  const ref = useRef<HTMLDialogElement>(null)
+  useEffect(() => {
+    const el = ref.current
+    el?.showModal()
+    return () => el?.close()
+  }, [])
+  if (!d) return null
+  return (
+    <dialog ref={ref} className="dialog merge-problem merge-done" onCancel={(e) => { e.preventDefault(); close(null) }} aria-labelledby="md-title">
+      <header className="mp-head">
+        <span className="mp-icon is-ok"><GitMerge size={20} /></span>
+        <div>
+          <h3 id="md-title">{t('mdTitle', { branch: d.branch, base: d.base })}</h3>
+          <p className="mp-safe"><Check size={13} />{t(d.rebuilt ? 'mdTextRebuilt' : 'mdText')}</p>
+        </div>
+      </header>
+      <div className="dialog-actions">
+        <span className="sb-spacer" />
+        <button type="button" className="btn btn-primary" onClick={() => close(null)} autoFocus>{t('mdOk')}</button>
+      </div>
+    </dialog>
+  )
+}

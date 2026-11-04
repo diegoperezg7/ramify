@@ -38,6 +38,9 @@ interface Store {
   /** A merge that did not happen, shown as a dialog that says why and what to do. */
   mergeProblem: MergeProblem | null
   setMergeProblem: (p: MergeProblem | null) => void
+  /** A merge that went through: a short dialog says so, besides the toast. */
+  mergeDone: { branch: string; base: string; rebuilt: boolean } | null
+  setMergeDone: (d: { branch: string; base: string; rebuilt: boolean } | null) => void
   view: View
   sessions: AgentSession[] | null
   /** Values the "new worktree" form opens with (from a shared-branch warning). */
@@ -113,6 +116,8 @@ export const useStore = create<Store>((set, get) => ({
   busy: false,
   mergeProblem: null,
   setMergeProblem: (mergeProblem) => set({ mergeProblem }),
+  mergeDone: null,
+  setMergeDone: (mergeDone) => set({ mergeDone }),
   view: 'repo',
   sessions: null,
   createPrefill: null,

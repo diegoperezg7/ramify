@@ -79,6 +79,8 @@ describe('engine', () => {
     const own = new Engine({ bin: BIN, env: { ...env, RAMIFY_ROOT: P(T2, 'wts') } })
     const R = P(T2, 'built')
     sh(T2, 'init', '-q', '-b', 'main', R)
+    // Same bytes on every runner: Windows checkouts would turn LF into CRLF (core.autocrlf).
+    sh(R, 'config', 'core.autocrlf', 'false')
     writeFileSync(join(R, 'a.txt'), 'a\n'); writeFileSync(join(R, 'b.txt'), 'b\n')
     mkdirSync(join(R, 'dist')); writeFileSync(join(R, 'dist', 'out.txt'), 'a\nb\n')
     writeFileSync(join(R, '.gitattributes'), 'dist/** ramify-generated\n')
@@ -90,7 +92,8 @@ describe('engine', () => {
     writeFileSync(join(R, 'b.txt'), 'b2\n'); writeFileSync(join(R, 'dist', 'out.txt'), 'a\nb2\n')
     sh(R, 'commit', '-qam', 'b2')
     assert.match(await own.merge(R, wt), /regenerated: dist\/out.txt/)
-    assert.equal(readFileSync(join(R, 'dist', 'out.txt'), 'utf8'), 'a2\nb2\n')
+    // Line endings as the checkout writes them (CRLF with autocrlf on Windows): the content is what matters.
+    assert.equal(readFileSync(join(R, 'dist', 'out.txt'), 'utf8').replace(/\r\n/g, '\n'), 'a2\nb2\n')
     assert.match(sh(R, 'log', '-1', '--format=%s'), /Merge branch 'feat\/a'/)
     assert.equal(sh(R, 'status', '--porcelain'), '')
 
