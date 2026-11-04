@@ -149,6 +149,41 @@ check "claude hooks added, other settings kept" \
 check "instructions installed once per agent" '[ "$(grep -c "(ramify)" "$HOME/.codex/AGENTS.md")" = 1 ] && [ "$(grep -c "(ramify)" "$HOME/.claude/CLAUDE.md")" = 1 ]'
 check "agents without a config dir are skipped" '[ ! -e "$HOME/.gemini" ]'
 
+echo "one branch per agent from the terminal"
+cd "$T/demo" || exit 1
+rm -f "$T/last-agent"
+RAMIFY_INTERACTIVE=1 "$AW" run codex "add search" 2>/dev/null
+nb=$(git branch --format='%(refname:short)' --list 'codex/*' | head -1)
+check "run from the main checkout gives the agent its own branch" '[ -n "$nb" ] && grep -q "^codex|$W/$(echo "$nb" | tr / -)|[0-9]*|add search$" "$T/last-agent"'
+check "the main checkout stays on main" '[ "$(git branch --show-current)" = main ]'
+check "its worktree records the agent" 'grep -qx "WT_AGENT=codex" "$W/$(echo "$nb" | tr / -)/.worktree.env"'
+before=$(git branch --list 'codex/*' | wc -l)
+RAMIFY_INTERACTIVE=1 "$AW" run codex --version 2>/dev/null
+check "non-conversation arguments run untouched, in place" '[ "$(git branch --list "codex/*" | wc -l)" = "$before" ] && grep -q "^codex|$T/demo|" "$T/last-agent"'
+RAMIFY_INTERACTIVE=1 RAMIFY_NO_BRANCH=1 "$AW" run codex 2>/dev/null
+check "RAMIFY_NO_BRANCH runs in place" '[ "$(git branch --list "codex/*" | wc -l)" = "$before" ]'
+"$AW" run codex 2>/dev/null </dev/null
+check "without a terminal (scripts) it runs in place" '[ "$(git branch --list "codex/*" | wc -l)" = "$before" ]'
+own="$W/$(echo "$nb" | tr / -)"
+cbefore=$(git branch --list 'claude/*' | wc -l)
+(cd "$own" && RAMIFY_INTERACTIVE=1 "$AW" run claude "go" 2>/dev/null)
+check "inside a worktree it runs there" 'grep -q "^claude|$own|" "$T/last-agent" && [ "$(git branch --list "claude/*" | wc -l)" = "$cbefore" ]'
+git checkout -q -b own-topic-run
+RAMIFY_INTERACTIVE=1 "$AW" run claude "go" 2>/dev/null
+check "on a branch of its own it runs in place" '[ "$(git branch --list "claude/*" | wc -l)" = "$cbefore" ]'
+git checkout -q main
+(cd "$T" && RAMIFY_INTERACTIVE=1 "$AW" run claude "go" 2>/dev/null)
+check "outside a repository it runs in place" 'grep -q "^claude|$T|" "$T/last-agent"'
+
+echo "shell integration"
+init=$("$AW" shell-init)
+check "shell-init wraps installed agents only" 'printf "%s" "$init" | grep -q "^claude() {" && ! printf "%s" "$init" | grep -q "^kimi() {"'
+SHELL=/bin/zsh "$AW" install shell 2>/dev/null; SHELL=/bin/zsh "$AW" install shell 2>/dev/null
+check "install shell adds the block once" '[ "$(grep -c ">>> ramify" "$HOME/.zshrc")" = 1 ]'
+echo 'export KEEP=1' >> "$HOME/.zshrc"
+SHELL=/bin/zsh "$AW" uninstall shell 2>/dev/null
+check "uninstall shell removes the block and keeps the rest" '! grep -q "ramify" "$HOME/.zshrc" && grep -qx "export KEEP=1" "$HOME/.zshrc"'
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" = 0 ]

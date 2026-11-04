@@ -38,7 +38,9 @@ ${B}Usage${N}
   ramify path <name>            print a worktree path
   ramify rm <name> [--force]    remove a worktree (never deletes unmerged commits)
   ramify prune                  remove clean, merged worktrees
-  ramify install [claude-hooks|instructions|all]
+  ramify install [claude-hooks|instructions|shell|all]
+  ramify uninstall shell        stop giving agents their own branch from the terminal
+  ramify run <agent> [args]     open an agent; from a main checkout it gets its own branch first
   ramify hook create|remove     Claude Code WorktreeCreate/WorktreeRemove hook
 
 ${B}Agents${N} (-a)   claude, codex, gemini, copilot, cursor, opencode, aider, amp, or any command
@@ -545,6 +547,100 @@ install_instructions() {
   done
 }
 
+# --- one branch per agent, from the terminal ---------------------------------
+
+# Commands the shell integration hands to `ramify run`.
+SHELL_AGENTS="claude codex gemini copilot cursor-agent opencode qwen kimi vibe grok amp droid goose crush aider auggie cline kilocode kiro-cli deepcode iflow qodo junie"
+SHELL_BEGIN="# >>> ramify: one branch per agent >>>"
+SHELL_END="# <<< ramify: one branch per agent <<<"
+
+# Arguments that are not a conversation (scripts, setup, version…): those run untouched.
+passthrough_args() {
+  local a
+  for a in "$@"; do
+    case "$a" in
+      -p|--print|-h|--help|-v|--version|-V|exec|mcp|config|doctor|update|upgrade|login|logout|auth|install|uninstall|completion|plugin|plugins|setup-token) return 0 ;;
+    esac
+  done
+  return 1
+}
+
+# The default branch: origin's HEAD, else main / master / trunk / develop.
+default_branch() {
+  local b
+  b=$(git -C "$1" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null) && { printf '%s' "${b#origin/}"; return; }
+  for b in main master trunk develop; do git -C "$1" show-ref --verify --quiet "refs/heads/$b" && { printf '%s' "$b"; return; }; done
+}
+
+# `ramify run <agent> [args]`: started from a repository's main checkout on its default branch, the agent
+# gets a branch and a folder of its own first. Anywhere else it runs exactly as typed.
+cmd_run() {
+  local agent="${1:-}" real main top branch nb n rel wt
+  [ -n "$agent" ] || die "usage: ramify run <agent> [args]"
+  shift
+  real=$(command -v "$agent") || die "command not found: $agent"
+  # Only a conversation in a terminal (RAMIFY_INTERACTIVE=1 says so without one, for tests).
+  if [ -z "${RAMIFY_INTERACTIVE:-}" ] && { [ ! -t 0 ] || [ ! -t 1 ]; }; then exec "$real" "$@"; fi
+  if [ -n "${RAMIFY_NO_BRANCH:-}" ] || passthrough_args "$@"; then exec "$real" "$@"; fi
+  top=$(git rev-parse --show-toplevel 2>/dev/null) || exec "$real" "$@"
+  main=$(main_checkout "$PWD" 2>/dev/null) || exec "$real" "$@"
+  # Already in a worktree, or on a branch of its own: nothing to do.
+  [ "$(cd "$top" && abspwd)" = "$main" ] || exec "$real" "$@"
+  branch=$(git -C "$main" branch --show-current)
+  [ -n "$branch" ] && [ "$branch" = "$(default_branch "$main")" ] || exec "$real" "$@"
+  git -C "$main" rev-parse --verify --quiet HEAD >/dev/null || exec "$real" "$@"
+
+  nb="${agent%-agent}/$(date +%m%d-%H%M)"; n=2
+  while git -C "$main" show-ref --verify --quiet "refs/heads/$nb" || [ -e "$ROOT/$(basename "$main")/$(slugify "$nb")" ]; do
+    nb="${agent%-agent}/$(date +%m%d-%H%M)-$n"; n=$((n + 1))
+  done
+  rel=${PWD#"$main"}
+  log "${M}ramify${N}: ${B}$agent${N} gets its own branch ${M}$nb${N} (you stay on $branch; RAMIFY_NO_BRANCH=1 to skip)"
+  [ -z "$(git -C "$main" status --porcelain --untracked-files=no)" ] || log "${D}uncommitted changes in $branch stay there; the new branch starts from its last commit${N}"
+  create "$nb" "" 1 "${agent%-agent}"; wt=$CREATED_WT
+  # Same subfolder as where you typed the command.
+  if [ -n "$rel" ] && [ -d "$wt$rel" ]; then cd "$wt$rel"; else cd "$wt"; fi
+  load_env "$wt"
+  exec "$real" "$@"
+}
+
+# Shell functions that route the agents installed here through `ramify run`.
+cmd_shell_init() {
+  local bin a
+  bin=$(cd "$SELF_DIR" && pwd)/ramify
+  printf '# ramify: an agent opened in a repository main checkout gets its own branch and folder.\n'
+  for a in $SHELL_AGENTS; do
+    command -v "$a" >/dev/null 2>&1 || continue
+    printf '%s() { %q run %s "$@"; }\n' "$a" "$bin" "$a"
+  done
+}
+
+shell_rc() {
+  case "${SHELL:-}" in
+    */bash) printf '%s' "$HOME/.bashrc" ;;
+    *) printf '%s' "$HOME/.zshrc" ;;
+  esac
+}
+
+install_shell() {
+  local rc bin
+  rc=$(shell_rc); bin=$(cd "$SELF_DIR" && pwd)/ramify
+  if grep -qF "$SHELL_BEGIN" "$rc" 2>/dev/null; then log "${D}= $rc${N}"; return 0; fi
+  [ -f "$rc" ] && cp "$rc" "$rc.bak-ramify"
+  printf '\n%s\n[ -x %q ] && eval "$(%q shell-init)"\n%s\n' "$SHELL_BEGIN" "$bin" "$bin" "$SHELL_END" >> "$rc"
+  log "${G}+${N} $rc: agents opened in a main checkout now get their own branch (new terminals)"
+}
+
+uninstall_shell() {
+  local rc tmp
+  rc=$(shell_rc)
+  grep -qF "$SHELL_BEGIN" "$rc" 2>/dev/null || { log "${D}= $rc${N}"; return 0; }
+  cp "$rc" "$rc.bak-ramify"
+  tmp="$rc.ramify-tmp"
+  awk -v b="$SHELL_BEGIN" -v e="$SHELL_END" '$0 == b { skip = 1 } !skip { print } $0 == e { skip = 0 }' "$rc" > "$tmp" && mv "$tmp" "$rc"
+  log "${G}-${N} $rc: agents run as typed again (new terminals)"
+}
+
 # --- arguments ---------------------------------------------------------------
 
 sub="${1:-}"
@@ -589,12 +685,20 @@ case "$sub" in
     remove_wt "$main" "$wt" "$force" ;;
   prune) cmd_prune ;;
   hook) cmd_hook "$@" ;;
+  run) cmd_run "$@" ;;
+  shell-init) cmd_shell_init ;;
   install)
     case "${1:-all}" in
       claude-hooks) install_claude_hooks ;;
       instructions) install_instructions ;;
+      shell) install_shell ;;
       all) install_claude_hooks; install_instructions ;;
-      *) die "usage: ramify install [claude-hooks|instructions|all]" ;;
+      *) die "usage: ramify install [claude-hooks|instructions|shell|all]" ;;
+    esac ;;
+  uninstall)
+    case "${1:-}" in
+      shell) uninstall_shell ;;
+      *) die "usage: ramify uninstall shell" ;;
     esac ;;
   -v|--version|version) echo "ramify $VERSION" ;;
   ""|-h|--help|help) usage ;;
