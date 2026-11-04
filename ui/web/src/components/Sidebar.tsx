@@ -1,6 +1,7 @@
-import { FolderGit2, GitBranch, PanelLeftClose, PanelLeftOpen, Plus, Settings, X } from 'lucide-react'
+import { FolderGit2, PanelLeftClose, PanelLeftOpen, Plus, Settings, X } from 'lucide-react'
 import { GithubIcon } from './GithubIcon'
 import { agentVar } from '../agents'
+import { Logo } from './Logo'
 import { useStore } from '../store'
 import type { RepoInfo } from '../types'
 
@@ -32,7 +33,7 @@ export function Sidebar() {
           </button>
         </div>
         <div className="side-brand">
-          <span className="logo"><GitBranch size={16} strokeWidth={2.4} /></span>
+          <Logo size={28} />
           <span className="side-brand-name">agent-wt</span>
         </div>
         <div className="sidebar-section">

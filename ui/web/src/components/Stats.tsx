@@ -33,6 +33,7 @@ export function StatusBar() {
       {state && <span className="sb-path" title={state.main}>{state.main}</span>}
       {state && <span className="sb-branch">⎇ {state.base}</span>}
       <span className="sb-spacer" />
+      {state && !state.worktrees.some((w) => w.running.length) && <span className="sb-quiet">{t('allQuiet')}</span>}
       {caps?.host !== 'browser' && <span className="sb-keys">{t('shortcuts')}</span>}
       <span className="sb-ver">agent-wt</span>
     </footer>

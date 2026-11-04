@@ -2,6 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, No
 import { execFileSync } from 'node:child_process'
 import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
+import { pathToFileURL } from 'node:url'
 import {
   cloneGithub, createHandlers, defaultProjectsDir, dispatch, Engine, EngineError, githubRepos, IDES, openInTerminal, originSlug,
   runningAgents, scanRepos,
@@ -111,9 +112,12 @@ async function scan(): Promise<Live[]> {
 }
 
 let firstScan = true
+let scanning = false
 async function monitor() {
+  if (scanning) return
+  scanning = true
   let next: Live[]
-  try { next = await scan() } catch { return }
+  try { next = await scan() } catch { return } finally { scanning = false }
   const finished = firstScan ? [] : live.filter((l) => !next.some((n) => n.path === l.path))
   firstScan = false
   live = next
@@ -192,6 +196,24 @@ async function listGithub(refresh: boolean): Promise<GithubRepo[]> {
 
 // --- IPC ----------------------------------------------------------------------
 
+// The sidebar asks for every repository on each refresh: keep the git calls behind short caches.
+const infoCache = new Map<string, { at: number; info: RepoInfo }>()
+async function cachedInfo(repo: string): Promise<RepoInfo> {
+  const hit = infoCache.get(repo)
+  if (hit && Date.now() - hit.at < 5000) return hit.info
+  const info = await engine.repoInfo(repo)
+  infoCache.set(repo, { at: Date.now(), info })
+  return info
+}
+const slugCache = new Map<string, { at: number; slug: string | null }>()
+async function cachedSlug(repo: string): Promise<string | null> {
+  const hit = slugCache.get(repo)
+  if (hit && Date.now() - hit.at < 60_000) return hit.slug
+  const slug = await originSlug(repo, env)
+  slugCache.set(repo, { at: Date.now(), slug })
+  return slug
+}
+
 function applyLoginItem() {
   if (app.isPackaged) app.setLoginItemSettings({ openAtLogin: !!config.settings.openAtLogin })
 }
@@ -214,9 +236,9 @@ const handlers = {
   repos: async (): Promise<RepoInfo[]> => {
     config.repos = config.repos.filter((r) => existsSync(r))
     return Promise.all(config.repos.map(async (r) => ({
-      ...(await engine.repoInfo(r)),
+      ...(await cachedInfo(r)),
       active: [...new Set(live.filter((l) => l.repo === r).flatMap((l) => l.agents))],
-      github: await originSlug(r, env),
+      github: await cachedSlug(r),
     })))
   },
   addRepo: async (): Promise<RepoInfo | null> => {
@@ -245,7 +267,12 @@ const handlers = {
   },
 }
 
-ipcMain.handle('agent-wt', (_e, method: string, args: unknown[]) => dispatch(handlers, method, args))
+const rendererUrl = () => pathToFileURL(join(__dirname, '../renderer/index.html')).href
+ipcMain.handle('agent-wt', (e, method: string, args: unknown[]) => {
+  // Only the app's own page may drive the host.
+  if (!e.senderFrame || e.senderFrame.url.split('#')[0] !== rendererUrl()) throw new Error('forbidden')
+  return dispatch(handlers, method, args)
+})
 
 // --- window, deep links ---------------------------------------------------------
 
@@ -273,6 +300,16 @@ async function openTarget(target: string) {
     try { path = new URL(target).searchParams.get('path') ?? '' } catch { path = '' }
   }
   if (!path || !existsSync(path)) { focus(); return }
+  // Links can come from any web page: ask before adding a repository the app does not know yet.
+  const main = await engine.mainCheckout(path)
+  if (main && !config.repos.includes(main)) {
+    focus()
+    const { response } = await dialog.showMessageBox(win!, {
+      type: 'question', buttons: [es() ? 'Añadir' : 'Add', es() ? 'Cancelar' : 'Cancel'], defaultId: 0, cancelId: 1,
+      message: es() ? '¿Añadir este repositorio a agent-wt?' : 'Add this repository to agent-wt?', detail: main,
+    })
+    if (response !== 0) return
+  }
   try {
     const info = await addPath(path)
     const wt = (await engine.worktrees(info.path)).find((w) => !w.main && (path === w.path || path.startsWith(`${w.path}/`)))
@@ -310,6 +347,7 @@ function createWindow() {
   })
   win.once('ready-to-show', () => win?.show())
   win.webContents.on('did-finish-load', () => { if (pending) { const p = pending; pending = null; setTimeout(() => send(p), 300) } })
+  win.webContents.on('will-navigate', (e) => e.preventDefault())
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:\/\//.test(url)) void shell.openExternal(url)
     return { action: 'deny' }

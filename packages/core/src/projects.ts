@@ -37,6 +37,8 @@ export function agentOf(comm: string, args: string): string | null {
 export async function runningAgents(env?: NodeJS.ProcessEnv): Promise<{ agent: string; cwd: string }[]> {
   // `comm` is cut to 16 characters on macOS (/opt/homebrew/bi...), so read the executable from the full command line.
   const ps = await out('ps', ['-axww', '-o', 'pid=,args='], env)
+  // A failed scan must not look like "every agent stopped" (that would fire false notifications).
+  if (ps.code !== 0) throw new Error(`ps failed: ${ps.stderr.trim()}`)
   const agents = new Map<string, string>()
   for (const line of ps.stdout.split('\n')) {
     const m = /^\s*(\d+)\s+(\S+)(.*)$/.exec(line)
@@ -46,6 +48,7 @@ export async function runningAgents(env?: NodeJS.ProcessEnv): Promise<{ agent: s
   }
   if (!agents.size) return []
   const lsof = await out('lsof', ['-a', '-d', 'cwd', '-p', [...agents.keys()].join(','), '-Fpn'], env)
+  if (lsof.code !== 0 && !lsof.stdout) throw new Error(`lsof failed: ${lsof.stderr.trim()}`)
   const result: { agent: string; cwd: string }[] = []
   let pid = ''
   for (const line of lsof.stdout.split('\n')) {

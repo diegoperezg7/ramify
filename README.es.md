@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/logo.png" width="112" alt="agent-wt logo"></p>
+
 <h1 align="center">agent-wt</h1>
 
 <p align="center">

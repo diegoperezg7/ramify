@@ -5,6 +5,8 @@ import { createHandlers, dispatch, Engine, IDES } from '../../../packages/core/s
 import { webviewHtml } from './html.ts'
 
 let panel: vscode.WebviewPanel | undefined
+let ready = false
+const queued: unknown[] = []
 
 export function activate(ctx: vscode.ExtensionContext) {
   const bin = join(ctx.extensionPath, 'bin', 'agent-wt')
@@ -62,6 +64,8 @@ export function activate(ctx: vscode.ExtensionContext) {
     panel.iconPath = vscode.Uri.joinPath(ctx.extensionUri, 'media', 'icon.png')
     panel.webview.html = webviewHtml(readFileSync(join(ui.fsPath, 'index.html'), 'utf8'), panel.webview.asWebviewUri(ui).toString(), panel.webview.cspSource)
     panel.webview.onDidReceiveMessage(async (msg: { id: number; method: string; args: unknown[] }) => {
+      // The first request means the UI is listening: deliver anything queued before that.
+      if (!ready) { ready = true; for (const m of queued.splice(0)) void panel?.webview.postMessage(m) }
       try {
         const result = await dispatch(handlers, msg.method, msg.args)
         void panel?.webview.postMessage({ id: msg.id, result })
@@ -69,14 +73,15 @@ export function activate(ctx: vscode.ExtensionContext) {
         void panel?.webview.postMessage({ id: msg.id, error: (e as Error).message })
       }
     })
-    panel.onDidDispose(() => { panel = undefined })
+    panel.onDidDispose(() => { panel = undefined; ready = false })
   }
 
   ctx.subscriptions.push(
     vscode.commands.registerCommand('agentWt.open', open),
     vscode.commands.registerCommand('agentWt.new', async () => {
       await open()
-      void panel?.webview.postMessage({ command: 'new' })
+      if (ready) void panel?.webview.postMessage({ command: 'new' })
+      else queued.push({ command: 'new' })
     }),
   )
 }

@@ -1,6 +1,7 @@
-import { GitBranch, Menu, Monitor, Moon, Plus, Search, SlidersHorizontal, Sun } from 'lucide-react'
+import { Menu, Monitor, Moon, Plus, Search, SlidersHorizontal, Sun } from 'lucide-react'
 import { Metrics } from './Stats'
 import { useEffect, useRef, useState } from 'react'
+import { Logo } from './Logo'
 import { useStore, type Density, type Theme } from '../store'
 
 /** The theme actually on screen: the explicit choice, or the system's / editor's. */
@@ -49,7 +50,7 @@ export function TopBar() {
         {caps?.multiRepo && (
           <button type="button" className="icon-btn menu-btn" onClick={() => setMenuOpen(true)} aria-label={t('menu')}><Menu size={18} /></button>
         )}
-        {!caps?.multiRepo && <span className="logo"><GitBranch size={18} strokeWidth={2.4} /></span>}
+        {!caps?.multiRepo && <Logo size={30} />}
         {!caps?.multiRepo && <span className="name">agent-wt</span>}
         {state && (
           <>

@@ -109,3 +109,25 @@ describe('projects', () => {
     assert.deepEqual(scanRepos(T, 2), [REPO])
   })
 })
+
+describe('engine edge cases', () => {
+  it('lists files with spaces, accents and renames, and diffs them', async () => {
+    const c = await engine.create(REPO, { branch: 'files', agent: '' })
+    writeFileSync(join(c.path, 'con espacio.txt'), 'x\n')
+    writeFileSync(join(c.path, 'año.txt'), 'y\n')
+    sh(c.path, 'add', '.')
+    sh(c.path, 'commit', '-qm', 'files')
+    sh(c.path, 'mv', 'a.txt', 'renamed.txt')
+    const d = await engine.worktree(REPO, c.path)
+    const names = d.files.map((f) => f.file)
+    assert.ok(names.includes('con espacio.txt') && names.includes('año.txt'))
+    assert.ok(!names.some((n) => n.includes('=>')))
+    assert.ok(d.files.find((f) => f.file === 'renamed.txt')?.uncommitted)
+    assert.match(await engine.diff(REPO, c.path, 'con espacio.txt'), /\+x/)
+  })
+
+  it('rejects agent names that are not plain words', async () => {
+    await assert.rejects(engine.create(REPO, { branch: 'evil', agent: 'x;rm -rf /' }), EngineError)
+    assert.throws(() => engine.launchCommand('/tmp', '$(id)'), EngineError)
+  })
+})

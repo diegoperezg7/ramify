@@ -23,6 +23,14 @@ export function layout(commits: Commit[]): Layout {
     return i
   }
 
+  const seen = new Map<string, number>()
+  // Several lanes can wait for the same commit: number repeated ids so React keys stay unique.
+  const uid = (id: string) => {
+    const n = (seen.get(id) ?? 0) + 1
+    seen.set(id, n)
+    return n === 1 ? id : `${id}#${n}`
+  }
+
   commits.forEach((c, r) => {
     let col = lanes.indexOf(c.hash)
     if (col === -1) col = claim(c.hash, c.owner)
@@ -45,10 +53,10 @@ export function layout(commits: Commit[]): Layout {
     const last = !next
     lanes.forEach((h, i) => {
       if (h === null) return
-      if (fromNode.has(i)) edges.push({ id: `${c.hash}>${h}`, from: col, to: target(i), row: r, owner: c.owner, last })
-      else edges.push({ id: `${c.hash}|${h}`, from: i, to: target(i), row: r, owner: owners[i], last })
+      if (fromNode.has(i)) edges.push({ id: uid(`${c.hash}>${h}`), from: col, to: target(i), row: r, owner: c.owner, last })
+      else edges.push({ id: uid(`${c.hash}|${h}`), from: i, to: target(i), row: r, owner: owners[i], last })
     })
-    for (const i of joins) edges.push({ id: `${c.hash}>${lanes[i]}`, from: col, to: target(i), row: r, owner: c.owner, last })
+    for (const i of joins) edges.push({ id: uid(`${c.hash}>${lanes[i]}`), from: col, to: target(i), row: r, owner: c.owner, last })
 
     rows.push({ commit: c, col })
     while (lanes.length && lanes[lanes.length - 1] === null) { lanes.pop(); owners.pop() }

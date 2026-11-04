@@ -88,19 +88,45 @@ class Dashboard:
             for line in log.splitlines():
                 h, s, t = line.split("\x1f")
                 detail["commits"].append({"hash": h, "subject": s, "time": int(t)})
+        # -z everywhere: paths with spaces, accents or renames come through verbatim.
         files = {}
-        for line in git(path, "diff", "--numstat", mb, check=False).splitlines():
-            add, rem, name = line.split("\t", 2)
-            files[name] = {"file": name, "status": "M", "add": add, "del": rem}
-        for line in git(path, "diff", "--name-status", mb, check=False).splitlines():
-            st, *names = line.split("\t")
-            name = names[-1]
-            files.setdefault(name, {"file": name, "add": "0", "del": "0"})["status"] = st[0]
-        for line in git(path, "status", "--porcelain", check=False).splitlines():
-            if line.startswith("??"):
-                name = line[3:]
-                files[name] = {"file": name, "status": "?", "add": "", "del": ""}
-        uncommitted = {l[3:] for l in git(path, "status", "--porcelain", check=False).splitlines()}
+        rec = git(path, "diff", "-z", "--numstat", mb, check=False).split("\0")
+        i = 0
+        while i < len(rec):
+            if rec[i]:
+                add, rem, name = rec[i].split("\t", 2)
+                if name == "":
+                    i += 2
+                    name = rec[i] if i < len(rec) else ""
+                if name:
+                    files[name] = {"file": name, "status": "M", "add": add, "del": rem}
+            i += 1
+        rec = git(path, "diff", "-z", "--name-status", mb, check=False).split("\0")
+        i = 0
+        while i < len(rec):
+            st = rec[i]
+            if st:
+                i += 1
+                name = rec[i] if i < len(rec) else ""
+                if st[0] in "RC":
+                    i += 1
+                    name = rec[i] if i < len(rec) else ""
+                if name:
+                    files.setdefault(name, {"file": name, "add": "0", "del": "0"})["status"] = st[0]
+            i += 1
+        uncommitted = set()
+        rec = git(path, "status", "-z", "--porcelain", check=False).split("\0")
+        i = 0
+        while i < len(rec):
+            r = rec[i]
+            if r:
+                code, name = r[:2], r[3:]
+                uncommitted.add(name)
+                if code == "??":
+                    files[name] = {"file": name, "status": "?", "add": "", "del": ""}
+                if code[0] in "RC":
+                    i += 1
+            i += 1
         for f in files.values():
             f["uncommitted"] = f["file"] in uncommitted
         detail["files"] = sorted(files.values(), key=lambda f: f["file"])
@@ -121,9 +147,17 @@ class Dashboard:
         return text[:MAX_DIFF]
 
     def find(self, path):
-        for w in self.worktrees():
-            if w["path"] == path:
-                return w
+        """Validate a worktree path with one `git worktree list` (no process scan)."""
+        cur = None
+        for line in git(self.main, "worktree", "list", "--porcelain").splitlines() + [""]:
+            if line.startswith("worktree "):
+                cur = {"path": line[9:], "branch": "", "main": line[9:] == self.main}
+            elif cur and line.startswith("branch "):
+                cur["branch"] = line[7:].replace("refs/heads/", "", 1)
+            elif not line and cur:
+                if cur["path"] == path:
+                    return cur
+                cur = None
         raise LookupError("unknown worktree")
 
     # --- actions -------------------------------------------------------------
@@ -154,7 +188,7 @@ class Dashboard:
             raise ValueError("nothing to merge")
         if git(self.main, "status", "--porcelain", "--untracked-files=no").strip():
             raise RuntimeError("the main checkout has uncommitted changes")
-        if wt["changes"]:
+        if git(path, "status", "--porcelain").strip():
             raise RuntimeError("the worktree has uncommitted changes")
         p = run(["git", "-C", self.main, "merge", "--no-ff", "--no-edit", wt["branch"]], check=False)
         if p.returncode != 0:
@@ -220,7 +254,7 @@ def make_handler(dash, token, port):
                 return self.send(403, {"error": "bad host"})
             rel = url.path.lstrip("/") or "index.html"
             f = (DIST / rel).resolve()
-            if not str(f).startswith(str(DIST)) or not f.is_file():
+            if not f.is_relative_to(DIST) or not f.is_file():
                 f = DIST / "index.html"
             ctype = mimetypes.guess_type(str(f))[0] or "application/octet-stream"
             self.send(200, f.read_bytes(), ctype)

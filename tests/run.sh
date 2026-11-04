@@ -4,7 +4,7 @@
 set -uo pipefail
 
 AW="$(cd "$(dirname "$0")/.." && pwd)/agent-wt"
-T=$(mktemp -d)
+T=$(cd "$(mktemp -d)" && pwd -P)
 trap 'rm -rf "$T"' EXIT
 export AGENT_WT_ROOT="$T/wts" NO_COLOR=1 HOME="$T/home"
 export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.com
@@ -77,7 +77,7 @@ if printf '#include <unistd.h>\nint main(void){sleep(5);return 0;}\n' | cc -x c 
 fi
 (cd "$W/pagos" && exec perl -e 'sleep 5') & sleep 1
 check "ls ignores processes that are not agents" '! "$AW" ls 2>/dev/null | grep -q "^pagos .*perl"'
-kill %2 2>/dev/null
+{ kill %2 && wait %2; } 2>/dev/null
 kill %1 2>/dev/null; wait 2>/dev/null
 check "ls --json is valid and has the worktree" '"$AW" ls --json | jq -e ".[] | select(.branch == \"pagos\") | .agent == \"aider\" and .main == false" >/dev/null'
 check "ls shows the agent" '"$AW" ls 2>/dev/null | grep -q "^pagos .*aider"'
@@ -115,7 +115,22 @@ check "rm refuses unmerged, unpushed commits" '! "$AW" rm pagos 2>/dev/null'
 check "rm --force removes the worktree" '[ ! -d "$W/pagos" ]'
 check "rm --force keeps the branch and its commits" 'git log -1 --format=%s pagos | grep -qx work'
 "$AW" prune 2>/dev/null
+check "prune keeps a fresh worktree that has no work yet" '[ -d "$W/feat-login" ]'
+git -C "$W/feat-login" commit -q --allow-empty -m login && git merge -q --no-edit feat/login
+"$AW" prune 2>/dev/null
 check "prune removes clean, merged worktrees" '[ ! -d "$W/feat-login" ] && ! git show-ref --quiet refs/heads/feat/login'
+
+echo "safety"
+"$AW" new detached 2>/dev/null >/dev/null
+git -C "$W/detached" checkout -q --detach && git -C "$W/detached" commit -q --allow-empty -m orphan
+check "rm refuses a detached HEAD with commits on no branch" '! "$AW" rm detached 2>/dev/null && [ -d "$W/detached" ]'
+"$AW" rm detached --force 2>/dev/null
+check "branch names cannot inject commands through .worktree.env" '"$AW" new "x\$(touch\${IFS}$T/PWNED)" --no-launch >/dev/null 2>&1; [ ! -e "$T/PWNED" ]'
+check "invalid agent names are rejected" '! "$AW" new evil -a "x;touch $T/PWNED2" --no-launch 2>/dev/null && [ ! -e "$T/PWNED2" ]'
+mkdir -p "$T/my repo" && git -C "$T/my repo" init -q -b main && git -C "$T/my repo" commit -q --allow-empty -m i
+mkdir -p "$T/my repo/.worktree" && printf '#!/bin/bash\ntouch "$WT_PATH/setup-ran"\n' > "$T/my repo/.worktree/setup.sh" && chmod +x "$T/my repo/.worktree/setup.sh"
+(cd "$T/my repo" && "$AW" new spaced >/dev/null 2>&1)
+check "paths with spaces: setup scripts still run" '[ -f "$AGENT_WT_ROOT/my repo/spaced/setup-ran" ]'
 
 echo "claude code hook"
 path=$(printf '{"name":"bold-oak","cwd":"%s"}' "$T/demo" | "$AW" hook create 2>/dev/null | tail -1)

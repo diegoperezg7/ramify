@@ -37,6 +37,13 @@ export function Graph() {
   const graphWidth = PAD * 2 + (g.lanes - 1) * LANE
   const delay = (row: number) => (first ? `${Math.min(row, 40) * 28}ms` : '0ms')
 
+  const liveTips = new Map<string, string>()
+  for (const w of state.worktrees) {
+    if (w.main || !w.running.length) continue
+    const tip = g.rows.find((r) => r.commit.refs.some((ref) => cleanRef(ref) === w.branch))
+    if (tip) liveTips.set(tip.commit.hash, agentVar(w.agent))
+  }
+
   const agents = [...new Set(state.worktrees.filter((w) => !w.main && w.agent).map((w) => w.agent))]
 
   return (
@@ -71,6 +78,10 @@ export function Graph() {
                   pathLength={isNew && !e.last ? 1 : undefined}
                   style={{ d: `path("${d}")`, animationDelay: delay(e.row) } as CSSProperties} />
               )
+            })}
+            {g.rows.filter(({ commit }) => liveTips.has(commit.hash)).map(({ commit, col }) => {
+              const r = g.rows.findIndex((x) => x.commit.hash === commit.hash)
+              return <circle key={`live-${commit.hash}`} className="node-live" cx={x(col)} cy={y(r)} r={6} fill="none" stroke={liveTips.get(commit.hash)} strokeWidth={2} />
             })}
             {g.rows.map(({ commit, col }, r) => {
               const merge = commit.parents.length > 1

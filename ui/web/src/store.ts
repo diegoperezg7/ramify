@@ -63,6 +63,7 @@ function save(key: string, value: string) {
   try { localStorage.setItem(key, value) } catch { /* storage unavailable */ }
 }
 
+let pollSeq = 0
 const defaultLang: Lang = navigator.language.toLowerCase().startsWith('es') ? 'es' : 'en'
 let toastId = 0
 
@@ -104,9 +105,11 @@ export const useStore = create<Store>((set, get) => ({
   poll: async () => {
     const { caps, repo } = get()
     if (caps?.multiRepo && !repo) { await get().refreshRepos(); return }
+    const seq = ++pollSeq
     try {
       const state = await bridge.state(repo)
-      if (get().repo !== repo) return
+      // Drop answers that arrive after a newer poll (e.g. a slow interval poll after a remove).
+      if (get().repo !== repo || seq !== pollSeq) return
       const { selected } = get()
       const stillThere = selected && state.worktrees.some((w) => w.path === selected)
       set({ state, conn: 'ok', lastSync: Date.now(), ...(selected && !stillThere ? { selected: null, detail: null, file: null } : {}) })
@@ -202,7 +205,7 @@ export const useStore = create<Store>((set, get) => ({
     if (!path || !file) return
     try {
       const { diff } = await bridge.diff(repo, path, file)
-      if (get().file === file) set({ diff })
+      if (get().file === file && get().selected === path) set({ diff })
     } catch (e) {
       get().toast('error', (e as Error).message)
     }

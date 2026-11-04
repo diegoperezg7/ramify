@@ -48,11 +48,37 @@ EOF
 
 # --- helpers -----------------------------------------------------------------
 
+# Absolute, symlink-free git common dir of the repository containing $1.
+common_dir() {
+  local rel
+  rel=$(git -C "$1" rev-parse --git-common-dir 2>/dev/null) || return 1
+  (cd "$1" && cd "$rel" && pwd -P)
+}
+
 main_checkout() {
-  local common
-  common=$(git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) \
-    || die "not a git repository: $1"
+  local common line cur=""
+  common=$(common_dir "$1") || die "not a git repository: $1"
+  if [ "$(git -C "$common" rev-parse --is-bare-repository 2>/dev/null)" = true ]; then
+    # Bare repository with worktrees: the first non-bare worktree acts as the main checkout.
+    while IFS= read -r line; do
+      case "$line" in
+        "worktree "*) cur=${line#worktree } ;;
+        bare) cur="" ;;
+        "") [ -n "$cur" ] && { (cd "$cur" && pwd -P); return; } ;;
+      esac
+    done < <(git -C "$common" worktree list --porcelain; echo)
+    die "bare repository without a checkout: $1 (add one with git worktree add)"
+  fi
   dirname "$common"
+}
+
+# Export .worktree.env without executing it: values are data, never shell code.
+load_env() {
+  local k v
+  [ -f "$1/.worktree.env" ] || return 0
+  while IFS='=' read -r k v; do
+    case "$k" in WT_*|PORT|DERIVED_DATA|SIM_*) export "$k=$v" ;; esac
+  done < "$1/.worktree.env"
 }
 
 slugify() { printf '%s' "$1" | tr '/ ' '--' | tr -cd 'A-Za-z0-9._-'; }
@@ -72,7 +98,7 @@ find_wt() {
   repo=$(basename "$main")
   if [ -d "$name/.git" ] || [ -f "$name/.git" ]; then (cd "$name" && pwd); return; fi
   if [ -d "$ROOT/$repo/$(slugify "$name")" ]; then
-    printf '%s\n' "$ROOT/$repo/$(slugify "$name")"; return
+    (cd "$ROOT/$repo/$(slugify "$name")" && pwd -P); return
   fi
   while IFS= read -r line; do
     case "$line" in
@@ -118,7 +144,7 @@ copy_included() {
 
 exclude_env_file() {
   local common
-  common=$(git -C "$1" rev-parse --path-format=absolute --git-common-dir)
+  common=$(common_dir "$1")
   mkdir -p "$common/info"
   grep -qx '/.worktree.env' "$common/info/exclude" 2>/dev/null \
     || printf '/.worktree.env\n' >> "$common/info/exclude"
@@ -131,13 +157,13 @@ run_project_script() {
   elif [ -x "$main/.worktree/$which.sh" ]; then s="$main/.worktree/$which.sh"; fi
   [ -n "$s" ] || return 1
   log "${D}$which: $s${N}"
-  (cd "$wt" && set -a && . ./.worktree.env && set +a && "$s") >&2
+  (cd "$wt" && load_env "$wt" && "$s") >&2
 }
 
 auto_setup() {
   (
     cd "$1"
-    set -a; . ./.worktree.env; set +a
+    load_env "$1"
     if [ -f project.yml ] && command -v xcodegen >/dev/null; then
       log "${D}setup: xcodegen generate${N}"; xcodegen generate --quiet
     fi
@@ -177,6 +203,10 @@ agent_profile() {
   esac
 }
 
+valid_agent() {
+  case "$1" in ""|-*|*[!A-Za-z0-9._/-]*) die "invalid agent name: '$1'" ;; esac
+}
+
 copy_to_clipboard() {
   if command -v pbcopy >/dev/null; then printf '%s' "$1" | pbcopy
   elif command -v wl-copy >/dev/null; then printf '%s' "$1" | wl-copy
@@ -212,11 +242,13 @@ launch() {
     [ -n "$ide" ] || log "cd \"$wt\""
     return 0
   fi
+  valid_agent "$agent"
   agent_profile "$agent"
   command -v "$AGENT_CMD" >/dev/null || die "command not found: $AGENT_CMD"
   env_set "$wt" WT_AGENT "$agent"
 
   if [ -n "$prompt" ]; then
+    case "$prompt" in -*) prompt=" $prompt" ;; esac
     case "$PROMPT_STYLE" in
       arg) set -- "$@" "$prompt" ;;
       flag:*) set -- "$@" "${PROMPT_STYLE#flag:}" "$prompt" ;;
@@ -235,7 +267,7 @@ launch() {
     else log "tmux session ${B}$sess${N} started: tmux attach -t $sess"; fi
   else
     cd "$wt"
-    set -a; . ./.worktree.env; set +a
+    load_env "$wt"
     exec "$AGENT_CMD" "$@"
   fi
 }
@@ -252,7 +284,9 @@ create() {
   [ -n "$slug" ] || die "invalid branch name: '$branch'"
   wt="$ROOT/$repo/$slug"
   [ -e "$wt" ] && die "$wt already exists (use: agent-wt open $branch)"
+  [ -z "$agent" ] || valid_agent "$agent"
   mkdir -p "$ROOT/$repo"
+  wt="$(cd "$ROOT/$repo" && pwd -P)/$slug"
 
   if git -C "$main" show-ref --verify --quiet "refs/heads/$branch"; then
     [ -n "$from" ] && log "${Y}branch $branch already exists; ignoring -f $from${N}"
@@ -371,6 +405,17 @@ remove_wt() {
   if [ "$force" != 1 ]; then
     [ -z "$(git -C "$wt" status --porcelain)" ] \
       || die "uncommitted changes in $wt (--force discards them)"
+    local gitdir head
+    gitdir=$(git -C "$wt" rev-parse --absolute-git-dir 2>/dev/null || true)
+    if [ -n "$gitdir" ] && { [ -d "$gitdir/rebase-merge" ] || [ -d "$gitdir/rebase-apply" ]; }; then
+      die "a rebase is in progress in $wt (finish or abort it, or use --force)"
+    fi
+    if [ -z "$branch" ]; then
+      head=$(git -C "$wt" rev-parse HEAD 2>/dev/null || true)
+      if [ -n "$head" ] && [ -z "$(git -C "$main" for-each-ref --contains "$head" refs/heads refs/remotes 2>/dev/null)" ]; then
+        die "detached HEAD with commits on no branch in $wt (create a branch for them, or use --force)"
+      fi
+    fi
     if [ -n "$branch" ] && ! git -C "$main" merge-base --is-ancestor "$branch" HEAD \
        && [ "$(git -C "$wt" rev-list --count '@{u}..HEAD' 2>/dev/null || echo x)" != 0 ]; then
       die "branch $branch has commits that are neither merged nor pushed (--force removes the worktree and keeps the branch)"
@@ -391,14 +436,20 @@ remove_wt() {
 }
 
 cmd_prune() {
-  local main repo wt branch n=0
+  local main repo wt branch procs n=0
   main=$(main_checkout "$PWD"); repo=$(basename "$main")
+  procs=$(active_agents)
   for wt in "$ROOT/$repo"/*/; do
     wt=${wt%/}
     [ -f "$wt/.worktree.env" ] || continue
     [ -z "$(git -C "$wt" status --porcelain 2>/dev/null)" ] || continue
     branch=$(git -C "$wt" branch --show-current 2>/dev/null || true)
     [ -n "$branch" ] && git -C "$main" merge-base --is-ancestor "$branch" HEAD || continue
+    # A branch that never got a commit of its own is new work in progress, not finished work.
+    [ "$(git -C "$main" reflog show --format=%H "refs/heads/$branch" 2>/dev/null | wc -l | tr -d ' ')" -gt 1 ] || continue
+    if printf '%s\n' "$procs" | awk -F'\t' -v p="$wt" '$1 == p || index($1, p "/") == 1 { f = 1 } END { exit !f }'; then
+      log "${D}kept $wt: an agent is working in it${N}"; continue
+    fi
     remove_wt "$main" "$wt" 0; n=$((n + 1))
   done
   log "$n clean, merged worktree(s) removed"
@@ -423,7 +474,7 @@ cmd_ui() {
     | while IFS= read -r url; do
         log "${B}agent-wt ui${N}  $url  ${D}(Ctrl-C to stop)${N}"
         if [ "$open_browser" = 1 ]; then
-          if command -v open >/dev/null; then open "$url"
+          if [ "$(uname)" = Darwin ]; then open "$url"
           elif command -v xdg-open >/dev/null; then xdg-open "$url" >/dev/null 2>&1; fi
         fi
       done

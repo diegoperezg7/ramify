@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
-import { existsSync, readdirSync, readFileSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { basename, join } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 import type { Commit, Created, CreateRequest, Detail, FileChange, RepoInfo, State, Worktree } from './types.ts'
 
 const MAX_COMMITS = 300
@@ -53,10 +53,30 @@ export class Engine {
 
   /** Main checkout of the repository that contains `dir`, or null. */
   async mainCheckout(dir: string): Promise<string | null> {
-    const r = await this.run('git', ['-C', dir, 'rev-parse', '--path-format=absolute', '--git-common-dir'])
+    // No --path-format=absolute: it needs git 2.31+.
+    const r = await this.run('git', ['-C', dir, 'rev-parse', '--git-common-dir'])
     if (r.code !== 0) return null
-    const common = r.stdout.trim()
-    return common.endsWith('/.git') ? common.slice(0, -5) : null
+    let common: string
+    try { common = realpathSync(resolve(dir, r.stdout.trim())) } catch { return null }
+    const bare = (await this.run('git', ['-C', common, 'rev-parse', '--is-bare-repository'])).stdout.trim() === 'true'
+    if (!bare) return basename(common) === '.git' ? resolve(common, '..') : null
+    // Bare repository with worktrees: the first non-bare worktree acts as the main checkout.
+    const first = (await this.list(common)).find((w) => !w.bare)
+    return first ? first.path : null
+  }
+
+  /** Light worktree list straight from git (no process scan), for validation and lookups. */
+  async list(repo: string): Promise<{ path: string; branch: string; bare: boolean }[]> {
+    const out = await this.git(repo, 'worktree', 'list', '--porcelain')
+    const res: { path: string; branch: string; bare: boolean }[] = []
+    let cur: { path: string; branch: string; bare: boolean } | null = null
+    for (const line of `${out}\n`.split('\n')) {
+      if (line.startsWith('worktree ')) cur = { path: line.slice(9), branch: '', bare: false }
+      else if (cur && line.startsWith('branch ')) cur.branch = line.slice(7).replace('refs/heads/', '')
+      else if (cur && line === 'bare') cur.bare = true
+      else if (!line && cur) { res.push(cur); cur = null }
+    }
+    return res
   }
 
   /** Repositories that already have agent-wt worktrees, found through their .worktree.env files. */
@@ -76,8 +96,8 @@ export class Engine {
   }
 
   async repoInfo(path: string): Promise<RepoInfo> {
-    const list = await this.git(path, 'worktree', 'list', '--porcelain')
-    return { path, name: basename(path), worktrees: list.split('\n').filter((l) => l.startsWith('worktree ')).length - 1 }
+    const list = await this.list(path)
+    return { path, name: basename(path), worktrees: list.filter((w) => !w.bare && w.path !== path).length }
   }
 
   // --- reads -----------------------------------------------------------------
@@ -116,13 +136,14 @@ export class Engine {
     return { repo: basename(repo), main: repo, base, worktrees: wts, commits, now: Math.floor(Date.now() / 1000) }
   }
 
-  private async find(repo: string, path: string): Promise<Worktree> {
-    const wt = (await this.worktrees(repo)).find((w) => w.path === path)
+  /** Validate that `path` is a worktree of `repo` (one `git worktree list`, no process scan). */
+  private async find(repo: string, path: string): Promise<{ path: string; branch: string; main: boolean }> {
+    const wt = (await this.list(repo)).find((w) => w.path === path && !w.bare)
     if (!wt) throw new EngineError('unknown worktree')
-    return wt
+    return { path: wt.path, branch: wt.branch, main: wt.path === repo }
   }
 
-  private async mergeBase(repo: string, path: string, wt: Worktree): Promise<string> {
+  private async mergeBase(repo: string, path: string, wt: { main: boolean }): Promise<string> {
     if (wt.main) return 'HEAD'
     return (await this.git(path, 'merge-base', await this.base(repo), 'HEAD')).trim() || 'HEAD'
   }
@@ -139,25 +160,38 @@ export class Engine {
         commits.push({ hash, subject, time: Number(t) })
       }
     }
+    // -z everywhere: paths with spaces, accents or renames come through verbatim.
     const files = new Map<string, FileChange>()
-    for (const line of (await this.git(path, 'diff', '--numstat', mb)).split('\n')) {
-      if (!line) continue
-      const [add, del, ...name] = line.split('\t')
-      const file = name.join('\t')
-      files.set(file, { file, status: 'M', add, del, uncommitted: false })
+    const numstat = (await this.git(path, 'diff', '-z', '--numstat', mb)).split('\0')
+    for (let i = 0; i < numstat.length; i++) {
+      const rec = numstat[i]
+      if (!rec) continue
+      const [add, del, name] = rec.split('\t')
+      let file = name
+      if (name === '') { i += 2; file = numstat[i] } // rename: "add\tdel\t" then old\0new\0
+      if (file) files.set(file, { file, status: 'M', add, del, uncommitted: false })
     }
-    for (const line of (await this.git(path, 'diff', '--name-status', mb)).split('\n')) {
-      if (!line) continue
-      const [st, ...names] = line.split('\t')
-      const file = names[names.length - 1]
+    const nameStatus = (await this.git(path, 'diff', '-z', '--name-status', mb)).split('\0')
+    for (let i = 0; i < nameStatus.length; i++) {
+      const st = nameStatus[i]
+      if (!st) continue
+      let file = nameStatus[++i]
+      if (st[0] === 'R' || st[0] === 'C') file = nameStatus[++i]
+      if (!file) continue
       const f = files.get(file) ?? { file, status: 'M', add: '0', del: '0', uncommitted: false }
       f.status = st[0]
       files.set(file, f)
     }
-    const status = (await this.git(path, 'status', '--porcelain')).split('\n').filter(Boolean)
-    const pending = new Set(status.map((l) => l.slice(3)))
-    for (const l of status) {
-      if (l.startsWith('??')) files.set(l.slice(3), { file: l.slice(3), status: '?', add: '', del: '', uncommitted: true })
+    const status = (await this.git(path, 'status', '-z', '--porcelain')).split('\0')
+    const pending = new Set<string>()
+    for (let i = 0; i < status.length; i++) {
+      const rec = status[i]
+      if (!rec) continue
+      const code = rec.slice(0, 2)
+      const file = rec.slice(3)
+      pending.add(file)
+      if (code[0] === 'R' || code[0] === 'C') i++ // the original path follows
+      if (code === '??') files.set(file, { file, status: '?', add: '', del: '', uncommitted: true })
     }
     for (const f of files.values()) f.uncommitted = pending.has(f.file)
     return { path, branch: wt.branch, mergeBase: mb, commits, files: [...files.values()].sort((a, b) => a.file.localeCompare(b.file)) }
@@ -197,7 +231,7 @@ export class Engine {
     if ((await this.git(repo, 'status', '--porcelain', '--untracked-files=no')).trim()) {
       throw new EngineError('the main checkout has uncommitted changes')
     }
-    if (wt.changes) throw new EngineError('the worktree has uncommitted changes')
+    if ((await this.git(path, 'status', '--porcelain')).trim()) throw new EngineError('the worktree has uncommitted changes')
     const r = await this.run('git', ['-C', repo, 'merge', '--no-ff', '--no-edit', wt.branch])
     if (r.code !== 0) {
       await this.run('git', ['-C', repo, 'merge', '--abort'])
@@ -211,6 +245,7 @@ export class Engine {
     const branch = req.branch.trim()
     if (!/^[\w./-]+$/.test(branch) || branch.startsWith('-')) throw new EngineError('invalid branch name')
     const args = ['new', branch, '--no-launch']
+    if (req.agent && !/^[\w.-]+$/.test(req.agent)) throw new EngineError('invalid agent name')
     if (req.agent) args.push('-a', req.agent)
     if (req.base) args.push('-f', req.base)
     const out = await this.must(this.bin, args, repo)
@@ -220,6 +255,7 @@ export class Engine {
 
   /** Shell command that starts `agent` inside the worktree at `path`. */
   launchCommand(path: string, agent: string, prompt?: string): string {
+    if (!/^[\w.-]+$/.test(agent)) throw new EngineError('invalid agent name')
     const parts = [this.bin, 'open', path, '-a', agent]
     if (prompt) parts.push('-p', prompt)
     return `cd ${shellQuote(path)} && ${parts.map(shellQuote).join(' ')}`

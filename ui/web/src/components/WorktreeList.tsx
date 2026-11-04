@@ -1,4 +1,5 @@
 import { agentVar } from '../agents'
+import { AgentBadge } from './AgentBadge'
 import { useStore } from '../store'
 import type { Worktree } from '../types'
 
@@ -68,6 +69,7 @@ function WorktreeRow({ w }: { w: Worktree }) {
         {!w.main && w.commits > 0 && <span className="chip">{w.commits} {t(w.commits === 1 ? 'commit' : 'commits')}</span>}
       </span>
       <span className="wt-line2">
+        {!w.main && <AgentBadge agent={w.agent} size={16} live={working} />}
         <span className="wt-agent">{w.main ? t('mainCheckout') : w.agent || t('noAgent')}</span>
         {working ? <span className="wt-live"><i className="pulse" />{t('running')}</span> : !w.main && <span className="wt-idle">{t('idle')}</span>}
         <span className="wt-sep" />

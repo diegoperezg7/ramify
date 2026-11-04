@@ -6,6 +6,8 @@ import { relTime } from '../i18n'
 import { useStore } from '../store'
 import { Dialog } from './Dialog'
 import { DiffView } from './DiffView'
+import { AgentBadge } from './AgentBadge'
+import { Activity } from './Activity'
 import { upstreamLabel } from './WorktreeList'
 
 const IDE_LABELS: Record<string, string> = { xcode: 'Xcode', cursor: 'Cursor', code: 'VS Code', zed: 'Zed', idea: 'IntelliJ' }
@@ -34,12 +36,7 @@ export function Detail() {
     return (
       <section className="pane detail-pane placeholder">
         <span className="pane-kicker">{t('inspector')}</span>
-        <p className="muted">{t('select')}</p>
-        <ul className="hints">
-          <li>{t('hintSelect')}</li>
-          <li>{t('hintGraph')}</li>
-          <li>{t('hintPalette')}</li>
-        </ul>
+        <Activity />
       </section>
     )
   }
@@ -54,7 +51,7 @@ export function Detail() {
     <section className="pane detail-pane" style={{ ['--c' as string]: w.main ? 'var(--lane-base)' : agentVar(w.agent) }}>
       <header className="detail-head">
         <div className="detail-title">
-          <span className="agent-chip"><span className="dot" />{w.main ? t('mainCheckout') : w.agent || t('noAgent')}</span>
+          <span className="agent-chip">{w.main ? <span className="dot" /> : <AgentBadge agent={w.agent} size={20} live={w.running.length > 0} />}{w.main ? t('mainCheckout') : w.agent || t('noAgent')}{w.running.length > 0 && <span className="chip-live">{t('running')}</span>}</span>
           <h2 className="branch">{w.branch}</h2>
           <button type="button" className="path" onClick={() => copy('path', w.path)} title={t('copyPath')}>
             {copied === 'path' ? <Check size={13} /> : <Copy size={13} />}<span>{w.path}</span>

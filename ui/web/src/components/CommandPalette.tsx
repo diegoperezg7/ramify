@@ -1,9 +1,9 @@
 import { CornerDownLeft, FolderGit2, GitBranch, Moon, Plus, Search, Settings, Sun } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import { agentVar } from '../agents'
 import { useStore } from '../store'
 import { GithubIcon } from './GithubIcon'
 import { useDarkMode } from './TopBar'
+import { AgentBadge } from './AgentBadge'
 
 interface Item { id: string; group: string; label: string; hint?: string; icon: ReactNode; run: () => void }
 
@@ -39,7 +39,7 @@ export function CommandPalette() {
       if (w.main) continue
       list.push({
         id: `wt:${w.path}`, group: t('groupWorktrees'), label: w.branch, hint: w.agent || undefined,
-        icon: <span className="pal-dot" style={{ background: agentVar(w.agent) }} />, run: close(() => select(w.path)),
+        icon: <AgentBadge agent={w.agent} size={18} live={w.running.length > 0} />, run: close(() => select(w.path)),
       })
     }
     for (const r of repos) {
