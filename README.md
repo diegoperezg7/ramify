@@ -92,24 +92,55 @@ or as a command on Linux.
 `agent-wt graph` lists which agent works on which branch and draws the commit graph of all of them,
 so you can see what each agent did, what is pushed and what is ready to merge.
 
-## Live dashboard
+## Apps
+
+The same interface runs in four places. All of them read the repository live, every few seconds.
+
+<p align="center"><img src="docs/app-dark.png" alt="agent-wt desktop app: repositories with agents working now, worktrees, branch tree coloured by agent and the inspector with a diff"></p>
+
+| | What you get |
+|---|---|
+| **Desktop app** (macOS) | Every repository in one window. Repositories where an agent is running right now appear by themselves under *Working now*; your GitHub repositories are one click away (add the local clone or clone it). Create a worktree, pick the agent and it opens in Terminal, iTerm or Ghostty. ⌘K command palette, ⌘N new worktree, ↑/↓ to move. |
+| **VS Code / Cursor extension** | The dashboard as an editor tab (`agent-wt: Open dashboard`, ⌘⌥W), agents launched in the integrated terminal, a status bar counter of agents working. |
+| **Claude Code plugin** | Every Claude Code worktree (`--worktree`, background sessions, `/batch`, subagents) is created by agent-wt, plus `/agent-wt:status` and `/agent-wt:ui`. |
+| **Browser** (`agent-wt ui`) | Single repository dashboard from the terminal: 127.0.0.1 only, one-time token. |
+
+<p align="center">
+  <img src="docs/app-light.png" width="49%" alt="agent-wt in light mode">
+  <img src="docs/app-palette.png" width="49%" alt="agent-wt command palette">
+</p>
+
+Light and dark mode (or follow the system), English and Spanish, comfortable or compact density, and a layout that
+goes from three columns on a wide screen to a slide-over inspector and a phone-sized single column.
+
+### Install
 
 ```bash
-agent-wt ui
+# desktop app
+npm ci && npm run build:desktop        # → apps/desktop/release/agent-wt-<version>-arm64.dmg
+
+# VS Code / Cursor
+npm ci && npm run build:vscode         # → apps/vscode/agent-wt.vsix
+cursor --install-extension apps/vscode/agent-wt.vsix   # or: code --install-extension ...
 ```
 
-Opens a local web dashboard (127.0.0.1 only, one-time token per session) that refreshes every few
-seconds: every worktree with its agent and whether it is working right now, the branch tree coloured
-by agent, and for each branch its commits, changed files and diffs. From there you can open a
-worktree in Xcode, Cursor, VS Code, Zed or Finder, merge it into the main branch, or remove it, with
-the same safety rules as the CLI. English and Spanish, light and dark.
+```text
+# Claude Code plugin (use either the plugin or `agent-wt install claude-hooks`, not both)
+/plugin marketplace add diegoperezg7/agent-wt
+/plugin install agent-wt@agent-wt
+```
 
-<p align="center"><img src="docs/dashboard-dark.png" alt="agent-wt ui: worktrees, branch tree coloured by agent and a diff of the selected branch"></p>
+The desktop app is not signed: the first time, right-click it and choose *Open*. GitHub integration uses the
+`gh` CLI you are already signed in to. The browser dashboard needs `python3` and uses the prebuilt `ui/dist`.
 
-It needs `python3`. The web app is prebuilt in `ui/dist`; to change it, edit `ui/web` (React, Vite,
-TypeScript) and run `npm ci && npm run build` there.
+### How it is built
+
+`packages/core` is the engine in TypeScript (state, diffs, merge, create, project detection, GitHub). The desktop
+app (Electron) and the extension share it and bundle the `agent-wt` script, so they work without the CLI installed.
+`ui/web` is one React app that talks to whichever host it runs in: Electron IPC, VS Code webview messages or HTTP.
 
 ## Inside a worktree
+
 
 Every worktree has a `.worktree.env`, excluded from git, that is exported into the agent:
 

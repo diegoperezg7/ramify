@@ -1,0 +1,21 @@
+{
+  "name": "agent-wt-monorepo",
+  "private": true,
+  "workspaces": [
+    "packages/core",
+    "ui/web",
+    "apps/desktop",
+    "apps/vscode"
+  ],
+  "scripts": {
+    "build:web": "npm run build -w ui/web",
+    "build:desktop": "npm run build:web && npm run dist -w apps/desktop",
+    "build:vscode": "npm run build:web && npm run package -w apps/vscode",
+    "test:core": "npm test -w packages/core",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "allowScripts": {
+    "electron@45.2.2": true,
+    "esbuild@0.28.2": true
+  }
+}

@@ -1,52 +1,132 @@
-import { AlertTriangle, CheckCircle2, XCircle } from 'lucide-react'
-import { useEffect } from 'react'
+import { AlertTriangle, CheckCircle2, FolderGit2, Plus, XCircle } from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 import { Detail } from './components/Detail'
+import { CreateDialog, SettingsDialog } from './components/Forms'
+import { GithubDialog } from './components/GithubDialog'
 import { Graph } from './components/Graph'
-import { Stats } from './components/Stats'
+import { Sidebar } from './components/Sidebar'
+import { StatusBar } from './components/Stats'
+import { CommandPalette } from './components/CommandPalette'
 import { TopBar } from './components/TopBar'
-import { WorktreeList } from './components/WorktreeList'
+import { sortWorktrees, WorktreeList } from './components/WorktreeList'
 import { useStore } from './store'
 
 const POLL_MS = 2500
 
 export function App() {
+  const caps = useStore((s) => s.caps)
   const state = useStore((s) => s.state)
+  const repos = useStore((s) => s.repos)
   const conn = useStore((s) => s.conn)
+  const modal = useStore((s) => s.modal)
   const theme = useStore((s) => s.theme)
   const lang = useStore((s) => s.lang)
   const toasts = useStore((s) => s.toasts)
+  const init = useStore((s) => s.init)
   const poll = useStore((s) => s.poll)
+  const addRepo = useStore((s) => s.addRepo)
   const t = useStore((s) => s.t)
+  const density = useStore((s) => s.density)
+  const selected = useStore((s) => s.selected)
+  const select = useStore((s) => s.select)
+
+  useEffect(() => { document.documentElement.dataset.density = density }, [density])
+
+  // Keyboard: ⌘K palette, ⌘N new worktree, ⌘, settings, ↑/↓ move between worktrees, Esc close.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const s = useStore.getState()
+      const mod = e.metaKey || e.ctrlKey
+      const typing = (e.target as HTMLElement)?.closest('input, textarea, select, dialog')
+      if (mod && e.key.toLowerCase() === 'k') { e.preventDefault(); s.setModal(s.modal === 'palette' ? null : 'palette'); return }
+      if (typing || s.modal) return
+      if (mod && e.key.toLowerCase() === 'n' && s.caps?.create && s.state) { e.preventDefault(); s.setModal('create') }
+      else if (mod && e.key === ',' && s.caps?.settings) { e.preventDefault(); s.setModal('settings') }
+      else if (e.key === 'Escape' && s.selected) s.select(null)
+      else if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && s.state && !mod) {
+        e.preventDefault()
+        const list = sortWorktrees(s.state.worktrees)
+        const i = list.findIndex((w) => w.path === s.selected)
+        const next = list[Math.max(0, Math.min(list.length - 1, i + (e.key === 'ArrowDown' ? 1 : -1)))]
+        if (next) s.select(next.path)
+      }
+    }
+    // The editor extension asks for the "new worktree" form through a message.
+    const onMessage = (e: MessageEvent) => { if ((e.data as { command?: string })?.command === 'new') useStore.getState().setModal('create') }
+    window.addEventListener('keydown', onKey)
+    window.addEventListener('message', onMessage)
+    return () => { window.removeEventListener('keydown', onKey); window.removeEventListener('message', onMessage) }
+  }, [])
+
+  // Layout follows the width actually available to the app (window minus sidebar):
+  // lg = three columns, md = detail becomes a drawer, sm = compact header and stats.
+  const appRef = useRef<HTMLDivElement>(null)
+  const [size, setSize] = useState<'lg' | 'md' | 'sm'>('lg')
+  useEffect(() => {
+    const el = appRef.current
+    if (!el) return
+    const ro = new ResizeObserver(([e]) => {
+      const w = e.contentRect.width
+      setSize(w >= 1240 ? 'lg' : w >= 860 ? 'md' : 'sm')
+    })
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [])
 
   useEffect(() => {
-    void poll()
+    void init()
     const id = setInterval(() => { if (!document.hidden) void poll() }, POLL_MS)
     return () => clearInterval(id)
-  }, [poll])
+  }, [init, poll])
 
   useEffect(() => {
-    if (theme === 'system') delete document.documentElement.dataset.theme
-    else document.documentElement.dataset.theme = theme
-  }, [theme])
+    const root = document.documentElement
+    if (theme !== 'system') { root.dataset.theme = theme; return }
+    if (caps?.host !== 'vscode') { delete root.dataset.theme; return }
+    // Inside VS Code / Cursor, "system" follows the editor theme (body.vscode-light / vscode-dark).
+    const sync = () => { root.dataset.theme = document.body.classList.contains('vscode-light') ? 'light' : 'dark' }
+    sync()
+    const obs = new MutationObserver(sync)
+    obs.observe(document.body, { attributes: true, attributeFilter: ['class'] })
+    return () => obs.disconnect()
+  }, [theme, caps])
 
   useEffect(() => { document.documentElement.lang = lang }, [lang])
+  useEffect(() => { if (caps) document.documentElement.dataset.host = caps.host }, [caps])
+
+  const noRepos = caps?.multiRepo && repos.length === 0
 
   return (
-    <div className="app">
-      <TopBar />
-      {conn !== 'ok' && (
-        <div className="banner" role="alert"><AlertTriangle size={16} />{conn === 'unauthorized' ? t('badToken') : t('offline')}</div>
-      )}
-      {state && (
-        <>
-          <Stats />
-          <main className="layout">
-            <WorktreeList />
-            <Graph />
-            <Detail />
-          </main>
-        </>
-      )}
+    <div className={`shell${caps?.multiRepo ? ' has-sidebar' : ''}`}>
+      {caps?.multiRepo && <Sidebar />}
+      <div className={`app is-${size}`} ref={appRef}>
+        <TopBar />
+        {conn !== 'ok' && !noRepos && (
+          <div className="banner" role="alert"><AlertTriangle size={16} />{conn === 'unauthorized' ? t('badToken') : t('offline')}</div>
+        )}
+        {noRepos && (
+          <div className="welcome">
+            <span className="welcome-icon"><FolderGit2 size={28} /></span>
+            <p>{t('noRepos')}</p>
+            <button type="button" className="btn btn-primary" onClick={() => addRepo()}><Plus size={15} />{t('addRepo')}</button>
+          </div>
+        )}
+        {state && !noRepos && (
+          <>
+            <main className={`layout${selected ? ' has-selection' : ''}`}>
+              <WorktreeList />
+              <Graph />
+              <div className="drawer-scrim" onClick={() => select(null)} />
+              <Detail />
+            </main>
+          </>
+        )}
+        <StatusBar />
+      </div>
+      {modal === 'create' && <CreateDialog />}
+      {modal === 'settings' && <SettingsDialog />}
+      {modal === 'github' && <GithubDialog />}
+      {modal === 'palette' && <CommandPalette />}
       <div className="toasts" aria-live="polite">
         {toasts.map((x) => (
           <div key={x.id} className={`toast toast-${x.kind}`}>

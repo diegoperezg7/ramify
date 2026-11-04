@@ -1,0 +1,122 @@
+import { execFile } from 'node:child_process'
+import { existsSync, readdirSync, statSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { basename, join } from 'node:path'
+import type { GithubRepo } from './types.ts'
+
+// Finding the projects a person works on: running agents, local clones and GitHub.
+
+export const AGENT_PROCESSES = ['claude', 'codex', 'gemini', 'copilot', 'cursor-agent', 'opencode', 'aider', 'amp', 'goose', 'droid', 'qwen', 'crush']
+const INTERPRETERS = /^(node|bun|deno|[Pp]ython[\d.]*)$/
+
+function out(cmd: string, args: string[], env?: NodeJS.ProcessEnv, cwd?: string): Promise<{ code: number; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    execFile(cmd, args, { env, cwd, maxBuffer: 32 * 1024 * 1024, timeout: 20_000 }, (err, stdout, stderr) => {
+      resolve({ code: err ? (typeof err.code === 'number' ? err.code : 1) : 0, stdout: String(stdout), stderr: String(stderr) })
+    })
+  })
+}
+
+/** Name of the agent a process is, from its executable or, for interpreters, its script. */
+export function agentOf(comm: string, args: string): string | null {
+  const exe = basename(comm)
+  if (AGENT_PROCESSES.includes(exe)) return exe
+  if (!INTERPRETERS.test(exe)) return null
+  for (const word of args.split(/\s+/).slice(1, 4)) {
+    const name = basename(word).replace(/\.(js|mjs|cjs|py)$/, '')
+    if (AGENT_PROCESSES.includes(name)) return name
+    if (/@google\/gemini-cli|gemini-cli/.test(word)) return 'gemini'
+    if (/@github\/copilot/.test(word)) return 'copilot'
+    if (/@anthropic-ai\/claude-code/.test(word)) return 'claude'
+    if (/@openai\/codex/.test(word)) return 'codex'
+  }
+  return null
+}
+
+/** Working directory of every running agent process. */
+export async function runningAgents(env?: NodeJS.ProcessEnv): Promise<{ agent: string; cwd: string }[]> {
+  // `comm` is cut to 16 characters on macOS (/opt/homebrew/bi...), so read the executable from the full command line.
+  const ps = await out('ps', ['-axww', '-o', 'pid=,args='], env)
+  const agents = new Map<string, string>()
+  for (const line of ps.stdout.split('\n')) {
+    const m = /^\s*(\d+)\s+(\S+)(.*)$/.exec(line)
+    if (!m || Number(m[1]) === process.pid) continue
+    const agent = agentOf(m[2], `${m[2]}${m[3]}`)
+    if (agent) agents.set(m[1], agent)
+  }
+  if (!agents.size) return []
+  const lsof = await out('lsof', ['-a', '-d', 'cwd', '-p', [...agents.keys()].join(','), '-Fpn'], env)
+  const result: { agent: string; cwd: string }[] = []
+  let pid = ''
+  for (const line of lsof.stdout.split('\n')) {
+    if (line.startsWith('p')) pid = line.slice(1)
+    else if (line.startsWith('n') && agents.has(pid)) result.push({ agent: agents.get(pid)!, cwd: line.slice(1) })
+  }
+  return result
+}
+
+/** owner/name from a GitHub remote URL, or null. */
+export function githubSlug(url: string): string | null {
+  const m = /github\.com[:/]([^/\s]+)\/([^/\s]+?)(?:\.git)?\/?$/.exec(url.trim())
+  return m ? `${m[1]}/${m[2]}` : null
+}
+
+export async function originSlug(repo: string, env?: NodeJS.ProcessEnv): Promise<string | null> {
+  const r = await out('git', ['-C', repo, 'config', '--get', 'remote.origin.url'], env)
+  return r.code === 0 ? githubSlug(r.stdout) : null
+}
+
+const SKIP = new Set(['node_modules', 'Library', 'Pods', 'DerivedData', 'build', 'dist', '.build', 'vendor', '.venv', 'venv'])
+
+/** Git repositories under `dir`, up to `depth` levels down. Does not descend into repositories. */
+export function scanRepos(dir: string, depth = 3): string[] {
+  const found: string[] = []
+  const walk = (d: string, level: number) => {
+    if (existsSync(join(d, '.git'))) { found.push(d); return }
+    if (level >= depth) return
+    let names: string[] = []
+    try { names = readdirSync(d) } catch { return }
+    for (const n of names) {
+      if (n.startsWith('.') || SKIP.has(n)) continue
+      const p = join(d, n)
+      try { if (statSync(p).isDirectory()) walk(p, level + 1) } catch { /* unreadable */ }
+    }
+  }
+  if (existsSync(dir)) walk(dir, 0)
+  return found
+}
+
+export function defaultProjectsDir(): string {
+  const home = homedir()
+  return ['Proyectos', 'Projects', 'Developer', 'code', 'dev', 'src'].map((d) => join(home, d)).find(existsSync) ?? join(home, 'Projects')
+}
+
+export class GithubError extends Error {}
+
+/** Repositories of the signed-in GitHub user, most recently pushed first (needs the gh CLI). */
+export async function githubRepos(env?: NodeJS.ProcessEnv): Promise<Omit<GithubRepo, 'local' | 'added'>[]> {
+  const r = await out('gh', ['repo', 'list', '--limit', '200', '--json',
+    'nameWithOwner,url,description,isPrivate,isFork,isArchived,pushedAt,primaryLanguage'], env)
+  if (r.code !== 0) {
+    if (/not found|ENOENT/i.test(r.stderr) || r.code === 127) throw new GithubError('gh-missing')
+    if (/auth|login/i.test(r.stderr)) throw new GithubError('gh-auth')
+    throw new GithubError(r.stderr.trim() || 'gh failed')
+  }
+  type Raw = { nameWithOwner: string; url: string; description: string | null; isPrivate: boolean; isFork: boolean; isArchived: boolean; pushedAt: string; primaryLanguage: { name: string } | null }
+  return (JSON.parse(r.stdout) as Raw[])
+    .filter((x) => !x.isArchived)
+    .map((x) => ({
+      nameWithOwner: x.nameWithOwner, url: x.url, description: x.description ?? '', isPrivate: x.isPrivate,
+      isFork: x.isFork, pushedAt: x.pushedAt, language: x.primaryLanguage?.name ?? null,
+    }))
+    .sort((a, b) => b.pushedAt.localeCompare(a.pushedAt))
+}
+
+export async function cloneGithub(nameWithOwner: string, intoDir: string, env?: NodeJS.ProcessEnv): Promise<string> {
+  if (!/^[\w.-]+\/[\w.-]+$/.test(nameWithOwner)) throw new GithubError('invalid repository name')
+  const target = join(intoDir, nameWithOwner.split('/')[1])
+  if (existsSync(target)) throw new GithubError(`${target} already exists`)
+  const r = await out('gh', ['repo', 'clone', nameWithOwner, target], env)
+  if (r.code !== 0) throw new GithubError(r.stderr.trim() || 'clone failed')
+  return target
+}

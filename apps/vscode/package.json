@@ -1,0 +1,36 @@
+{
+  "name": "agent-wt",
+  "displayName": "agent-wt",
+  "description": "One git worktree per task for any coding agent: live branch tree, diffs, merge and launch agents from the editor.",
+  "version": "0.4.0",
+  "publisher": "diegoperezg7",
+  "license": "MIT",
+  "icon": "media/icon.png",
+  "repository": { "type": "git", "url": "https://github.com/diegoperezg7/agent-wt" },
+  "engines": { "vscode": "^1.90.0" },
+  "categories": ["SCM Providers", "Other"],
+  "keywords": ["git", "worktree", "agents", "claude", "codex"],
+  "main": "./dist/extension.cjs",
+  "activationEvents": ["onStartupFinished"],
+  "contributes": {
+    "commands": [
+      { "command": "agentWt.open", "title": "agent-wt: Open dashboard", "icon": "$(git-branch)" },
+      { "command": "agentWt.new", "title": "agent-wt: New worktree" }
+    ],
+    "keybindings": [
+      { "command": "agentWt.open", "key": "ctrl+alt+w", "mac": "cmd+alt+w" }
+    ]
+  },
+  "scripts": {
+    "build": "node build.mjs",
+    "package": "node build.mjs && vsce package --no-dependencies --out agent-wt.vsix",
+    "typecheck": "tsc -p ."
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/vscode": "~1.90.0",
+    "@vscode/vsce": "^4.1.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
+  }
+}

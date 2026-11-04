@@ -2,7 +2,7 @@ name: ci
 on: [push, pull_request]
 
 jobs:
-  test:
+  cli:
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
@@ -11,19 +11,27 @@ jobs:
       - uses: actions/checkout@v5
       - name: shellcheck
         if: runner.os == 'Linux'
-        run: shellcheck -S warning agent-wt install.sh tests/run.sh examples/*/*.sh
+        run: shellcheck -S warning agent-wt install.sh tests/run.sh examples/*/*.sh scripts/*.sh
       - name: tests
         run: bash tests/run.sh
 
-  dashboard:
+  apps:
     runs-on: ubuntu-latest
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-node@v5
         with:
           node-version: 24
-      - name: build
-        working-directory: ui/web
-        run: npm ci && npm run build
-      - name: ui/dist is up to date
-        run: git diff --stat --exit-code -- ui/dist
+      - run: npm ci
+      - name: core tests
+        run: npm run test:core
+      - name: typecheck
+        run: npm run typecheck
+      - name: web build is up to date
+        run: npm run build:web && git diff --stat --exit-code -- ui/dist
+      - name: Claude Code plugin is in sync
+        run: ./scripts/sync-plugin.sh && git diff --stat --exit-code -- claude-plugin
+      - name: VS Code extension packages
+        run: npm run package -w apps/vscode

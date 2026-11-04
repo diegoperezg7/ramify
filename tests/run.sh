@@ -49,6 +49,10 @@ git init -q "$T/empty"
 check "new fails cleanly in a repo without commits" '! (cd "$T/empty" && "$AW" new x 2>/dev/null) && [ ! -e "$AGENT_WT_ROOT/empty/x" ]'
 check "new refuses an existing worktree" '! "$AW" new pagos 2>/dev/null'
 
+p=$("$AW" new nolaunch -a codex --no-launch 2>/dev/null)
+check "--no-launch prints the path and records the agent" '[ "$p" = "$W/nolaunch" ] && grep -qx "WT_AGENT=codex" "$W/nolaunch/.worktree.env" && [ ! -f "$T/last-agent" ]'
+"$AW" rm nolaunch 2>/dev/null
+
 echo "agents"
 "$AW" open pagos -a claude -p "fix the bug" 2>/dev/null
 check "claude: prompt as argument, cwd and PORT set" 'grep -qx "claude|$W/pagos|$p2|fix the bug" "$T/last-agent"'
@@ -65,8 +69,15 @@ check "opencode: no prompt flag, prompt goes to clipboard" 'grep -q "^opencode|.
 "$AW" open pagos -a aider -- --model x 2>/dev/null
 check "args after -- are passed through" 'grep -q "^aider|.*|--model x$" "$T/last-agent"'
 check "last agent recorded in .worktree.env" 'grep -qx "WT_AGENT=aider" "$W/pagos/.worktree.env"'
+# An agent process is recognised by its executable name: a tiny binary named "codex".
+mkdir -p "$T/real"
+if printf '#include <unistd.h>\nint main(void){sleep(5);return 0;}\n' | cc -x c -o "$T/real/codex" - 2>/dev/null; then
+  (cd "$W/pagos" && exec "$T/real/codex") & sleep 1
+  check "ls shows agents running inside a worktree" '"$AW" ls 2>/dev/null | grep -q "^pagos .*codex"'
+fi
 (cd "$W/pagos" && exec perl -e 'sleep 5') & sleep 1
-check "ls shows processes running inside a worktree" '"$AW" ls 2>/dev/null | grep -q "^pagos .*perl"'
+check "ls ignores processes that are not agents" '! "$AW" ls 2>/dev/null | grep -q "^pagos .*perl"'
+kill %2 2>/dev/null
 kill %1 2>/dev/null; wait 2>/dev/null
 check "ls --json is valid and has the worktree" '"$AW" ls --json | jq -e ".[] | select(.branch == \"pagos\") | .agent == \"aider\" and .main == false" >/dev/null'
 check "ls shows the agent" '"$AW" ls 2>/dev/null | grep -q "^pagos .*aider"'

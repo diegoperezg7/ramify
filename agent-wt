@@ -3,11 +3,13 @@
 # https://github.com/diegoperezg7/agent-wt
 set -euo pipefail
 
-VERSION=0.3.0
+VERSION=0.4.0
 ROOT="${AGENT_WT_ROOT:-$HOME/.worktrees}"
 PORT_MIN="${AGENT_WT_PORT_MIN:-4100}"
 PORT_MAX="${AGENT_WT_PORT_MAX:-4990}"
 PORT_BLOCK=10
+# Process names counted as agents in `ls` (node/bun/python count as the worktree's recorded agent).
+AGENT_NAMES="claude codex gemini copilot cursor-agent opencode aider amp goose droid qwen crush"
 SELF_DIR=$(cd "$(dirname "$(readlink "$0" 2>/dev/null || echo "$0")")" && pwd)
 
 if { [ -t 2 ] || [ -n "${FORCE_COLOR:-}" ]; } && [ -z "${NO_COLOR:-}" ]; then
@@ -24,7 +26,7 @@ usage() {
 ${B}agent-wt${N} $VERSION - one git worktree per task, for any coding agent or IDE
 
 ${B}Usage${N}
-  agent-wt new  <branch> [-a agent] [-i ide] [-p prompt] [-f base] [--tmux] [--no-setup] [-- agent args]
+  agent-wt new  <branch> [-a agent] [-i ide] [-p prompt] [-f base] [--tmux] [--no-setup] [--no-launch] [-- agent args]
   agent-wt open <name>   [-a agent] [-i ide] [-p prompt] [--tmux] [-- agent args]
   agent-wt ls [--json]            worktrees, agent, activity, changes, ports
   agent-wt ui [--port N]          live web dashboard (needs python3)
@@ -308,8 +310,10 @@ cmd_ls() {
           else sync=$(git -C "$cur" rev-list --count '@{u}..HEAD'); [ "$sync" = 0 ] && sync=pushed || sync="+$sync"; fi
           port=$(env_get "$cur" PORT); agent=$(env_get "$cur" WT_AGENT)
           active=$(printf '%s\n' "$procs" | awk -F'\t' -v p="$cur" '$1 == p || index($1, p "/") == 1 { print $2 }' \
-            | grep -vixE -- '-?(zsh|bash|sh|fish|login|tmux|awk|lsof|sed|grep|sort|head|paste|cat|git|tr|wc)' \
-            | awk -v a="$agent" '{ print (a != "" && ($0 == "node" || $0 == "bun" || $0 ~ /^python/)) ? a : $0 }' \
+            | awk -v a="$agent" -v known="$AGENT_NAMES" '
+                BEGIN { n = split(known, k, " "); for (i = 1; i <= n; i++) ok[k[i]] = 1 }
+                ok[$0] { print; next }
+                a != "" && ($0 == "node" || $0 == "bun" || $0 ~ /^[Pp]ython/) { print a }' \
             | sort -u | head -3 | paste -sd, - || true)
           if [ "$json" = 1 ]; then
             [ "$first" = 1 ] || printf ','; first=0
@@ -411,7 +415,9 @@ cmd_ui() {
   command -v python3 >/dev/null || die "python3 is required for the dashboard"
   main=$(main_checkout "$PWD")
   token=$(python3 -I -c 'import secrets; print(secrets.token_hex(16))')
-  cd "$SELF_DIR/ui"
+  if [ -f "$SELF_DIR/ui/server.py" ]; then cd "$SELF_DIR/ui"
+  elif [ -f "$SELF_DIR/../ui/server.py" ]; then cd "$SELF_DIR/../ui"
+  else die "dashboard files not found next to $SELF_DIR"; fi
   python3 -I server.py --main "$main" --bin "$SELF_DIR/agent-wt" --port "$port" --token "$token" \
     | while IFS= read -r url; do
         log "${B}agent-wt ui${N}  $url  ${D}(Ctrl-C to stop)${N}"
@@ -479,7 +485,7 @@ case "$sub" in
   new|open)
     [ $# -gt 0 ] || { usage; exit 1; }
     name=$1; shift
-    agent=""; ide=""; from=""; prompt=""; tmux=0; setup=1
+    agent=""; ide=""; from=""; prompt=""; tmux=0; setup=1; nolaunch=0
     while [ $# -gt 0 ]; do
       case "$1" in
         -a|--agent) agent=$2; shift 2 ;;
@@ -488,12 +494,14 @@ case "$sub" in
         -f|--from) from=$2; shift 2 ;;
         --tmux) tmux=1; shift ;;
         --no-setup) setup=0; shift ;;
+        --no-launch) nolaunch=1; shift ;;
         --) shift; break ;;
         *) die "unknown option: $1" ;;
       esac
     done
     if [ "$sub" = new ]; then
       create "$name" "$from" "$setup" "$agent"; wt=$CREATED_WT
+      if [ "$nolaunch" = 1 ]; then printf '%s\n' "$wt"; exit 0; fi
     else
       main=$(main_checkout "$PWD"); wt=$(find_wt "$main" "$name")
     fi

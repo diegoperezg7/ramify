@@ -1,12 +1,11 @@
 import { Cloud, Tag } from 'lucide-react'
-import { useMemo } from 'react'
+import { useEffect, useMemo, useRef, type CSSProperties } from 'react'
 import { agentVar } from '../agents'
 import { layout } from '../graph'
 import { relTime } from '../i18n'
 import { useStore } from '../store'
 import type { Worktree } from '../types'
 
-const ROW = 36
 const LANE = 18
 const PAD = 16
 
@@ -16,26 +15,34 @@ export function Graph() {
   const select = useStore((s) => s.select)
   const lang = useStore((s) => s.lang)
   const t = useStore((s) => s.t)
+  const ROW = useStore((s) => (s.density === 'compact' ? 28 : 36))
 
   const g = useMemo(() => layout(state.commits), [state.commits])
   const byBranch = useMemo(() => new Map(state.worktrees.map((w) => [w.branch, w])), [state.worktrees])
   const selectedBranch = state.worktrees.find((w) => w.path === selected)?.branch ?? null
+
+  // Everything is "new" on the first render (the tree draws itself in); afterwards only
+  // commits and lines that appear between refreshes animate in.
+  const seen = useRef<Set<string> | null>(null)
+  const first = seen.current === null
+  const fresh = (id: string) => first || !seen.current!.has(id)
+  useEffect(() => {
+    seen.current = new Set([...g.rows.map((r) => r.commit.hash), ...g.edges.map((e) => e.id)])
+  }, [g])
 
   const colorOf = (owner: string | null) => (owner ? agentVar(byBranch.get(owner)?.agent) : 'var(--lane-base)')
   const dimmed = (owner: string | null) => selectedBranch !== null && owner !== null && owner !== selectedBranch
   const x = (col: number) => PAD + col * LANE
   const y = (row: number) => row * ROW + ROW / 2
   const graphWidth = PAD * 2 + (g.lanes - 1) * LANE
+  const delay = (row: number) => (first ? `${Math.min(row, 40) * 28}ms` : '0ms')
 
   const agents = [...new Set(state.worktrees.filter((w) => !w.main && w.agent).map((w) => w.agent))]
 
   return (
-    <section className="panel graph-panel">
-      <header className="panel-head">
-        <div>
-          <h2>{t('branchTree')}</h2>
-          <p className="muted small">{t('graphHint')}</p>
-        </div>
+    <section className="pane graph-pane">
+      <header className="pane-head">
+        <h2 title={t('graphHint')}>{t('branchTree')}</h2>
         <ul className="legend" aria-label="agents">
           <li><span className="swatch" style={{ background: 'var(--lane-base)' }} />{state.base}</li>
           {agents.map((a) => (
@@ -44,25 +51,33 @@ export function Graph() {
         </ul>
       </header>
 
+      <div className="graph-cols" style={{ ['--gw' as string]: `${graphWidth}px` }}>
+        <span>{t('colGraph')}</span><span>{t('colMessage')}</span><span className="col-date">{t('colDate')}</span><span className="col-hash">{t('colCommit')}</span>
+      </div>
       <div className="graph-scroll">
         <div className="graph" style={{ height: g.rows.length * ROW }}>
           <svg className="graph-svg" width={graphWidth} height={g.rows.length * ROW} aria-hidden="true">
-            {g.edges.map((e, i) => {
+            {g.edges.map((e) => {
               const x1 = x(e.from), x2 = x(e.to), y1 = y(e.row)
               const y2 = e.last ? y1 + ROW / 2 : y(e.row + 1)
               const d = x1 === x2
                 ? `M${x1} ${y1} L${x2} ${y2}`
                 : `M${x1} ${y1} C${x1} ${y1 + ROW * 0.55} ${x2} ${y2 - ROW * 0.55} ${x2} ${y2}`
+              const isNew = fresh(e.id)
               return (
-                <path key={i} d={d} fill="none" stroke={colorOf(e.owner)} strokeWidth={2}
+                <path key={e.id} d={d} fill="none" stroke={colorOf(e.owner)} strokeWidth={2}
                   strokeLinecap="round" opacity={dimmed(e.owner) ? 0.2 : 1}
-                  strokeDasharray={e.last ? '3 4' : undefined} />
+                  className={`edge${isNew ? ' is-new' : ''}${e.last ? ' is-last' : ''}`}
+                  pathLength={isNew && !e.last ? 1 : undefined}
+                  style={{ d: `path("${d}")`, animationDelay: delay(e.row) } as CSSProperties} />
               )
             })}
             {g.rows.map(({ commit, col }, r) => {
               const merge = commit.parents.length > 1
               return (
                 <circle key={commit.hash} cx={x(col)} cy={y(r)} r={merge ? 4.5 : 5.5}
+                  className={`node${fresh(commit.hash) ? ' is-new' : ''}`}
+                  style={{ cx: x(col), cy: y(r), animationDelay: delay(r) } as CSSProperties}
                   fill={merge ? 'var(--bg)' : colorOf(commit.owner)} stroke={merge ? colorOf(commit.owner) : 'var(--bg)'}
                   strokeWidth={merge ? 2.5 : 2} opacity={dimmed(commit.owner) ? 0.25 : 1} />
               )
@@ -75,8 +90,8 @@ export function Graph() {
             const target = wt ?? tipWt
             return (
               <button key={commit.hash} type="button"
-                className={`graph-row${dimmed(commit.owner) ? ' is-dim' : ''}${target && target.path === selected ? ' is-selected' : ''}`}
-                style={{ top: r * ROW, height: ROW, paddingLeft: graphWidth }}
+                className={`graph-row${dimmed(commit.owner) ? ' is-dim' : ''}${target && target.path === selected ? ' is-selected' : ''}${fresh(commit.hash) ? ' is-new' : ''}`}
+                style={{ top: r * ROW, height: ROW, paddingLeft: graphWidth, animationDelay: delay(r) }}
                 onClick={() => target && select(target.path)}
                 title={`${commit.hash}\n${commit.author} · ${new Date(commit.time * 1000).toLocaleString(lang)}`}>
                 <span className="refs">

@@ -1,0 +1,62 @@
+{
+  "name": "agent-wt-desktop",
+  "productName": "agent-wt",
+  "description": "One git worktree per task, for any coding agent",
+  "version": "0.4.0",
+  "private": true,
+  "author": "Diego P\u00e9rez",
+  "main": "dist/main.cjs",
+  "scripts": {
+    "build": "node build.mjs",
+    "start": "node build.mjs && electron .",
+    "dist": "node build.mjs && electron-builder --mac --arm64 --publish never",
+    "typecheck": "tsc -p ."
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "electron": "45.2.2",
+    "electron-builder": "^26.18.0",
+    "esbuild": "^0.28.2",
+    "typescript": "^7.0.2"
+  },
+  "build": {
+    "appId": "io.github.diegoperezg7.agentwt",
+    "productName": "agent-wt",
+    "copyright": "Copyright \u00a9 2026 Diego P\u00e9rez",
+    "directories": {
+      "output": "release",
+      "buildResources": "resources"
+    },
+    "files": [
+      "dist/**",
+      "renderer/**",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../../agent-wt",
+        "to": "bin/agent-wt"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "icon": "resources/icon.icns",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ],
+      "identity": null,
+      "darkModeSupport": true
+    },
+    "dmg": {
+      "title": "agent-wt",
+      "iconSize": 96
+    },
+    "electronVersion": "45.2.2",
+    "electronDist": "../../node_modules/electron/dist"
+  }
+}

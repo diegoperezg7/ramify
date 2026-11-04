@@ -1,0 +1,12 @@
+{
+  "name": "agent-wt",
+  "description": "agent-wt for Claude Code",
+  "owner": { "name": "Diego Pérez" },
+  "plugins": [
+    {
+      "name": "agent-wt",
+      "source": "./claude-plugin",
+      "description": "Claude Code worktrees through agent-wt, plus /agent-wt:status and /agent-wt:ui"
+    }
+  ]
+}

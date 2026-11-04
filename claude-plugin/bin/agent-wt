@@ -1,0 +1,533 @@
+#!/bin/bash
+# agent-wt: one git worktree per task, ready for any coding agent or IDE.
+# https://github.com/diegoperezg7/agent-wt
+set -euo pipefail
+
+VERSION=0.4.0
+ROOT="${AGENT_WT_ROOT:-$HOME/.worktrees}"
+PORT_MIN="${AGENT_WT_PORT_MIN:-4100}"
+PORT_MAX="${AGENT_WT_PORT_MAX:-4990}"
+PORT_BLOCK=10
+# Process names counted as agents in `ls` (node/bun/python count as the worktree's recorded agent).
+AGENT_NAMES="claude codex gemini copilot cursor-agent opencode aider amp goose droid qwen crush"
+SELF_DIR=$(cd "$(dirname "$(readlink "$0" 2>/dev/null || echo "$0")")" && pwd)
+
+if { [ -t 2 ] || [ -n "${FORCE_COLOR:-}" ]; } && [ -z "${NO_COLOR:-}" ]; then
+  B=$'\033[1m'; D=$'\033[2m'; G=$'\033[32m'; Y=$'\033[33m'; R=$'\033[31m'; M=$'\033[35m'; N=$'\033[0m'
+else
+  B=; D=; G=; Y=; R=; M=; N=
+fi
+
+log() { printf '%s\n' "$*" >&2; }
+die() { log "${R}agent-wt:${N} $*"; exit 1; }
+
+usage() {
+  cat >&2 <<EOF
+${B}agent-wt${N} $VERSION - one git worktree per task, for any coding agent or IDE
+
+${B}Usage${N}
+  agent-wt new  <branch> [-a agent] [-i ide] [-p prompt] [-f base] [--tmux] [--no-setup] [--no-launch] [-- agent args]
+  agent-wt open <name>   [-a agent] [-i ide] [-p prompt] [--tmux] [-- agent args]
+  agent-wt ls [--json]            worktrees, agent, activity, changes, ports
+  agent-wt ui [--port N]          live web dashboard (needs python3)
+  agent-wt graph [-n N]           branch graph of every worktree
+  agent-wt path <name>            print a worktree path
+  agent-wt rm <name> [--force]    remove a worktree (never deletes unmerged commits)
+  agent-wt prune                  remove clean, merged worktrees
+  agent-wt install [claude-hooks|instructions|all]
+  agent-wt hook create|remove     Claude Code WorktreeCreate/WorktreeRemove hook
+
+${B}Agents${N} (-a)   claude, codex, gemini, copilot, cursor, opencode, aider, amp, or any command
+${B}IDEs${N}   (-i)   xcode, cursor, code, zed, idea, or any macOS app name
+
+Each worktree lives in \$AGENT_WT_ROOT/<repo>/<name> (default ~/.worktrees) and gets a
+.worktree.env with WT_NAME, WT_BRANCH, WT_PATH, WT_MAIN, WT_AGENT, PORT and DERIVED_DATA.
+EOF
+}
+
+# --- helpers -----------------------------------------------------------------
+
+main_checkout() {
+  local common
+  common=$(git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) \
+    || die "not a git repository: $1"
+  dirname "$common"
+}
+
+slugify() { printf '%s' "$1" | tr '/ ' '--' | tr -cd 'A-Za-z0-9._-'; }
+
+env_get() { [ -f "$1/.worktree.env" ] || return 0; sed -n "s/^$2=//p" "$1/.worktree.env" | head -1; }
+
+env_set() {
+  local f="$1/.worktree.env" tmp
+  [ -f "$f" ] || return 0
+  tmp=$(grep -v "^$2=" "$f" || true)
+  printf '%s\n%s=%s\n' "$tmp" "$2" "$3" | sed '/^$/d' > "$f"
+}
+
+# Worktree path from its folder name, branch or path.
+find_wt() {
+  local main="$1" name="$2" repo path="" line cur=""
+  repo=$(basename "$main")
+  if [ -d "$name/.git" ] || [ -f "$name/.git" ]; then (cd "$name" && pwd); return; fi
+  if [ -d "$ROOT/$repo/$(slugify "$name")" ]; then
+    printf '%s\n' "$ROOT/$repo/$(slugify "$name")"; return
+  fi
+  while IFS= read -r line; do
+    case "$line" in
+      "worktree "*) cur=${line#worktree } ;;
+      "branch refs/heads/$name") path=$cur ;;
+    esac
+    if [ -z "$path" ] && [ -n "$cur" ] && [ "$cur" != "$main" ] && [ "$(basename "$cur")" = "$name" ]; then
+      path=$cur
+    fi
+  done < <(git -C "$main" worktree list --porcelain)
+  [ -n "$path" ] || die "no worktree named '$name' (see: agent-wt ls)"
+  printf '%s\n' "$path"
+}
+
+alloc_port() {
+  local used p
+  used=$(cat "$ROOT"/*/*/.worktree.env 2>/dev/null | sed -n 's/^PORT=//p' || true)
+  p=$PORT_MIN
+  while [ "$p" -le "$PORT_MAX" ]; do
+    if ! printf '%s\n' "$used" | grep -qx "$p" && ! port_busy "$p"; then
+      printf '%s\n' "$p"; return
+    fi
+    p=$((p + PORT_BLOCK))
+  done
+  die "no free port block between $PORT_MIN and $PORT_MAX"
+}
+
+port_busy() {
+  command -v lsof >/dev/null || return 1
+  lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
+}
+
+# Copy the ignored files listed in .worktreeinclude (gitignore syntax) into the worktree.
+copy_included() {
+  local main="$1" wt="$2" files
+  [ -f "$main/.worktreeinclude" ] || return 0
+  files=$(cd "$main" && git ls-files --others --ignored --exclude-from=.worktreeinclude \
+    | grep -v '^\.claude/worktrees/' || true)
+  [ -n "$files" ] || return 0
+  log "${D}copying $(printf '%s\n' "$files" | wc -l | tr -d ' ') file(s) from .worktreeinclude${N}"
+  (cd "$main" && printf '%s\n' "$files" | tar -cf - -T -) | (cd "$wt" && tar -xpf -)
+}
+
+exclude_env_file() {
+  local common
+  common=$(git -C "$1" rev-parse --path-format=absolute --git-common-dir)
+  mkdir -p "$common/info"
+  grep -qx '/.worktree.env' "$common/info/exclude" 2>/dev/null \
+    || printf '/.worktree.env\n' >> "$common/info/exclude"
+}
+
+# Run .worktree/<name>.sh from the worktree, or from the main checkout if it is not tracked.
+run_project_script() {
+  local wt="$1" main="$2" which="$3" s=""
+  if [ -x "$wt/.worktree/$which.sh" ]; then s="$wt/.worktree/$which.sh"
+  elif [ -x "$main/.worktree/$which.sh" ]; then s="$main/.worktree/$which.sh"; fi
+  [ -n "$s" ] || return 1
+  log "${D}$which: $s${N}"
+  (cd "$wt" && set -a && . ./.worktree.env && set +a && "$s") >&2
+}
+
+auto_setup() {
+  (
+    cd "$1"
+    set -a; . ./.worktree.env; set +a
+    if [ -f project.yml ] && command -v xcodegen >/dev/null; then
+      log "${D}setup: xcodegen generate${N}"; xcodegen generate --quiet
+    fi
+    if [ -f package.json ]; then
+      if [ -f pnpm-lock.yaml ]; then log "${D}setup: pnpm install${N}"; pnpm install --frozen-lockfile
+      elif [ -f bun.lock ] || [ -f bun.lockb ]; then log "${D}setup: bun install${N}"; bun install --frozen-lockfile
+      elif [ -f yarn.lock ]; then log "${D}setup: yarn install${N}"; yarn install --frozen-lockfile
+      elif [ -f package-lock.json ]; then log "${D}setup: npm ci${N}"; npm ci
+      else log "${D}setup: npm install${N}"; npm install; fi
+    fi
+    if [ -f uv.lock ] && command -v uv >/dev/null; then log "${D}setup: uv sync${N}"; uv sync; fi
+  ) >&2
+}
+
+# Processes whose working directory is inside each worktree: "<path>\t<command>".
+active_agents() {
+  command -v lsof >/dev/null || return 0
+  lsof -a -d cwd -u "$(id -u)" -Fcn 2>/dev/null | awk '
+    /^c/ { cmd = substr($0, 2) }
+    /^n/ { print substr($0, 2) "\t" cmd }'
+}
+
+# --- agents ------------------------------------------------------------------
+
+# Sets AGENT_CMD and PROMPT_STYLE (arg | flag:<flag> | clipboard) for a known agent.
+agent_profile() {
+  case "$1" in
+    claude)              AGENT_CMD=claude;       PROMPT_STYLE=arg ;;
+    codex)               AGENT_CMD=codex;        PROMPT_STYLE=arg ;;
+    gemini)              AGENT_CMD=gemini;       PROMPT_STYLE=flag:-i ;;
+    copilot)             AGENT_CMD=copilot;      PROMPT_STYLE=flag:-i ;;
+    cursor|cursor-agent) AGENT_CMD=cursor-agent; PROMPT_STYLE=arg ;;
+    opencode)            AGENT_CMD=opencode;     PROMPT_STYLE=clipboard ;;
+    aider)               AGENT_CMD=aider;        PROMPT_STYLE=clipboard ;;
+    amp)                 AGENT_CMD=amp;          PROMPT_STYLE=clipboard ;;
+    *)                   AGENT_CMD=$1;           PROMPT_STYLE=clipboard ;;
+  esac
+}
+
+copy_to_clipboard() {
+  if command -v pbcopy >/dev/null; then printf '%s' "$1" | pbcopy
+  elif command -v wl-copy >/dev/null; then printf '%s' "$1" | wl-copy
+  elif command -v xclip >/dev/null; then printf '%s' "$1" | xclip -selection clipboard
+  else return 1; fi
+}
+
+open_ide() {
+  local ide="$1" wt="$2" proj app cli
+  if [ "$ide" = xcode ]; then
+    proj=$(ls -d "$wt"/*.xcworkspace 2>/dev/null | head -1 || true)
+    [ -n "$proj" ] || proj=$(ls -d "$wt"/*.xcodeproj 2>/dev/null | head -1 || true)
+    open -a Xcode "${proj:-$wt}"; return
+  fi
+  case "$ide" in
+    cursor) app=Cursor; cli=cursor ;;
+    code|vscode) app="Visual Studio Code"; cli=code ;;
+    zed) app=Zed; cli=zed ;;
+    idea) app="IntelliJ IDEA"; cli=idea ;;
+    *) app=$ide; cli=$ide ;;
+  esac
+  if [ "$(uname)" = Darwin ] && open -Ra "$app" 2>/dev/null; then open -a "$app" "$wt"
+  elif command -v "$cli" >/dev/null; then "$cli" "$wt" >/dev/null 2>&1 &
+  else die "cannot open IDE '$ide'"; fi
+}
+
+# launch <wt> <agent> <ide> <prompt> <tmux> [agent args...]
+launch() {
+  local wt="$1" agent="$2" ide="$3" prompt="$4" tmux="$5" sess line
+  shift 5
+  [ -n "$ide" ] && open_ide "$ide" "$wt"
+  if [ -z "$agent" ]; then
+    [ -n "$ide" ] || log "cd \"$wt\""
+    return 0
+  fi
+  agent_profile "$agent"
+  command -v "$AGENT_CMD" >/dev/null || die "command not found: $AGENT_CMD"
+  env_set "$wt" WT_AGENT "$agent"
+
+  if [ -n "$prompt" ]; then
+    case "$PROMPT_STYLE" in
+      arg) set -- "$@" "$prompt" ;;
+      flag:*) set -- "$@" "${PROMPT_STYLE#flag:}" "$prompt" ;;
+      clipboard)
+        if copy_to_clipboard "$prompt"; then log "${Y}$agent has no initial-prompt flag: prompt copied to the clipboard, paste it${N}"
+        else log "${Y}$agent has no initial-prompt flag; prompt:${N} $prompt"; fi ;;
+    esac
+  fi
+
+  if [ "$tmux" = 1 ]; then
+    sess=$(printf '%s_%s' "$(basename "$(dirname "$wt")")" "$(basename "$wt")" | tr '.:' '__')
+    set -- -d -s "$sess" -c "$wt" "$AGENT_CMD" "$@"
+    while IFS= read -r line; do [ -n "$line" ] && set -- -e "$line" "$@"; done < "$wt/.worktree.env"
+    tmux new-session "$@"
+    if [ -n "${TMUX:-}" ]; then log "tmux session ${B}$sess${N} started: tmux switch-client -t $sess"
+    else log "tmux session ${B}$sess${N} started: tmux attach -t $sess"; fi
+  else
+    cd "$wt"
+    set -a; . ./.worktree.env; set +a
+    exec "$AGENT_CMD" "$@"
+  fi
+}
+
+# --- commands ----------------------------------------------------------------
+
+# Create the worktree and leave its path in CREATED_WT. Not called inside $(...):
+# bash 3.2 does not keep errexit in command substitutions.
+create() {
+  local branch="$1" from="$2" setup="$3" agent="$4" main repo slug wt port base
+  main=$(main_checkout "$PWD")
+  repo=$(basename "$main")
+  slug=$(slugify "$branch")
+  [ -n "$slug" ] || die "invalid branch name: '$branch'"
+  wt="$ROOT/$repo/$slug"
+  [ -e "$wt" ] && die "$wt already exists (use: agent-wt open $branch)"
+  mkdir -p "$ROOT/$repo"
+
+  if git -C "$main" show-ref --verify --quiet "refs/heads/$branch"; then
+    [ -n "$from" ] && log "${Y}branch $branch already exists; ignoring -f $from${N}"
+    git -C "$main" worktree add "$wt" "$branch" >&2
+  elif [ -z "$from" ] && git -C "$main" show-ref --verify --quiet "refs/remotes/origin/$branch"; then
+    git -C "$main" worktree add --track -b "$branch" "$wt" "origin/$branch" >&2
+  else
+    base=$(git rev-parse --verify --quiet "${from:-HEAD}^{commit}") \
+      || die "base '${from:-HEAD}' does not exist (does the repository have a commit?)"
+    git -C "$main" worktree add -b "$branch" "$wt" "$base" >&2
+  fi
+
+  copy_included "$main" "$wt"
+  port=$(alloc_port)
+  cat > "$wt/.worktree.env" <<EOF
+WT_NAME=$slug
+WT_BRANCH=$branch
+WT_PATH=$wt
+WT_MAIN=$main
+WT_AGENT=$agent
+PORT=$port
+DERIVED_DATA=$ROOT/$repo/.derived-data/$slug
+EOF
+  exclude_env_file "$wt"
+
+  if [ "$setup" = 1 ] && ! run_project_script "$wt" "$main" setup; then
+    auto_setup "$wt" || log "${Y}warning: setup failed; the worktree is still at $wt${N}"
+  fi
+  log "${G}+${N} ${B}$slug${N}  branch ${M}$branch${N}  ports $port-$((port + PORT_BLOCK - 1))"
+  CREATED_WT=$wt
+}
+
+json_str() { printf '"%s"' "$(printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\000-\037')"; }
+
+cmd_ls() {
+  local json=0 main base line cur="" branch="" dirty commits sync port agent name active procs c1 c2 first=1 run
+  [ "${1:-}" = --json ] && json=1
+  main=$(main_checkout "$PWD")
+  base=$(git -C "$main" branch --show-current)
+  procs=$(active_agents)
+  if [ "$json" = 1 ]; then printf '['
+  else
+    printf "${B}%-20s %-24s %-9s %-13s %-8s %-8s %-9s %s${N}\n" \
+      WORKTREE BRANCH AGENT RUNNING CHANGES COMMITS UPSTREAM PORTS
+  fi
+  while IFS= read -r line; do
+    case "$line" in
+      "worktree "*) cur=${line#worktree }; branch="" ;;
+      "branch "*) branch=${line#branch refs/heads/} ;;
+      "")
+        if [ -n "$cur" ] && [ -d "$cur" ]; then
+          dirty=$(git -C "$cur" status --porcelain | wc -l | tr -d ' ')
+          if [ "$cur" = "$main" ]; then name="(main)"; commits=0
+          else name=$(basename "$cur"); commits=$(git -C "$cur" rev-list --count "$base..HEAD" 2>/dev/null || echo 0); fi
+          if ! git -C "$cur" rev-parse -q --verify '@{u}' >/dev/null 2>&1; then sync=local
+          else sync=$(git -C "$cur" rev-list --count '@{u}..HEAD'); [ "$sync" = 0 ] && sync=pushed || sync="+$sync"; fi
+          port=$(env_get "$cur" PORT); agent=$(env_get "$cur" WT_AGENT)
+          active=$(printf '%s\n' "$procs" | awk -F'\t' -v p="$cur" '$1 == p || index($1, p "/") == 1 { print $2 }' \
+            | awk -v a="$agent" -v known="$AGENT_NAMES" '
+                BEGIN { n = split(known, k, " "); for (i = 1; i <= n; i++) ok[k[i]] = 1 }
+                ok[$0] { print; next }
+                a != "" && ($0 == "node" || $0 == "bun" || $0 ~ /^[Pp]ython/) { print a }' \
+            | sort -u | head -3 | paste -sd, - || true)
+          if [ "$json" = 1 ]; then
+            [ "$first" = 1 ] || printf ','; first=0
+            run=""
+            if [ -n "$active" ]; then
+              run=$(printf '%s\n' "$active" | tr ',' '\n' | while IFS= read -r x; do json_str "$x"; printf ','; done)
+              run=${run%,}
+            fi
+            printf '{"name":%s,"path":%s,"branch":%s,"main":%s,"agent":%s,"running":[%s],"changes":%s,"commits":%s,"upstream":%s,"port":%s}' \
+              "$(json_str "$name")" "$(json_str "$cur")" "$(json_str "$branch")" \
+              "$([ "$cur" = "$main" ] && echo true || echo false)" "$(json_str "$agent")" "$run" \
+              "$dirty" "${commits:-0}" "$(json_str "$sync")" "${port:-null}"
+          else
+            if [ "$cur" = "$main" ]; then commits=-; fi
+            if [ "$dirty" = 0 ]; then c1=$D; else c1=$Y; fi
+            if [ -n "$active" ]; then c2=$G; else c2=$D; active=-; fi
+            printf -v dirty '%-8s' "$dirty"; printf -v active '%-13s' "$active"
+            printf "%-20s ${M}%-24s${N} %-9s ${c2}%s${N} ${c1}%s${N} %-8s %-9s %s\n" "$name" "${branch:-(detached)}" \
+              "${agent:--}" "$active" "$dirty" "$commits" "$sync" "${port:+$port-$((port + PORT_BLOCK - 1))}"
+          fi
+        fi
+        cur="" ;;
+    esac
+  done < <(git -C "$main" worktree list --porcelain; echo)
+  if [ "$json" = 1 ]; then printf ']\n'; fi
+}
+
+cmd_graph() {
+  local main n=40 refs line agent b cur=""
+  [ "${1:-}" = -n ] && n=$2
+  main=$(main_checkout "$PWD")
+  refs=$(git -C "$main" worktree list --porcelain | sed -n 's#^branch refs/heads/##p')
+  [ -n "$refs" ] || die "no branches checked out"
+  log "${B}agents:${N}"
+  while IFS= read -r line; do
+    case "$line" in "worktree "*) cur=${line#worktree } ;; "branch "*)
+      b=${line#branch refs/heads/}; agent=$(env_get "$cur" WT_AGENT)
+      [ "$cur" = "$main" ] && agent="(main checkout)"
+      log "  ${M}$b${N}  ${agent:-${D}no agent recorded${N}}" ;;
+    esac
+  done < <(git -C "$main" worktree list --porcelain)
+  log ""
+  # shellcheck disable=SC2086
+  git -C "$main" log --graph --color=always --date-order -n "$n" \
+    --format='%C(auto)%h%d %s %C(dim)%cr%C(reset)' $refs
+}
+
+# Remove a worktree. Never deletes a branch with unmerged commits: it is kept.
+remove_wt() {
+  local main="$1" wt="$2" force="$3" branch
+  [ -n "$wt" ] && [ -d "$wt" ] || die "no such worktree: '$wt'"
+  [ "$wt" != "$main" ] || die "that is the main checkout"
+  branch=$(git -C "$wt" branch --show-current 2>/dev/null || true)
+  if [ "$force" != 1 ]; then
+    [ -z "$(git -C "$wt" status --porcelain)" ] \
+      || die "uncommitted changes in $wt (--force discards them)"
+    if [ -n "$branch" ] && ! git -C "$main" merge-base --is-ancestor "$branch" HEAD \
+       && [ "$(git -C "$wt" rev-list --count '@{u}..HEAD' 2>/dev/null || echo x)" != 0 ]; then
+      die "branch $branch has commits that are neither merged nor pushed (--force removes the worktree and keeps the branch)"
+    fi
+  fi
+  run_project_script "$wt" "$main" teardown || true
+  if [ "$force" = 1 ]; then git -C "$main" worktree remove --force "$wt" >&2
+  else git -C "$main" worktree remove "$wt" >&2; fi
+  rm -rf "$ROOT/$(basename "$main")/.derived-data/$(basename "$wt")"
+  if [ -n "$branch" ]; then
+    if git -C "$main" merge-base --is-ancestor "$branch" HEAD; then
+      git -C "$main" branch -d "$branch" >/dev/null 2>&1 && log "${D}branch $branch deleted (already merged)${N}"
+    else
+      log "${Y}branch $branch kept (has commits not in $(git -C "$main" branch --show-current))${N}"
+    fi
+  fi
+  log "${R}-${N} $wt"
+}
+
+cmd_prune() {
+  local main repo wt branch n=0
+  main=$(main_checkout "$PWD"); repo=$(basename "$main")
+  for wt in "$ROOT/$repo"/*/; do
+    wt=${wt%/}
+    [ -f "$wt/.worktree.env" ] || continue
+    [ -z "$(git -C "$wt" status --porcelain 2>/dev/null)" ] || continue
+    branch=$(git -C "$wt" branch --show-current 2>/dev/null || true)
+    [ -n "$branch" ] && git -C "$main" merge-base --is-ancestor "$branch" HEAD || continue
+    remove_wt "$main" "$wt" 0; n=$((n + 1))
+  done
+  log "$n clean, merged worktree(s) removed"
+}
+
+cmd_ui() {
+  local main port=0 open_browser=1 token
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --port) port=$2; shift 2 ;;
+      --no-open) open_browser=0; shift ;;
+      *) die "usage: agent-wt ui [--port N] [--no-open]" ;;
+    esac
+  done
+  command -v python3 >/dev/null || die "python3 is required for the dashboard"
+  main=$(main_checkout "$PWD")
+  token=$(python3 -I -c 'import secrets; print(secrets.token_hex(16))')
+  if [ -f "$SELF_DIR/ui/server.py" ]; then cd "$SELF_DIR/ui"
+  elif [ -f "$SELF_DIR/../ui/server.py" ]; then cd "$SELF_DIR/../ui"
+  else die "dashboard files not found next to $SELF_DIR"; fi
+  python3 -I server.py --main "$main" --bin "$SELF_DIR/agent-wt" --port "$port" --token "$token" \
+    | while IFS= read -r url; do
+        log "${B}agent-wt ui${N}  $url  ${D}(Ctrl-C to stop)${N}"
+        if [ "$open_browser" = 1 ]; then
+          if command -v open >/dev/null; then open "$url"
+          elif command -v xdg-open >/dev/null; then xdg-open "$url" >/dev/null 2>&1; fi
+        fi
+      done
+}
+
+cmd_hook() {
+  local input name cwd wt main
+  command -v jq >/dev/null || die "jq is required for hook mode"
+  input=$(cat)
+  case "${1:-}" in
+    create)
+      name=$(printf '%s' "$input" | jq -r '.name')
+      cwd=$(printf '%s' "$input" | jq -r '.cwd')
+      cd "$cwd"
+      create "worktree-$name" "" 1 claude
+      printf '%s\n' "$CREATED_WT" ;;
+    remove)
+      wt=$(printf '%s' "$input" | jq -r '.worktree_path')
+      [ -d "$wt" ] || exit 0
+      main=$(main_checkout "$wt")
+      # Claude Code already asked for confirmation: discard changes, but keep the branch.
+      remove_wt "$main" "$wt" 1 ;;
+    *) die "usage: agent-wt hook create|remove" ;;
+  esac
+}
+
+install_claude_hooks() {
+  local f="$HOME/.claude/settings.json" bin
+  command -v jq >/dev/null || die "jq is required"
+  bin=$(cd "$SELF_DIR" && pwd)/agent-wt
+  mkdir -p "$HOME/.claude"; [ -f "$f" ] || echo '{}' > "$f"
+  cp "$f" "$f.bak-agent-wt"
+  jq --arg c "$bin hook create" --arg r "$bin hook remove" \
+    '.hooks = ((.hooks // {}) + {
+       WorktreeCreate: [{hooks: [{type: "command", command: $c}]}],
+       WorktreeRemove: [{hooks: [{type: "command", command: $r}]}]})' \
+    "$f.bak-agent-wt" > "$f"
+  log "${G}+${N} Claude Code hooks in $f (backup: $f.bak-agent-wt)"
+}
+
+install_instructions() {
+  local snippet="$SELF_DIR/snippets/agent-instructions.md" f
+  [ -f "$snippet" ] || die "missing $snippet"
+  for f in "$HOME/.claude/CLAUDE.md" "$HOME/.codex/AGENTS.md" "$HOME/.gemini/GEMINI.md" \
+           "$HOME/.config/opencode/AGENTS.md" "$HOME/.copilot/copilot-instructions.md" \
+           "$HOME/.config/amp/AGENTS.md"; do
+    [ -d "$(dirname "$f")" ] || continue
+    if grep -q '(agent-wt)' "$f" 2>/dev/null; then log "${D}= $f${N}"; continue; fi
+    [ -f "$f" ] && cp "$f" "$f.bak-agent-wt"
+    { [ -s "$f" ] && printf '\n'; cat "$snippet"; } >> "$f"
+    log "${G}+${N} $f"
+  done
+}
+
+# --- arguments ---------------------------------------------------------------
+
+sub="${1:-}"
+[ $# -gt 0 ] && shift
+case "$sub" in
+  new|open)
+    [ $# -gt 0 ] || { usage; exit 1; }
+    name=$1; shift
+    agent=""; ide=""; from=""; prompt=""; tmux=0; setup=1; nolaunch=0
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        -a|--agent) agent=$2; shift 2 ;;
+        -i|--ide) ide=$2; shift 2 ;;
+        -p|--prompt) prompt=$2; shift 2 ;;
+        -f|--from) from=$2; shift 2 ;;
+        --tmux) tmux=1; shift ;;
+        --no-setup) setup=0; shift ;;
+        --no-launch) nolaunch=1; shift ;;
+        --) shift; break ;;
+        *) die "unknown option: $1" ;;
+      esac
+    done
+    if [ "$sub" = new ]; then
+      create "$name" "$from" "$setup" "$agent"; wt=$CREATED_WT
+      if [ "$nolaunch" = 1 ]; then printf '%s\n' "$wt"; exit 0; fi
+    else
+      main=$(main_checkout "$PWD"); wt=$(find_wt "$main" "$name")
+    fi
+    launch "$wt" "$agent" "$ide" "$prompt" "$tmux" "$@" ;;
+  ls|list) cmd_ls "$@" ;;
+  graph) cmd_graph "$@" ;;
+  ui) cmd_ui "$@" ;;
+  path)
+    [ $# -gt 0 ] || { usage; exit 1; }
+    main=$(main_checkout "$PWD"); find_wt "$main" "$1" ;;
+  rm|remove)
+    [ $# -gt 0 ] || { usage; exit 1; }
+    force=0; [ "${2:-}" = --force ] && force=1
+    main=$(main_checkout "$PWD")
+    wt=$(find_wt "$main" "$1")
+    remove_wt "$main" "$wt" "$force" ;;
+  prune) cmd_prune ;;
+  hook) cmd_hook "$@" ;;
+  install)
+    case "${1:-all}" in
+      claude-hooks) install_claude_hooks ;;
+      instructions) install_instructions ;;
+      all) install_claude_hooks; install_instructions ;;
+      *) die "usage: agent-wt install [claude-hooks|instructions|all]" ;;
+    esac ;;
+  -v|--version|version) echo "agent-wt $VERSION" ;;
+  ""|-h|--help|help) usage ;;
+  *) usage; exit 1 ;;
+esac

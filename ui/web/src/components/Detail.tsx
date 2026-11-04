@@ -1,19 +1,14 @@
-import { Check, Copy, ExternalLink, FolderOpen, GitMerge, Trash2, X } from 'lucide-react'
+import { Check, Copy, ExternalLink, FolderOpen, GitMerge, Play, Trash2, X } from 'lucide-react'
 import { useState } from 'react'
 import { agentVar } from '../agents'
-import { api } from '../api'
+import { bridge } from '../bridge'
 import { relTime } from '../i18n'
 import { useStore } from '../store'
 import { Dialog } from './Dialog'
 import { DiffView } from './DiffView'
 import { upstreamLabel } from './WorktreeList'
 
-const IDES = [
-  { id: 'xcode', label: 'Xcode' },
-  { id: 'cursor', label: 'Cursor' },
-  { id: 'code', label: 'VS Code' },
-  { id: 'zed', label: 'Zed' },
-]
+const IDE_LABELS: Record<string, string> = { xcode: 'Xcode', cursor: 'Cursor', code: 'VS Code', zed: 'Zed', idea: 'IntelliJ' }
 
 export function Detail() {
   const state = useStore((s) => s.state)!
@@ -26,6 +21,9 @@ export function Detail() {
   const busy = useStore((s) => s.busy)
   const lang = useStore((s) => s.lang)
   const t = useStore((s) => s.t)
+  const repo = useStore((s) => s.repo)
+  const caps = useStore((s) => s.caps)
+  const settings = useStore((s) => s.settings)
   const [tab, setTab] = useState<'files' | 'commits'>('files')
   const [dialog, setDialog] = useState<'merge' | 'remove' | null>(null)
   const [force, setForce] = useState(false)
@@ -33,7 +31,17 @@ export function Detail() {
 
   const w = state.worktrees.find((x) => x.path === selected)
   if (!w) {
-    return <section className="panel detail-panel placeholder"><p className="muted">{t('select')}</p></section>
+    return (
+      <section className="pane detail-pane placeholder">
+        <span className="pane-kicker">{t('inspector')}</span>
+        <p className="muted">{t('select')}</p>
+        <ul className="hints">
+          <li>{t('hintSelect')}</li>
+          <li>{t('hintGraph')}</li>
+          <li>{t('hintPalette')}</li>
+        </ul>
+      </section>
+    )
   }
 
   const copy = async (key: string, text: string) => {
@@ -43,7 +51,7 @@ export function Detail() {
   const mergeBlocked = w.changes > 0 ? t('whyNoMergeChanges') : w.commits === 0 ? t('whyNoMergeCommits') : null
 
   return (
-    <section className="panel detail-panel" style={{ ['--c' as string]: w.main ? 'var(--lane-base)' : agentVar(w.agent) }}>
+    <section className="pane detail-pane" style={{ ['--c' as string]: w.main ? 'var(--lane-base)' : agentVar(w.agent) }}>
       <header className="detail-head">
         <div className="detail-title">
           <span className="agent-chip"><span className="dot" />{w.main ? t('mainCheckout') : w.agent || t('noAgent')}</span>
@@ -69,15 +77,23 @@ export function Detail() {
       <div className="actions">
         <div className="ide-row" role="group" aria-label={t('openIn')}>
           <span className="muted small">{t('openIn')}</span>
-          {IDES.map((ide) => (
-            <button key={ide.id} type="button" className="btn btn-ghost" disabled={busy}
-              onClick={() => run(() => api.open(w.path, ide.id))}>{ide.label}</button>
+          {(caps?.ides ?? []).filter((id) => id !== 'Finder').map((id) => (
+            <button key={id} type="button" className="btn btn-ghost" disabled={busy}
+              onClick={() => run(() => bridge.open(repo, w.path, id))}>{IDE_LABELS[id] ?? id}</button>
           ))}
-          <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => run(() => api.open(w.path, 'Finder'))}>
-            <FolderOpen size={14} />Finder
-          </button>
+          {caps?.ides.includes('Finder') && (
+            <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => run(() => bridge.open(repo, w.path, 'Finder'))}>
+              <FolderOpen size={14} />Finder
+            </button>
+          )}
         </div>
         <div className="main-actions">
+          {caps?.create && !w.main && (
+            <button type="button" className="btn btn-ghost" disabled={busy}
+              onClick={() => run(() => bridge.launch(repo, w.path, w.agent || settings?.defaultAgent || 'claude'))}>
+              <Play size={14} />{t('launchAgent')}{w.agent ? ` · ${w.agent}` : ''}
+            </button>
+          )}
           <button type="button" className="btn btn-ghost" onClick={() => copy('cmd', command)}>
             {copied === 'cmd' ? <Check size={14} /> : <Copy size={14} />}{copied === 'cmd' ? t('copied') : t('copyCmd')}
           </button>
@@ -142,14 +158,14 @@ export function Detail() {
       {dialog === 'merge' && (
         <Dialog title={t('mergeTitle')} confirmLabel={`${t('merge')} ${state.base}`}
           onCancel={() => setDialog(null)}
-          onConfirm={async () => { setDialog(null); await run(() => api.merge(w.path)) }}>
+          onConfirm={async () => { setDialog(null); await run(() => bridge.merge(repo, w.path)) }}>
           <p>{t('mergeText', { branch: w.branch, base: state.base })}</p>
         </Dialog>
       )}
       {dialog === 'remove' && (
         <Dialog title={t('removeTitle')} confirmLabel={t('remove')} danger
           onCancel={() => setDialog(null)}
-          onConfirm={async () => { setDialog(null); if (await run(() => api.remove(w.path, force))) select(null) }}>
+          onConfirm={async () => { setDialog(null); if (await run(() => bridge.remove(repo, w.path, force))) select(null) }}>
           <p>{t('removeText', { path: w.path, branch: w.branch })}</p>
           <label className="check"><input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} />{t('force')}</label>
         </Dialog>

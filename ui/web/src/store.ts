@@ -1,14 +1,19 @@
 import { create } from 'zustand'
-import { api, ApiError } from './api'
+import { bridge, BridgeError } from './bridge'
 import { dict, format, type Key, type Lang } from './i18n'
-import type { Detail, State } from './types'
+import type { Capabilities, CreateRequest, Detail, RepoInfo, Settings, State } from './types'
 
 export type Theme = 'system' | 'light' | 'dark'
+export type Density = 'comfortable' | 'compact'
 type Conn = 'ok' | 'offline' | 'unauthorized'
+type Modal = 'create' | 'settings' | 'github' | 'palette' | null
 
 interface Toast { id: number; kind: 'ok' | 'error'; text: string }
 
 interface Store {
+  caps: Capabilities | null
+  repos: RepoInfo[]
+  repo: string
   state: State | null
   conn: Conn
   lastSync: number
@@ -16,18 +21,36 @@ interface Store {
   detail: Detail | null
   file: string | null
   diff: string
+  settings: Settings | null
+  modal: Modal
   lang: Lang
   theme: Theme
+  density: Density
+  rail: boolean
+  menuOpen: boolean
   toasts: Toast[]
   busy: boolean
 
   t: (key: Key, vars?: Record<string, string | number>) => string
+  init: () => Promise<void>
   poll: () => Promise<void>
+  setRepo: (path: string) => void
+  addRepo: () => Promise<void>
+  removeRepo: (path: string) => Promise<void>
   select: (path: string | null) => void
   refreshDetail: () => Promise<void>
   openFile: (file: string | null) => Promise<void>
+  createWorktree: (req: CreateRequest) => Promise<boolean>
+  saveSettings: (s: Settings) => Promise<void>
+  setModal: (m: Modal) => void
   setLang: (lang: Lang) => void
   setTheme: (theme: Theme) => void
+  setDensity: (d: Density) => void
+  setRail: (rail: boolean) => void
+  setMenuOpen: (open: boolean) => void
+  refreshRepos: () => Promise<void>
+  addRepoPath: (path: string) => Promise<void>
+  cloneRepo: (nameWithOwner: string) => Promise<boolean>
   toast: (kind: Toast['kind'], text: string) => void
   run: (action: () => Promise<{ message: string }>) => Promise<boolean>
 }
@@ -44,6 +67,9 @@ const defaultLang: Lang = navigator.language.toLowerCase().startsWith('es') ? 'e
 let toastId = 0
 
 export const useStore = create<Store>((set, get) => ({
+  caps: null,
+  repos: [],
+  repo: '',
   state: null,
   conn: 'ok',
   lastSync: 0,
@@ -51,23 +77,103 @@ export const useStore = create<Store>((set, get) => ({
   detail: null,
   file: null,
   diff: '',
+  settings: null,
+  modal: null,
   lang: load<Lang>('agent-wt-lang', defaultLang),
   theme: load<Theme>('agent-wt-theme', 'system'),
+  density: load<Density>('agent-wt-density', 'comfortable'),
+  rail: load<string>('agent-wt-rail', '') === '1',
+  menuOpen: false,
   toasts: [],
   busy: false,
 
   t: (key, vars) => format(dict[get().lang][key], vars),
 
+  init: async () => {
+    const caps = await bridge.capabilities().catch(() => null)
+    set({ caps })
+    if (caps?.settings) set({ settings: await bridge.settings().catch(() => null) })
+    if (caps?.multiRepo) {
+      const repos = await bridge.repos()
+      const saved = load('agent-wt-repo', '')
+      set({ repos, repo: repos.find((r) => r.path === saved)?.path ?? repos[0]?.path ?? '' })
+    }
+    await get().poll()
+  },
+
   poll: async () => {
+    const { caps, repo } = get()
+    if (caps?.multiRepo && !repo) { await get().refreshRepos(); return }
     try {
-      const state = await api.state()
+      const state = await bridge.state(repo)
+      if (get().repo !== repo) return
       const { selected } = get()
       const stillThere = selected && state.worktrees.some((w) => w.path === selected)
       set({ state, conn: 'ok', lastSync: Date.now(), ...(selected && !stillThere ? { selected: null, detail: null, file: null } : {}) })
       if (stillThere) void get().refreshDetail()
+      if (caps?.multiRepo) void get().refreshRepos()
     } catch (e) {
-      set({ conn: e instanceof ApiError && e.status === 401 ? 'unauthorized' : 'offline' })
+      set({ conn: e instanceof BridgeError && e.status === 401 ? 'unauthorized' : 'offline' })
     }
+  },
+
+  refreshRepos: async () => {
+    try {
+      const repos = await bridge.repos()
+      set({ repos })
+      if (!get().repo && repos[0]) get().setRepo(repos[0].path)
+    } catch { /* keep the last list */ }
+  },
+
+  addRepoPath: async (path) => {
+    try {
+      const info = await bridge.addRepoPath(path)
+      await get().refreshRepos()
+      get().setRepo(info.path)
+      set({ modal: null })
+    } catch (e) {
+      get().toast('error', (e as Error).message)
+    }
+  },
+
+  cloneRepo: async (nameWithOwner) => {
+    set({ busy: true })
+    try {
+      const info = await bridge.cloneRepo(nameWithOwner)
+      get().toast('ok', `${nameWithOwner} → ${info.path}`)
+      await get().refreshRepos()
+      get().setRepo(info.path)
+      return true
+    } catch (e) {
+      get().toast('error', (e as Error).message)
+      return false
+    } finally {
+      set({ busy: false })
+    }
+  },
+
+  setRepo: (path) => {
+    save('agent-wt-repo', path)
+    set({ repo: path, state: null, selected: null, detail: null, file: null, diff: '', menuOpen: false })
+    void get().poll()
+  },
+
+  addRepo: async () => {
+    try {
+      const info = await bridge.addRepo()
+      if (!info) return
+      set({ repos: [...get().repos.filter((r) => r.path !== info.path), info] })
+      get().setRepo(info.path)
+    } catch (e) {
+      get().toast('error', (e as Error).message)
+    }
+  },
+
+  removeRepo: async (path) => {
+    await bridge.removeRepo(path)
+    const repos = get().repos.filter((r) => r.path !== path)
+    set({ repos })
+    if (get().repo === path) get().setRepo(repos[0]?.path ?? '')
   },
 
   select: (path) => {
@@ -76,34 +182,59 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   refreshDetail: async () => {
-    const path = get().selected
+    const { selected: path, repo } = get()
     if (!path) return
     try {
-      const detail = await api.worktree(path)
+      const detail = await bridge.worktree(repo, path)
       if (get().selected !== path) return
       set({ detail })
       const { file } = get()
       if (file && detail.files.some((f) => f.file === file)) {
-        const { diff } = await api.diff(path, file)
+        const { diff } = await bridge.diff(repo, path, file)
         if (get().selected === path && get().file === file) set({ diff })
       }
     } catch { /* next poll retries */ }
   },
 
   openFile: async (file) => {
-    const path = get().selected
+    const { selected: path, repo } = get()
     set({ file, diff: '' })
     if (!path || !file) return
     try {
-      const { diff } = await api.diff(path, file)
+      const { diff } = await bridge.diff(repo, path, file)
       if (get().file === file) set({ diff })
     } catch (e) {
       get().toast('error', (e as Error).message)
     }
   },
 
+  createWorktree: async (req) => {
+    set({ busy: true })
+    try {
+      const { message, path } = await bridge.create(get().repo, req)
+      get().toast('ok', message)
+      await get().poll()
+      get().select(path)
+      return true
+    } catch (e) {
+      get().toast('error', (e as Error).message)
+      return false
+    } finally {
+      set({ busy: false })
+    }
+  },
+
+  saveSettings: async (s) => {
+    await bridge.saveSettings(s)
+    set({ settings: s })
+  },
+
+  setModal: (modal) => set({ modal }),
   setLang: (lang) => { save('agent-wt-lang', lang); set({ lang }) },
   setTheme: (theme) => { save('agent-wt-theme', theme); set({ theme }) },
+  setDensity: (density) => { save('agent-wt-density', density); set({ density }) },
+  setRail: (rail) => { save('agent-wt-rail', rail ? '1' : ''); set({ rail }) },
+  setMenuOpen: (menuOpen) => set({ menuOpen }),
 
   toast: (kind, text) => {
     const id = ++toastId
