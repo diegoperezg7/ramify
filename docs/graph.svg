@@ -1,0 +1,136 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="759" height="512" viewBox="0 0 759 512" role="img" aria-label="~/code/shop">
+<style>text{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;white-space:pre}</style>
+<rect x="0.5" y="0.5" width="758" height="511" rx="10" fill="#000000" stroke="#30363d"/>
+<line x1="1" y1="36" x2="758" y2="36" stroke="#21262d"/>
+<circle cx="20" cy="18" r="5.5" fill="#30363d"/>
+<circle cx="38" cy="18" r="5.5" fill="#30363d"/>
+<circle cx="56" cy="18" r="5.5" fill="#30363d"/>
+<text x="379.5" y="22" fill="#7d8590" text-anchor="middle">~/code/shop</text>
+<text x="22.0" y="54" fill="#7ee787" font-weight="700" textLength="7.8" lengthAdjust="spacingAndGlyphs">$</text>
+<text x="37.6" y="54" fill="#e6edf3" textLength="62.6" lengthAdjust="spacingAndGlyphs">agent-wt</text>
+<text x="108.0" y="54" fill="#e6edf3" textLength="39.1" lengthAdjust="spacingAndGlyphs">graph</text>
+<text x="22.0" y="74" fill="#e6edf3" font-weight="700" textLength="54.7" lengthAdjust="spacingAndGlyphs">agents:</text>
+<text x="37.6" y="94" fill="#d2a8ff" textLength="31.3" lengthAdjust="spacingAndGlyphs">main</text>
+<text x="84.6" y="94" fill="#e6edf3" textLength="39.1" lengthAdjust="spacingAndGlyphs">(main</text>
+<text x="131.5" y="94" fill="#e6edf3" textLength="70.4" lengthAdjust="spacingAndGlyphs">checkout)</text>
+<text x="37.6" y="114" fill="#d2a8ff" textLength="62.6" lengthAdjust="spacingAndGlyphs">docs/api</text>
+<text x="115.8" y="114" fill="#e6edf3" textLength="62.6" lengthAdjust="spacingAndGlyphs">opencode</text>
+<text x="37.6" y="134" fill="#d2a8ff" textLength="101.7" lengthAdjust="spacingAndGlyphs">feat/checkout</text>
+<text x="154.9" y="134" fill="#e6edf3" textLength="46.9" lengthAdjust="spacingAndGlyphs">claude</text>
+<text x="37.6" y="154" fill="#d2a8ff" textLength="93.8" lengthAdjust="spacingAndGlyphs">feat/coupons</text>
+<text x="147.1" y="154" fill="#e6edf3" textLength="54.7" lengthAdjust="spacingAndGlyphs">copilot</text>
+<text x="37.6" y="174" fill="#d2a8ff" textLength="109.5" lengthAdjust="spacingAndGlyphs">fix/cart-total</text>
+<text x="162.8" y="174" fill="#e6edf3" textLength="39.1" lengthAdjust="spacingAndGlyphs">codex</text>
+<text x="37.6" y="194" fill="#d2a8ff" textLength="125.1" lengthAdjust="spacingAndGlyphs">ios/order-widget</text>
+<text x="178.4" y="194" fill="#e6edf3" textLength="46.9" lengthAdjust="spacingAndGlyphs">gemini</text>
+<text x="22.0" y="234" fill="#e6edf3" textLength="7.8" lengthAdjust="spacingAndGlyphs">*</text>
+<text x="37.6" y="234" fill="#d29922" textLength="54.7" lengthAdjust="spacingAndGlyphs">800611f</text>
+<text x="100.2" y="234" fill="#d29922" textLength="7.8" lengthAdjust="spacingAndGlyphs">(</text>
+<text x="108.0" y="234" fill="#56d4dd" font-weight="700" textLength="31.3" lengthAdjust="spacingAndGlyphs">HEAD</text>
+<text x="147.1" y="234" fill="#d29922" textLength="15.6" lengthAdjust="spacingAndGlyphs">-&gt;</text>
+<text x="170.6" y="234" fill="#3fb950" font-weight="700" textLength="31.3" lengthAdjust="spacingAndGlyphs">main</text>
+<text x="201.9" y="234" fill="#d29922" textLength="7.8" lengthAdjust="spacingAndGlyphs">,</text>
+<text x="217.5" y="234" fill="#3fb950" font-weight="700" textLength="93.8" lengthAdjust="spacingAndGlyphs">feat/coupons</text>
+<text x="311.3" y="234" fill="#d29922" textLength="7.8" lengthAdjust="spacingAndGlyphs">)</text>
+<text x="327.0" y="234" fill="#e6edf3" textLength="31.3" lengthAdjust="spacingAndGlyphs">Bump</text>
+<text x="366.1" y="234" fill="#e6edf3" textLength="93.8" lengthAdjust="spacingAndGlyphs">dependencies</text>
+<text x="467.7" y="234" fill="#7d8590" textLength="15.6" lengthAdjust="spacingAndGlyphs">61</text>
+<text x="491.2" y="234" fill="#7d8590" textLength="54.7" lengthAdjust="spacingAndGlyphs">minutes</text>
+<text x="553.8" y="234" fill="#7d8590" textLength="23.5" lengthAdjust="spacingAndGlyphs">ago</text>
+<text x="22.0" y="254" fill="#ff7b72" textLength="7.8" lengthAdjust="spacingAndGlyphs">|</text>
+<text x="37.6" y="254" fill="#e6edf3" textLength="7.8" lengthAdjust="spacingAndGlyphs">*</text>
+<text x="53.3" y="254" fill="#d29922" textLength="54.7" lengthAdjust="spacingAndGlyphs">b3f874b</text>
+<text x="115.8" y="254" fill="#d29922" textLength="7.8" lengthAdjust="spacingAndGlyphs">(</text>
+<text x="123.7" y="254" fill="#3fb950" font-weight="700" textLength="101.7" lengthAdjust="spacingAndGlyphs">feat/checkout</text>
+<text x="225.3" y="254" fill="#d29922" textLength="7.8" lengthAdjust="spacingAndGlyphs">)</text>
+<text x="241.0" y="254" fill="#e6edf3" textLength="46.9" lengthAdjust="spacingAndGlyphs">Stripe</text>
+<text x="295.7" y="254" fill="#e6edf3" textLength="54.7" lengthAdjust="spacingAndGlyphs">payment</text>
+<text x="358.3" y="254" fill="#e6edf3" textLength="46.9" lengthAdjust="spacingAndGlyphs">intent</text>
+<text x="413.0" y="254" fill="#7d8590" textLength="7.8" lengthAdjust="spacingAndGlyphs">2</text>
+<text x="428.6" y="254" fill="#7d8590" textLength="39.1" lengthAdjust="spacingAndGlyphs">hours</text>
+<text x="475.6" y="254" fill="#7d8590" textLength="23.5" lengthAdjust="spacingAndGlyphs">ago</text>
+<text x="22.0" y="274" fill="#ff7b72" textLength="7.8" lengthAdjust="spacingAndGlyphs">|</text>
+<text x="37.6" y="274" fill="#3fb950" textLength="7.8" lengthAdjust="spacingAndGlyphs">|</text>
+<text x="53.3" y="274" fill="#e6edf3" textLength="7.8" lengthAdjust="spacingAndGlyphs">*</text>
+<text x="68.9" y="274" fill="#d29922" textLength="54.7" lengthAdjust="spacingAndGlyphs">55c9f8a</text>
+<text x="131.5" y="274" fill="#d29922" textLength="7.8" lengthAdjust="spacingAndGlyphs">(</text>
+<text x="139.3" y="274" fill="#ff7b72" font-weight="700" textLength="164.2" lengthAdjust="spacingAndGlyphs">origin/fix/cart-total</text>
+<text x="303.5" y="274" fill="#d29922" textLength="7.8" lengthAdjust="spacingAndGlyphs">,</text>
+<text x="319.2" y="274" fill="#3fb950" font-weight="700" textLength="109.5" lengthAdjust="spacingAndGlyphs">fix/cart-total</text>
+<text x="428.6" y="274" fill="#d29922" textLength="7.8" lengthAdjust="spacingAndGlyphs">)</text>
+<text x="444.3" y="274" fill="#e6edf3" textLength="39.1" lengthAdjust="spacingAndGlyphs">Round</text>
+<text x="491.2" y="274" fill="#e6edf3" textLength="31.3" lengthAdjust="spacingAndGlyphs">cart</text>
+<text x="530.3" y="274" fill="#e6edf3" textLength="39.1" lengthAdjust="spacingAndGlyphs">total</text>
+<text x="577.2" y="274" fill="#e6edf3" textLength="23.5" lengthAdjust="spacingAndGlyphs">per</text>
+<text x="608.5" y="274" fill="#e6edf3" textLength="31.3" lengthAdjust="spacingAndGlyphs">line</text>
+<text x="647.6" y="274" fill="#7d8590" textLength="7.8" lengthAdjust="spacingAndGlyphs">3</text>
+<text x="663.2" y="274" fill="#7d8590" textLength="39.1" lengthAdjust="spacingAndGlyphs">hours</text>
+<text x="710.2" y="274" fill="#7d8590" textLength="23.5" lengthAdjust="spacingAndGlyphs">ago</text>
+<text x="22.0" y="294" fill="#ff7b72" textLength="7.8" lengthAdjust="spacingAndGlyphs">|</text>
+<text x="37.6" y="294" fill="#3fb950" textLength="7.8" lengthAdjust="spacingAndGlyphs">|</text>
+<text x="45.5" y="294" fill="#ff7b72" textLength="7.8" lengthAdjust="spacingAndGlyphs">/</text>
+<text x="22.0" y="314" fill="#ff7b72" textLength="7.8" lengthAdjust="spacingAndGlyphs">|</text>
+<text x="29.8" y="314" fill="#ff7b72" textLength="7.8" lengthAdjust="spacingAndGlyphs">/</text>
+<text x="37.6" y="314" fill="#3fb950" textLength="7.8" lengthAdjust="spacingAndGlyphs">|</text>
+<text x="22.0" y="334" fill="#ff7b72" textLength="7.8" lengthAdjust="spacingAndGlyphs">|</text>
+<text x="37.6" y="334" fill="#3fb950" textLength="7.8" lengthAdjust="spacingAndGlyphs">|</text>
+<text x="53.3" y="334" fill="#e6edf3" textLength="7.8" lengthAdjust="spacingAndGlyphs">*</text>
+<text x="68.9" y="334" fill="#d29922" textLength="54.7" lengthAdjust="spacingAndGlyphs">5e92158</text>
+<text x="131.5" y="334" fill="#d29922" textLength="7.8" lengthAdjust="spacingAndGlyphs">(</text>
+<text x="139.3" y="334" fill="#3fb950" font-weight="700" textLength="125.1" lengthAdjust="spacingAndGlyphs">ios/order-widget</text>
+<text x="264.4" y="334" fill="#d29922" textLength="7.8" lengthAdjust="spacingAndGlyphs">)</text>
+<text x="280.1" y="334" fill="#e6edf3" textLength="39.1" lengthAdjust="spacingAndGlyphs">Order</text>
+<text x="327.0" y="334" fill="#e6edf3" textLength="46.9" lengthAdjust="spacingAndGlyphs">status</text>
+<text x="381.7" y="334" fill="#e6edf3" textLength="46.9" lengthAdjust="spacingAndGlyphs">widget</text>
+<text x="436.5" y="334" fill="#e6edf3" textLength="62.6" lengthAdjust="spacingAndGlyphs">timeline</text>
+<text x="506.8" y="334" fill="#7d8590" textLength="7.8" lengthAdjust="spacingAndGlyphs">4</text>
+<text x="522.5" y="334" fill="#7d8590" textLength="39.1" lengthAdjust="spacingAndGlyphs">hours</text>
+<text x="569.4" y="334" fill="#7d8590" textLength="23.5" lengthAdjust="spacingAndGlyphs">ago</text>
+<text x="22.0" y="354" fill="#ff7b72" textLength="7.8" lengthAdjust="spacingAndGlyphs">|</text>
+<text x="37.6" y="354" fill="#3fb950" textLength="7.8" lengthAdjust="spacingAndGlyphs">|</text>
+<text x="45.5" y="354" fill="#ff7b72" textLength="7.8" lengthAdjust="spacingAndGlyphs">/</text>
+<text x="22.0" y="374" fill="#ff7b72" textLength="7.8" lengthAdjust="spacingAndGlyphs">|</text>
+<text x="29.8" y="374" fill="#ff7b72" textLength="7.8" lengthAdjust="spacingAndGlyphs">/</text>
+<text x="37.6" y="374" fill="#3fb950" textLength="7.8" lengthAdjust="spacingAndGlyphs">|</text>
+<text x="22.0" y="394" fill="#ff7b72" textLength="7.8" lengthAdjust="spacingAndGlyphs">|</text>
+<text x="37.6" y="394" fill="#e6edf3" textLength="7.8" lengthAdjust="spacingAndGlyphs">*</text>
+<text x="53.3" y="394" fill="#d29922" textLength="54.7" lengthAdjust="spacingAndGlyphs">04b0407</text>
+<text x="115.8" y="394" fill="#e6edf3" textLength="62.6" lengthAdjust="spacingAndGlyphs">Checkout</text>
+<text x="186.2" y="394" fill="#e6edf3" textLength="31.3" lengthAdjust="spacingAndGlyphs">form</text>
+<text x="225.3" y="394" fill="#e6edf3" textLength="31.3" lengthAdjust="spacingAndGlyphs">with</text>
+<text x="264.4" y="394" fill="#e6edf3" textLength="54.7" lengthAdjust="spacingAndGlyphs">address</text>
+<text x="327.0" y="394" fill="#e6edf3" textLength="93.8" lengthAdjust="spacingAndGlyphs">autocomplete</text>
+<text x="428.6" y="394" fill="#7d8590" textLength="7.8" lengthAdjust="spacingAndGlyphs">5</text>
+<text x="444.3" y="394" fill="#7d8590" textLength="39.1" lengthAdjust="spacingAndGlyphs">hours</text>
+<text x="491.2" y="394" fill="#7d8590" textLength="23.5" lengthAdjust="spacingAndGlyphs">ago</text>
+<text x="22.0" y="414" fill="#ff7b72" textLength="7.8" lengthAdjust="spacingAndGlyphs">|</text>
+<text x="29.8" y="414" fill="#ff7b72" textLength="7.8" lengthAdjust="spacingAndGlyphs">/</text>
+<text x="22.0" y="434" fill="#e6edf3" textLength="7.8" lengthAdjust="spacingAndGlyphs">*</text>
+<text x="37.6" y="434" fill="#d29922" textLength="54.7" lengthAdjust="spacingAndGlyphs">403cbf4</text>
+<text x="100.2" y="434" fill="#d29922" textLength="7.8" lengthAdjust="spacingAndGlyphs">(</text>
+<text x="108.0" y="434" fill="#ff7b72" font-weight="700" textLength="86.0" lengthAdjust="spacingAndGlyphs">origin/main</text>
+<text x="194.0" y="434" fill="#d29922" textLength="7.8" lengthAdjust="spacingAndGlyphs">,</text>
+<text x="209.7" y="434" fill="#3fb950" font-weight="700" textLength="62.6" lengthAdjust="spacingAndGlyphs">docs/api</text>
+<text x="272.2" y="434" fill="#d29922" textLength="7.8" lengthAdjust="spacingAndGlyphs">)</text>
+<text x="287.9" y="434" fill="#e6edf3" textLength="31.3" lengthAdjust="spacingAndGlyphs">Cart</text>
+<text x="327.0" y="434" fill="#e6edf3" textLength="46.9" lengthAdjust="spacingAndGlyphs">drawer</text>
+<text x="381.7" y="434" fill="#7d8590" textLength="15.6" lengthAdjust="spacingAndGlyphs">26</text>
+<text x="405.2" y="434" fill="#7d8590" textLength="39.1" lengthAdjust="spacingAndGlyphs">hours</text>
+<text x="452.1" y="434" fill="#7d8590" textLength="23.5" lengthAdjust="spacingAndGlyphs">ago</text>
+<text x="22.0" y="454" fill="#e6edf3" textLength="7.8" lengthAdjust="spacingAndGlyphs">*</text>
+<text x="37.6" y="454" fill="#d29922" textLength="54.7" lengthAdjust="spacingAndGlyphs">fde0a4b</text>
+<text x="100.2" y="454" fill="#e6edf3" textLength="54.7" lengthAdjust="spacingAndGlyphs">Product</text>
+<text x="162.8" y="454" fill="#e6edf3" textLength="31.3" lengthAdjust="spacingAndGlyphs">grid</text>
+<text x="201.9" y="454" fill="#e6edf3" textLength="23.5" lengthAdjust="spacingAndGlyphs">and</text>
+<text x="233.1" y="454" fill="#e6edf3" textLength="54.7" lengthAdjust="spacingAndGlyphs">filters</text>
+<text x="295.7" y="454" fill="#7d8590" textLength="7.8" lengthAdjust="spacingAndGlyphs">2</text>
+<text x="311.3" y="454" fill="#7d8590" textLength="31.3" lengthAdjust="spacingAndGlyphs">days</text>
+<text x="350.4" y="454" fill="#7d8590" textLength="23.5" lengthAdjust="spacingAndGlyphs">ago</text>
+<text x="22.0" y="474" fill="#e6edf3" textLength="7.8" lengthAdjust="spacingAndGlyphs">*</text>
+<text x="37.6" y="474" fill="#d29922" textLength="54.7" lengthAdjust="spacingAndGlyphs">11cb110</text>
+<text x="100.2" y="474" fill="#e6edf3" textLength="54.7" lengthAdjust="spacingAndGlyphs">Initial</text>
+<text x="162.8" y="474" fill="#e6edf3" textLength="78.2" lengthAdjust="spacingAndGlyphs">storefront</text>
+<text x="248.8" y="474" fill="#7d8590" textLength="7.8" lengthAdjust="spacingAndGlyphs">3</text>
+<text x="264.4" y="474" fill="#7d8590" textLength="31.3" lengthAdjust="spacingAndGlyphs">days</text>
+<text x="303.5" y="474" fill="#7d8590" textLength="23.5" lengthAdjust="spacingAndGlyphs">ago</text>
+</svg>

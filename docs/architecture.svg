@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="430" viewBox="0 0 960 430" role="img" aria-label="agent-wt: one repository, one worktree per agent">
+  <style>
+    .card { fill: #ffffff; stroke: #d0d7de; }
+    .hub { fill: #f6f3ff; stroke: #7c3aed; }
+    .t { fill: #1f2328; font: 600 15px -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; }
+    .s { fill: #59636e; font: 400 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; }
+    .m { fill: #1f2328; font: 400 12.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .ms { fill: #59636e; font: 400 12px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+    .acc { fill: #7c3aed; }
+    .accs { stroke: #7c3aed; }
+    .line { stroke: #8c959f; fill: none; }
+    .head { fill: #8c959f; }
+    .num { fill: #ffffff; font: 700 11px -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, sans-serif; }
+    .dot-on { fill: #1a7f37; }
+    .dot-off { fill: #afb8c1; }
+    @media (prefers-color-scheme: dark) {
+      .card { fill: #000000; stroke: #30363d; }
+      .hub { fill: #0e0819; stroke: #a78bfa; }
+      .t, .m { fill: #e6edf3; }
+      .s, .ms { fill: #9198a1; }
+      .acc { fill: #a78bfa; }
+      .accs { stroke: #a78bfa; }
+      .line { stroke: #6e7681; }
+      .head { fill: #6e7681; }
+      .num { fill: #000000; }
+      .dot-on { fill: #3fb950; }
+      .dot-off { fill: #484f58; }
+    }
+  </style>
+
+  <!-- main checkout -->
+  <rect class="card" x="20" y="150" width="220" height="132" rx="12"/>
+  <text class="t" x="40" y="182">~/code/shop</text>
+  <text class="s" x="40" y="204">main checkout</text>
+  <text class="m" x="40" y="234">branch  <tspan class="acc">main</tspan></text>
+  <text class="ms" x="40" y="258">.env  .worktreeinclude</text>
+
+  <path class="line" d="M240 216 H292" stroke-width="1.5"/>
+  <path class="head" d="M300 216 l-9 -5 v10 z"/>
+
+  <!-- agent-wt -->
+  <rect class="hub" x="304" y="70" width="304" height="292" rx="14" stroke-width="1.5"/>
+  <text class="t" x="326" y="104">agent-wt new <tspan class="acc">&lt;branch&gt;</tspan></text>
+  <text class="s" x="326" y="126">same steps for every agent and IDE</text>
+
+  <g>
+    <circle class="acc" cx="337" cy="160" r="10"/><text class="num" x="337" y="164" text-anchor="middle">1</text>
+    <text class="m" x="358" y="164">git worktree add</text>
+    <circle class="acc" cx="337" cy="200" r="10"/><text class="num" x="337" y="204" text-anchor="middle">2</text>
+    <text class="m" x="358" y="204">copy .env, *.xcconfig</text>
+    <circle class="acc" cx="337" cy="240" r="10"/><text class="num" x="337" y="244" text-anchor="middle">3</text>
+    <text class="m" x="358" y="244">reserve PORT..PORT+9</text>
+    <circle class="acc" cx="337" cy="280" r="10"/><text class="num" x="337" y="284" text-anchor="middle">4</text>
+    <text class="m" x="358" y="284">xcodegen · npm ci · uv sync</text>
+    <circle class="acc" cx="337" cy="320" r="10"/><text class="num" x="337" y="324" text-anchor="middle">5</text>
+    <text class="m" x="358" y="324">launch agent or IDE</text>
+  </g>
+
+  <!-- connectors -->
+  <path class="line" d="M608 216 C 630 216, 630 62, 652 62" stroke-width="1.5"/>
+  <path class="line" d="M608 216 C 630 216, 630 158, 652 158" stroke-width="1.5"/>
+  <path class="line" d="M608 216 C 630 216, 630 254, 652 254" stroke-width="1.5"/>
+  <path class="line" d="M608 216 C 630 216, 630 350, 652 350" stroke-width="1.5"/>
+
+  <!-- worktrees -->
+  <g>
+    <rect class="card" x="656" y="24" width="284" height="76" rx="12"/>
+    <circle class="dot-on" cx="676" cy="50" r="5"/>
+    <text class="m" x="690" y="54"><tspan class="acc">feat/checkout</tspan></text>
+    <text class="s" x="676" y="82">claude  ·  ports 4100-4109</text>
+
+    <rect class="card" x="656" y="120" width="284" height="76" rx="12"/>
+    <circle class="dot-on" cx="676" cy="146" r="5"/>
+    <text class="m" x="690" y="150"><tspan class="acc">fix/cart-total</tspan></text>
+    <text class="s" x="676" y="178">codex  ·  ports 4110-4119  ·  pushed</text>
+
+    <rect class="card" x="656" y="216" width="284" height="76" rx="12"/>
+    <circle class="dot-off" cx="676" cy="242" r="5"/>
+    <text class="m" x="690" y="246"><tspan class="acc">ios/order-widget</tspan></text>
+    <text class="s" x="676" y="274">gemini  ·  own simulator + DerivedData</text>
+
+    <rect class="card" x="656" y="312" width="284" height="76" rx="12"/>
+    <circle class="dot-off" cx="676" cy="338" r="5"/>
+    <text class="m" x="690" y="342"><tspan class="acc">docs/api</tspan></text>
+    <text class="s" x="676" y="370">opencode  ·  ports 4130-4139</text>
+  </g>
+
+  <text class="ms" x="656" y="416">~/.worktrees/shop/&lt;name&gt;</text>
+  <text class="ms" x="20" y="416">agent-wt ls  ·  agent-wt graph  ·  agent-wt rm</text>
+</svg>

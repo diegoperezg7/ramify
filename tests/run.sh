@@ -1,0 +1,107 @@
+#!/bin/bash
+# End-to-end tests for agent-wt. No dependencies beyond git, tar and jq.
+# shellcheck disable=SC2034  # variables are used inside check() via eval
+set -uo pipefail
+
+AW="$(cd "$(dirname "$0")/.." && pwd)/agent-wt"
+T=$(mktemp -d)
+trap 'rm -rf "$T"' EXIT
+export AGENT_WT_ROOT="$T/wts" NO_COLOR=1 HOME="$T/home"
+export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.com
+export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.com
+mkdir -p "$HOME" "$T/bin"
+
+pass=0; fail=0
+ok()   { pass=$((pass + 1)); printf '  ok   %s\n' "$1"; }
+bad()  { fail=$((fail + 1)); printf '  FAIL %s\n' "$1"; }
+check() { if eval "$2"; then ok "$1"; else bad "$1"; fi; }
+
+# Fake agents: record argv, cwd and PORT.
+for a in claude codex gemini copilot cursor-agent opencode aider amp; do
+  printf '#!/bin/bash\necho "%s|$PWD|$PORT|$*" > "%s/last-agent"\n' "$a" "$T" > "$T/bin/$a"
+  chmod +x "$T/bin/$a"
+done
+printf '#!/bin/bash\ncat > "%s/clipboard"\n' "$T" > "$T/bin/pbcopy"; chmod +x "$T/bin/pbcopy"
+export PATH="$T/bin:$PATH"
+
+git init -q --bare "$T/origin.git"
+git clone -q "$T/origin.git" "$T/demo" 2>/dev/null
+cd "$T/demo" || exit 1
+git checkout -q -b main
+printf '.env\nnode_modules/\n' > .gitignore
+echo 'SECRET=1' > .env
+echo '.env' > .worktreeinclude
+echo hi > a.txt
+git add .gitignore a.txt && git commit -qm init && git push -q origin main 2>/dev/null
+W="$AGENT_WT_ROOT/demo"
+
+echo "create"
+"$AW" new feat/login 2>/dev/null >/dev/null
+check "worktree created under the root" '[ -d "$W/feat-login" ]'
+check "branch created" 'git show-ref --quiet refs/heads/feat/login'
+check ".worktreeinclude files copied" 'grep -q SECRET=1 "$W/feat-login/.env"'
+check ".worktree.env not visible to git" '[ -z "$(git -C "$W/feat-login" status --porcelain)" ]'
+"$AW" new pagos 2>/dev/null >/dev/null
+p1=$(sed -n 's/^PORT=//p' "$W/feat-login/.worktree.env"); p2=$(sed -n 's/^PORT=//p' "$W/pagos/.worktree.env")
+check "each worktree gets its own port block" '[ "$p1" != "$p2" ] && [ $((p2 - p1)) -ge 10 ]'
+
+git init -q "$T/empty"
+check "new fails cleanly in a repo without commits" '! (cd "$T/empty" && "$AW" new x 2>/dev/null) && [ ! -e "$AGENT_WT_ROOT/empty/x" ]'
+check "new refuses an existing worktree" '! "$AW" new pagos 2>/dev/null'
+
+echo "agents"
+"$AW" open pagos -a claude -p "fix the bug" 2>/dev/null
+check "claude: prompt as argument, cwd and PORT set" 'grep -qx "claude|$W/pagos|$p2|fix the bug" "$T/last-agent"'
+"$AW" open pagos -a codex -p "task" 2>/dev/null
+check "codex: prompt as argument" 'grep -q "^codex|.*|task$" "$T/last-agent"'
+"$AW" open pagos -a gemini -p "task" 2>/dev/null
+check "gemini: prompt with -i" 'grep -q "^gemini|.*|-i task$" "$T/last-agent"'
+"$AW" open pagos -a copilot -p "task" 2>/dev/null
+check "copilot: prompt with -i" 'grep -q "^copilot|.*|-i task$" "$T/last-agent"'
+"$AW" open pagos -a cursor -p "task" 2>/dev/null
+check "cursor: runs cursor-agent" 'grep -q "^cursor-agent|.*|task$" "$T/last-agent"'
+"$AW" open pagos -a opencode -p "clip me" 2>/dev/null
+check "opencode: no prompt flag, prompt goes to clipboard" 'grep -q "^opencode|.*|$" "$T/last-agent" && grep -qx "clip me" "$T/clipboard"'
+"$AW" open pagos -a aider -- --model x 2>/dev/null
+check "args after -- are passed through" 'grep -q "^aider|.*|--model x$" "$T/last-agent"'
+check "last agent recorded in .worktree.env" 'grep -qx "WT_AGENT=aider" "$W/pagos/.worktree.env"'
+(cd "$W/pagos" && exec perl -e 'sleep 5') & sleep 1
+check "ls shows processes running inside a worktree" '"$AW" ls 2>/dev/null | grep -q "^pagos .*perl"'
+kill %1 2>/dev/null; wait 2>/dev/null
+check "ls shows the agent" '"$AW" ls 2>/dev/null | grep -q "^pagos .*aider"'
+check "graph lists the branches" 'g=$("$AW" graph 2>&1); printf "%s" "$g" | grep -q "pagos"'
+check "path resolves by branch name" '[ "$("$AW" path feat/login)" = "$W/feat-login" ]'
+
+echo "remove"
+mkdir -p "$W/.derived-data/keep"
+check "rm of an unknown name fails and touches nothing" '! "$AW" rm nope 2>/dev/null && [ -d "$W/.derived-data/keep" ]'
+echo change >> "$W/pagos/a.txt"
+check "rm refuses uncommitted changes" '! "$AW" rm pagos 2>/dev/null'
+git -C "$W/pagos" commit -qam work
+check "rm refuses unmerged, unpushed commits" '! "$AW" rm pagos 2>/dev/null'
+"$AW" rm pagos --force 2>/dev/null
+check "rm --force removes the worktree" '[ ! -d "$W/pagos" ]'
+check "rm --force keeps the branch and its commits" 'git log -1 --format=%s pagos | grep -qx work'
+"$AW" prune 2>/dev/null
+check "prune removes clean, merged worktrees" '[ ! -d "$W/feat-login" ] && ! git show-ref --quiet refs/heads/feat/login'
+
+echo "claude code hook"
+path=$(printf '{"name":"bold-oak","cwd":"%s"}' "$T/demo" | "$AW" hook create 2>/dev/null | tail -1)
+check "hook create prints the worktree path" '[ "$path" = "$W/worktree-bold-oak" ] && [ -f "$path/.env" ]'
+check "hook create records claude as agent" 'grep -qx "WT_AGENT=claude" "$path/.worktree.env"'
+printf '{"worktree_path":"%s"}' "$path" | "$AW" hook remove 2>/dev/null
+check "hook remove deletes it" '[ ! -d "$path" ]'
+
+echo "install"
+mkdir -p "$HOME/.claude" "$HOME/.codex"
+echo '{"model":"opus","hooks":{"Stop":[]}}' > "$HOME/.claude/settings.json"
+"$AW" install all 2>/dev/null
+check "claude hooks added, other settings kept" \
+  'jq -e ".model == \"opus\" and (.hooks.Stop | type) == \"array\" and (.hooks.WorktreeCreate[0].hooks[0].command | endswith(\"hook create\"))" "$HOME/.claude/settings.json" >/dev/null'
+"$AW" install instructions 2>/dev/null
+check "instructions installed once per agent" '[ "$(grep -c "(agent-wt)" "$HOME/.codex/AGENTS.md")" = 1 ] && [ "$(grep -c "(agent-wt)" "$HOME/.claude/CLAUDE.md")" = 1 ]'
+check "agents without a config dir are skipped" '[ ! -e "$HOME/.gemini" ]'
+
+echo
+echo "$pass passed, $fail failed"
+[ "$fail" = 0 ]

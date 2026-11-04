@@ -1,0 +1,85 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="884" height="272" viewBox="0 0 884 272" role="img" aria-label="~/code/shop">
+<style>text{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;white-space:pre}</style>
+<rect x="0.5" y="0.5" width="883" height="271" rx="10" fill="#000000" stroke="#30363d"/>
+<line x1="1" y1="36" x2="883" y2="36" stroke="#21262d"/>
+<circle cx="20" cy="18" r="5.5" fill="#30363d"/>
+<circle cx="38" cy="18" r="5.5" fill="#30363d"/>
+<circle cx="56" cy="18" r="5.5" fill="#30363d"/>
+<text x="442.0" y="22" fill="#7d8590" text-anchor="middle">~/code/shop</text>
+<text x="22.0" y="54" fill="#7ee787" font-weight="700" textLength="7.8" lengthAdjust="spacingAndGlyphs">$</text>
+<text x="37.6" y="54" fill="#e6edf3" textLength="62.6" lengthAdjust="spacingAndGlyphs">agent-wt</text>
+<text x="108.0" y="54" fill="#e6edf3" textLength="23.5" lengthAdjust="spacingAndGlyphs">new</text>
+<text x="139.3" y="54" fill="#e6edf3" textLength="93.8" lengthAdjust="spacingAndGlyphs">feat/coupons</text>
+<text x="241.0" y="54" fill="#e6edf3" textLength="15.6" lengthAdjust="spacingAndGlyphs">-a</text>
+<text x="264.4" y="54" fill="#e6edf3" textLength="54.7" lengthAdjust="spacingAndGlyphs">copilot</text>
+<text x="327.0" y="54" fill="#e6edf3" textLength="15.6" lengthAdjust="spacingAndGlyphs">-p</text>
+<text x="350.4" y="54" fill="#e6edf3" textLength="31.3" lengthAdjust="spacingAndGlyphs">&quot;add</text>
+<text x="389.5" y="54" fill="#e6edf3" textLength="46.9" lengthAdjust="spacingAndGlyphs">coupon</text>
+<text x="444.3" y="54" fill="#e6edf3" textLength="39.1" lengthAdjust="spacingAndGlyphs">codes</text>
+<text x="491.2" y="54" fill="#e6edf3" textLength="15.6" lengthAdjust="spacingAndGlyphs">to</text>
+<text x="514.7" y="54" fill="#e6edf3" textLength="70.4" lengthAdjust="spacingAndGlyphs">checkout&quot;</text>
+<text x="22.0" y="74" fill="#3fb950" textLength="7.8" lengthAdjust="spacingAndGlyphs">+</text>
+<text x="37.6" y="74" fill="#e6edf3" font-weight="700" textLength="93.8" lengthAdjust="spacingAndGlyphs">feat-coupons</text>
+<text x="147.1" y="74" fill="#e6edf3" textLength="46.9" lengthAdjust="spacingAndGlyphs">branch</text>
+<text x="201.9" y="74" fill="#d2a8ff" textLength="93.8" lengthAdjust="spacingAndGlyphs">feat/coupons</text>
+<text x="311.3" y="74" fill="#e6edf3" textLength="39.1" lengthAdjust="spacingAndGlyphs">ports</text>
+<text x="358.3" y="74" fill="#e6edf3" textLength="70.4" lengthAdjust="spacingAndGlyphs">4140-4149</text>
+<text x="22.0" y="94" fill="#7ee787" font-weight="700" textLength="7.8" lengthAdjust="spacingAndGlyphs">$</text>
+<text x="37.6" y="94" fill="#e6edf3" textLength="62.6" lengthAdjust="spacingAndGlyphs">agent-wt</text>
+<text x="108.0" y="94" fill="#e6edf3" textLength="15.6" lengthAdjust="spacingAndGlyphs">ls</text>
+<text x="22.0" y="114" fill="#e6edf3" font-weight="700" textLength="62.6" lengthAdjust="spacingAndGlyphs">WORKTREE</text>
+<text x="186.2" y="114" fill="#e6edf3" font-weight="700" textLength="46.9" lengthAdjust="spacingAndGlyphs">BRANCH</text>
+<text x="381.7" y="114" fill="#e6edf3" font-weight="700" textLength="39.1" lengthAdjust="spacingAndGlyphs">AGENT</text>
+<text x="459.9" y="114" fill="#e6edf3" font-weight="700" textLength="54.7" lengthAdjust="spacingAndGlyphs">RUNNING</text>
+<text x="569.4" y="114" fill="#e6edf3" font-weight="700" textLength="54.7" lengthAdjust="spacingAndGlyphs">CHANGES</text>
+<text x="639.8" y="114" fill="#e6edf3" font-weight="700" textLength="54.7" lengthAdjust="spacingAndGlyphs">COMMITS</text>
+<text x="710.2" y="114" fill="#e6edf3" font-weight="700" textLength="62.6" lengthAdjust="spacingAndGlyphs">UPSTREAM</text>
+<text x="788.4" y="114" fill="#e6edf3" font-weight="700" textLength="39.1" lengthAdjust="spacingAndGlyphs">PORTS</text>
+<text x="22.0" y="134" fill="#e6edf3" textLength="46.9" lengthAdjust="spacingAndGlyphs">(main)</text>
+<text x="186.2" y="134" fill="#d2a8ff" textLength="31.3" lengthAdjust="spacingAndGlyphs">main</text>
+<text x="381.7" y="134" fill="#e6edf3" textLength="7.8" lengthAdjust="spacingAndGlyphs">-</text>
+<text x="459.9" y="134" fill="#7d8590" textLength="7.8" lengthAdjust="spacingAndGlyphs">-</text>
+<text x="569.4" y="134" fill="#7d8590" textLength="7.8" lengthAdjust="spacingAndGlyphs">0</text>
+<text x="639.8" y="134" fill="#e6edf3" textLength="7.8" lengthAdjust="spacingAndGlyphs">-</text>
+<text x="710.2" y="134" fill="#e6edf3" textLength="15.6" lengthAdjust="spacingAndGlyphs">+1</text>
+<text x="22.0" y="154" fill="#e6edf3" textLength="62.6" lengthAdjust="spacingAndGlyphs">docs-api</text>
+<text x="186.2" y="154" fill="#d2a8ff" textLength="62.6" lengthAdjust="spacingAndGlyphs">docs/api</text>
+<text x="381.7" y="154" fill="#e6edf3" textLength="62.6" lengthAdjust="spacingAndGlyphs">opencode</text>
+<text x="459.9" y="154" fill="#7d8590" textLength="7.8" lengthAdjust="spacingAndGlyphs">-</text>
+<text x="569.4" y="154" fill="#7d8590" textLength="7.8" lengthAdjust="spacingAndGlyphs">0</text>
+<text x="639.8" y="154" fill="#e6edf3" textLength="7.8" lengthAdjust="spacingAndGlyphs">0</text>
+<text x="710.2" y="154" fill="#e6edf3" textLength="39.1" lengthAdjust="spacingAndGlyphs">local</text>
+<text x="788.4" y="154" fill="#e6edf3" textLength="70.4" lengthAdjust="spacingAndGlyphs">4130-4139</text>
+<text x="22.0" y="174" fill="#e6edf3" textLength="101.7" lengthAdjust="spacingAndGlyphs">feat-checkout</text>
+<text x="186.2" y="174" fill="#d2a8ff" textLength="101.7" lengthAdjust="spacingAndGlyphs">feat/checkout</text>
+<text x="381.7" y="174" fill="#e6edf3" textLength="46.9" lengthAdjust="spacingAndGlyphs">claude</text>
+<text x="459.9" y="174" fill="#3fb950" textLength="46.9" lengthAdjust="spacingAndGlyphs">claude</text>
+<text x="569.4" y="174" fill="#d29922" textLength="7.8" lengthAdjust="spacingAndGlyphs">1</text>
+<text x="639.8" y="174" fill="#e6edf3" textLength="7.8" lengthAdjust="spacingAndGlyphs">2</text>
+<text x="710.2" y="174" fill="#e6edf3" textLength="39.1" lengthAdjust="spacingAndGlyphs">local</text>
+<text x="788.4" y="174" fill="#e6edf3" textLength="70.4" lengthAdjust="spacingAndGlyphs">4100-4109</text>
+<text x="22.0" y="194" fill="#e6edf3" textLength="93.8" lengthAdjust="spacingAndGlyphs">feat-coupons</text>
+<text x="186.2" y="194" fill="#d2a8ff" textLength="93.8" lengthAdjust="spacingAndGlyphs">feat/coupons</text>
+<text x="381.7" y="194" fill="#e6edf3" textLength="54.7" lengthAdjust="spacingAndGlyphs">copilot</text>
+<text x="459.9" y="194" fill="#7d8590" textLength="7.8" lengthAdjust="spacingAndGlyphs">-</text>
+<text x="569.4" y="194" fill="#7d8590" textLength="7.8" lengthAdjust="spacingAndGlyphs">0</text>
+<text x="639.8" y="194" fill="#e6edf3" textLength="7.8" lengthAdjust="spacingAndGlyphs">0</text>
+<text x="710.2" y="194" fill="#e6edf3" textLength="39.1" lengthAdjust="spacingAndGlyphs">local</text>
+<text x="788.4" y="194" fill="#e6edf3" textLength="70.4" lengthAdjust="spacingAndGlyphs">4140-4149</text>
+<text x="22.0" y="214" fill="#e6edf3" textLength="109.5" lengthAdjust="spacingAndGlyphs">fix-cart-total</text>
+<text x="186.2" y="214" fill="#d2a8ff" textLength="109.5" lengthAdjust="spacingAndGlyphs">fix/cart-total</text>
+<text x="381.7" y="214" fill="#e6edf3" textLength="39.1" lengthAdjust="spacingAndGlyphs">codex</text>
+<text x="459.9" y="214" fill="#3fb950" textLength="39.1" lengthAdjust="spacingAndGlyphs">codex</text>
+<text x="569.4" y="214" fill="#7d8590" textLength="7.8" lengthAdjust="spacingAndGlyphs">0</text>
+<text x="639.8" y="214" fill="#e6edf3" textLength="7.8" lengthAdjust="spacingAndGlyphs">1</text>
+<text x="710.2" y="214" fill="#e6edf3" textLength="46.9" lengthAdjust="spacingAndGlyphs">pushed</text>
+<text x="788.4" y="214" fill="#e6edf3" textLength="70.4" lengthAdjust="spacingAndGlyphs">4110-4119</text>
+<text x="22.0" y="234" fill="#e6edf3" textLength="125.1" lengthAdjust="spacingAndGlyphs">ios-order-widget</text>
+<text x="186.2" y="234" fill="#d2a8ff" textLength="125.1" lengthAdjust="spacingAndGlyphs">ios/order-widget</text>
+<text x="381.7" y="234" fill="#e6edf3" textLength="46.9" lengthAdjust="spacingAndGlyphs">gemini</text>
+<text x="459.9" y="234" fill="#7d8590" textLength="7.8" lengthAdjust="spacingAndGlyphs">-</text>
+<text x="569.4" y="234" fill="#d29922" textLength="7.8" lengthAdjust="spacingAndGlyphs">3</text>
+<text x="639.8" y="234" fill="#e6edf3" textLength="7.8" lengthAdjust="spacingAndGlyphs">1</text>
+<text x="710.2" y="234" fill="#e6edf3" textLength="39.1" lengthAdjust="spacingAndGlyphs">local</text>
+<text x="788.4" y="234" fill="#e6edf3" textLength="70.4" lengthAdjust="spacingAndGlyphs">4120-4129</text>
+</svg>
