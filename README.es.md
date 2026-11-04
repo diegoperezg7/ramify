@@ -10,7 +10,40 @@
 
 <p align="center"><a href="README.md">English</a></p>
 
+<p align="center">
+  <a href="#empezar">Empezar</a> ·
+  <a href="#uso">Uso</a> ·
+  <a href="#apps">App, extensión y plugin</a> ·
+  <a href="#dentro-de-un-worktree">Dentro de un worktree</a> ·
+  <a href="#seguridad">Seguridad</a>
+</p>
+
 <p align="center"><img src="docs/ls.svg" alt="ramify ls: cinco agentes trabajando en cinco ramas del mismo repositorio"></p>
+
+## Empezar
+
+```bash
+git clone https://github.com/diegoperezg7/ramify.git && cd ramify && ./install.sh
+
+cd ~/code/tu-repo
+ramify new feat/login  -a claude -p "añade login con magic links"
+ramify new fix/cart    -a codex  -p "corrige el redondeo del total del carrito"
+ramify ls              # quién trabaja dónde, qué ha cambiado y qué está listo para mergear
+```
+
+Cada agente tiene su carpeta, su rama, sus puertos y sus dependencias. Cuando uno termina, revisas el
+diff, lo mergeas como siempre y quitas el worktree con `ramify rm`. ¿Prefieres una ventana? Descarga la
+[app de escritorio o la extensión de VS Code / Cursor](https://github.com/diegoperezg7/ramify/releases/latest).
+
+## Qué ofrece
+
+- **Cualquier agente**: Claude Code, Codex, Gemini, Copilot, Cursor, OpenCode, Aider, Amp o cualquier comando.
+- **Cualquier IDE**: Xcode, Cursor, VS Code, Zed, IntelliJ o cualquier app.
+- **Listo para trabajar**: copia los ficheros ignorados, instala dependencias, reserva puertos libres y en iOS un simulador por worktree.
+- **Todo a la vista**: grafo de ramas coloreado por agente, detección en vivo de qué agente trabaja dónde, diffs y merge desde la interfaz.
+- **Cuatro interfaces, un motor**: CLI, app de macOS en la barra de menús, extensión de VS Code / Cursor y plugin de Claude Code.
+- **Difícil perder trabajo**: quitar un worktree se niega si hay algo sin commitear o sin mergear.
+- **Nada en tu repo**: no hace falta ningún fichero de configuración; solo una línea en `.git/info/exclude`.
 
 ## Por qué
 
@@ -40,7 +73,7 @@ git clone https://github.com/diegoperezg7/ramify.git
 cd ramify && ./install.sh          # enlaza ramify en ~/.local/bin
 ```
 
-Necesita `git` 2.31+ y `bash` 3.2+ (vale el de macOS). `python3` para el panel, `jq` para los hooks de Claude Code y `tmux` para `--tmux`.
+Necesita `git` 2.20+ y `bash` 3.2+ (vale el de macOS). `python3` para el panel, `jq` para los hooks de Claude Code y `tmux` para `--tmux`.
 
 ## Uso
 
@@ -113,6 +146,8 @@ columnas en pantalla ancha a un inspector deslizante y a una sola columna en el 
 
 ### Instalación
 
+Cada [release](https://github.com/diegoperezg7/ramify/releases/latest) incluye el `.dmg` y el `.vsix` ya compilados. Para compilarlos tú:
+
 ```bash
 # app de escritorio
 npm ci && npm run build:desktop        # → apps/desktop/release/ramify-<versión>-arm64.dmg
@@ -138,7 +173,6 @@ que ya tienes sesión. El panel de navegador necesita `python3` y usa el `ui/dis
 `ui/web` es una sola app React que habla con el host en el que corre: IPC de Electron, mensajes del webview de VS Code o HTTP.
 
 ## Dentro de un worktree
-
 
 Cada worktree tiene un `.worktree.env`, excluido de git, que se exporta al agente:
 
@@ -202,12 +236,12 @@ worktrees de los subagentes al terminar, así que conviene lanzar `ramify prune`
 
 ## Configuración
 
-| Variable            | Por defecto    |
-|---------------------|----------------|
+| Variable          | Por defecto    |
+|-------------------|----------------|
 | `RAMIFY_ROOT`     | `~/.worktrees` |
 | `RAMIFY_PORT_MIN` | `4100`         |
 | `RAMIFY_PORT_MAX` | `4990`         |
-| `NO_COLOR`          | sin definir    |
+| `NO_COLOR`        | sin definir    |
 
 ## Tests
 
@@ -218,6 +252,11 @@ npm run test:e2e -w packages/core   # la UI real en Chromium: navegador, editor 
 ```
 
 Todos corren en la CI.
+
+## Contribuir
+
+Issues y pull requests son bienvenidos. Antes de abrir una PR pasa las tres baterías de tests de arriba; si cambias
+`ui/web`, recompílalo con `npm run build:web` y sincroniza el plugin con `scripts/sync-plugin.sh` (CI lo comprueba).
 
 ## Licencia
 
