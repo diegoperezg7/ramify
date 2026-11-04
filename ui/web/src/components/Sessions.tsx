@@ -1,9 +1,8 @@
-import { AppWindow, Code2, Download, Trash2, ExternalLink, FolderGit2, GitBranch, GitPullRequest, Loader2, SquareTerminal, Upload } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { AppWindow, Code2, Download, FolderGit2, GitBranch, GitPullRequest, Loader2, MoreHorizontal, SquareTerminal, Trash2, Upload } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { bridge } from '../bridge'
 import { useStore } from '../store'
 import type { AgentSession } from '../types'
-import { agentVar } from '../agents'
 import { AgentBadge } from './AgentBadge'
 import { Dialog } from './Dialog'
 import { BrandIcon, hasBrand } from './BrandIcon'
@@ -117,6 +116,19 @@ export function Sessions() {
   }
   const known = (repo: string | null) => !!repo && repos.some((r) => r.path === repo)
 
+  // Live sessions by repository: one card per place, one row per agent (identical sessions folded with ×n).
+  const liveByRepo = useMemo(() => {
+    const cards = new Map<string, { key: string; repo: string | null; github: string | null; title: string; rows: { s: AgentSession; n: number }[] }>()
+    for (const { s, n } of groups) {
+      const key = s.via === 'app' ? '~apps' : s.repo ?? '~outside'
+      const card = cards.get(key) ?? { key, repo: s.repo, github: s.github, title: s.via === 'app' ? t('aiApps') : s.repo ? base(s.repo) : t('outsideRepo'), rows: [] }
+      card.rows.push({ s, n })
+      cards.set(key, card)
+    }
+    const busy = (c: { rows: { s: AgentSession }[] }) => c.rows.some((r) => r.s.state === 'working' || r.s.state === 'waiting')
+    return [...cards.values()].sort((a, b) => Number(a.key.startsWith('~')) - Number(b.key.startsWith('~')) || Number(busy(b)) - Number(busy(a)) || a.title.localeCompare(b.title))
+  }, [groups, t])
+
   return (
     <main className="sessions">
       <header className="sessions-head">
@@ -125,68 +137,85 @@ export function Sessions() {
           <p className="muted small">{t('sessionsHint')}</p>
         </div>
         <div className="sessions-actions">
-          <button type="button" className="btn btn-ghost" onClick={() => exportAs('csv')}><Download size={14} />{t('exportCsv')}</button>
-          <button type="button" className="btn btn-ghost" onClick={() => exportAs('json')}><Download size={14} />{t('exportJson')}</button>
-          <button type="button" className="btn btn-ghost btn-danger" onClick={() => setClearing(true)}><Trash2 size={14} />{t('clearHistory')}</button>
+          <div className="seg" role="tablist" aria-label={t('sessionsHistory')}>
+            {(['today', 'week', 'all'] as Range[]).map((r) => (
+              <button key={r} type="button" role="tab" aria-selected={range === r} className={range === r ? 'is-on' : ''} onClick={() => setRange(r)}>
+                {t(r === 'today' ? 'sessionsToday' : r === 'week' ? 'sessionsWeek' : 'sessionsAll')}
+              </button>
+            ))}
+          </div>
+          <MoreMenu onExport={exportAs} onClear={() => setClearing(true)} />
         </div>
       </header>
 
-      <div className="seg" role="tablist" aria-label={t('sessionsHistory')}>
-        {(['today', 'week', 'all'] as Range[]).map((r) => (
-          <button key={r} type="button" role="tab" aria-selected={range === r} className={range === r ? 'is-on' : ''} onClick={() => setRange(r)}>
-            {t(r === 'today' ? 'sessionsToday' : r === 'week' ? 'sessionsWeek' : 'sessionsAll')}
-          </button>
-        ))}
-      </div>
-
-      <div className="tiles">
-        <div className="tile"><span>{t('sessionsLive')}</span><b className={live.length ? 'is-live' : ''}>{live.length}</b></div>
-        <div className="tile"><span>{t('sessionsCount')}</span><b>{history.length}</b></div>
-        <div className="tile"><span>{t('sessionsTime')}</span><b>{duration(stats.time)}</b></div>
-        <div className="tile"><span>{t('sessionsRepos')}</span><b>{stats.projects}</b></div>
-        <div className="tile"><span>{t('sessionsTopAgent')}</span><b>{stats.top}</b></div>
-      </div>
+      <p className="sess-summary">
+        <span className={live.length ? 'is-live' : ''}>{live.length > 0 && <i className="pulse" />}<b>{live.length}</b> {t('sumNow')}</span>
+        <span><b>{history.length}</b> {t('sumSessions')}</span>
+        <span><b>{duration(stats.time)}</b> {t('sumTime')}</span>
+        <span><b>{stats.projects}</b> {t('sumRepos')}</span>
+        {stats.top !== '—' && <span>{t('sumTop')} <AgentBadge agent={stats.top} size={16} /> <b>{stats.top}</b></span>}
+      </p>
 
       {sessions === null ? (
         <p className="muted small"><Loader2 size={14} className="spin" /> …</p>
       ) : (
         <>
-          {warnings.map((w) => (
-            <div key={w.key} className={`warn-card is-${w.kind}`} role="alert">
-              <GitBranch size={18} />
-              <div>
-                <b>{w.kind === 'shared' ? t('shared', { n: w.agents.length }) : t('onMain', { branch: w.branch })}</b>
-                <p>{w.kind === 'shared'
-                  ? t('sharedText', { agents: countAgents(w.agents), repo: base(w.repo), branch: w.branch })
-                  : t('onMainText', { agent: w.agents[0], repo: base(w.repo) })}</p>
-              </div>
-              <button type="button" className="btn btn-primary" onClick={() => giveBranch(w.repo, w.agents[w.agents.length - 1])}>
-                <GitBranch size={14} />{t('ownBranch', { agent: w.agents[w.agents.length - 1] })}
-              </button>
-            </div>
-          ))}
+          {warnings.length > 0 && (
+            <section className="attention" role="alert">
+              <h2 className="pane-kicker"><GitBranch size={13} />{t('attention')}</h2>
+              <ul>
+                {warnings.map((w) => {
+                  const agent = w.agents[w.agents.length - 1]
+                  return (
+                    <li key={w.key} className={`is-${w.kind}`}>
+                      <span className="att-dot" />
+                      <span className="att-text">
+                        <b>{base(w.repo)} · {w.branch}</b>
+                        <span className="muted">{w.kind === 'shared' ? t('warnShared', { agents: countAgents(w.agents) }) : t('warnMain', { agent })}</span>
+                      </span>
+                      <button type="button" className="link att-action" onClick={() => giveBranch(w.repo, agent)}>{t('ownBranch', { agent })} →</button>
+                    </li>
+                  )
+                })}
+              </ul>
+            </section>
+          )}
 
           <section className="sessions-section">
-            <h2 className="pane-kicker"><span className="pulse" />{t('sessionsLive')}</h2>
             {live.length === 0 && <p className="muted small">{sessions.length ? t('sessionsNoneLive') : t('sessionsNone')}</p>}
-            <div className="live-grid">
-              {groups.map(({ s, n }) => (
-                <article key={s.id} className={`live-card${s.inferred ? ' is-inferred' : ''}`} style={{ ['--c' as string]: agentVar(s.agent) }}>
-                  <div className="live-top">
-                    <AgentBadge agent={s.agent} size={26} live={!s.inferred} />
-                    <span className="live-agent">{s.agent}</span>
-                    {n > 1 && <span className="live-count" title={t('sessionsCount')}>×{n}</span>}
-                    {s.state && <span className={`state-chip is-${s.state}`}>{t(s.state === 'working' ? 'stateWorking' : s.state === 'waiting' ? 'stateWaiting' : 'stateIdle')}</span>}
-                    <span className="live-time" title={t('colDuration')}>{duration(now - s.start)}</span>
-                  </div>
-                  <p className="live-where"><ViaIcon via={s.via} host={s.host} />{s.host}
-                    {s.inferred && <span className="tag" title={t('inferredHint')}>{t('inferred')}</span>}
-                  </p>
-                  <p className="live-project" title={s.cwd ?? undefined}>
-                    {s.repo ? <><FolderGit2 size={13} /><b>{base(s.repo)}</b>{s.branch && <span className="mono">⎇ {s.branch}</span>}</>
-                      : s.cwd ? <span className="muted">{tilde(s.cwd)} · {t('noRepoFolder')}</span> : null}
-                  </p>
-                  <Links s={s} known={known(s.repo)} onOpen={() => s.repo && setRepo(s.repo)} t={t} />
+            <div className="repo-cards">
+              {liveByRepo.map((c) => (
+                <article key={c.key} className="repo-card">
+                  <header>
+                    {c.key === '~apps' ? <AppWindow size={15} /> : <FolderGit2 size={15} />}
+                    <b title={c.repo ?? undefined}>{c.title}</b>
+                    <span className="repo-card-actions">
+                      {c.github && <a className="icon-link" href={`https://github.com/${c.github}`} target="_blank" rel="noreferrer" title={c.github}><GithubIcon size={14} /></a>}
+                      {known(c.repo) && <button type="button" className="link" onClick={() => c.repo && setRepo(c.repo)}>{t('openRepo')}</button>}
+                    </span>
+                  </header>
+                  <ul>
+                    {c.rows.map(({ s, n }) => (
+                      <li key={s.id} className={s.inferred ? 'is-inferred' : ''} title={s.cwd ?? undefined}>
+                        <AgentBadge agent={s.agent} size={22} live={s.state === 'working'} />
+                        <span className="row-main">
+                          <span className="row-top">
+                            <b>{s.agent}</b>
+                            {n > 1 && <span className="live-count">×{n}</span>}
+                            {s.state && <span className={`state-chip is-${s.state}`}>{t(s.state === 'working' ? 'stateWorking' : s.state === 'waiting' ? 'stateWaiting' : 'stateIdle')}</span>}
+                            {s.inferred && <span className="tag" title={t('inferredHint')}>{t('inferred')}</span>}
+                          </span>
+                          <span className="row-sub muted">
+                            <ViaIcon via={s.via} host={s.host} />{s.host}
+                            {s.branch && <span className="mono">⎇ {s.branch}</span>}
+                            {!s.repo && s.cwd && <span className="mono">{tilde(s.cwd)}</span>}
+                            {s.pr && <a className="tag" href={s.pr.url} target="_blank" rel="noreferrer" title={s.pr.title}><GitPullRequest size={11} />#{s.pr.number}</a>}
+                          </span>
+                        </span>
+                        <span className="row-time mono">{duration(now - s.start)}</span>
+                      </li>
+                    ))}
+                  </ul>
                 </article>
               ))}
             </div>
@@ -246,15 +275,33 @@ export function Sessions() {
   )
 }
 
-function Links({ s, known, onOpen, t }: { s: AgentSession; known: boolean; onOpen: () => void; t: ReturnType<typeof useStore.getState>['t'] }) {
-  if (!s.repo) return null
+/** Export and clear, out of the way: they are rare actions. */
+function MoreMenu({ onExport, onClear }: { onExport: (f: 'csv' | 'json') => void; onClear: () => void }) {
+  const t = useStore((s) => s.t)
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const close = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false) }
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false) }
+    document.addEventListener('mousedown', close)
+    document.addEventListener('keydown', esc)
+    return () => { document.removeEventListener('mousedown', close); document.removeEventListener('keydown', esc) }
+  }, [open])
+  const pick = (fn: () => void) => () => { setOpen(false); fn() }
   return (
-    <div className="live-links">
-      {known && <button type="button" className="btn btn-ghost" onClick={onOpen}><FolderGit2 size={14} />{t('openRepo')}</button>}
-      {s.github
-        ? <a className="btn btn-ghost" href={`https://github.com/${s.github}${s.branch ? `/tree/${s.branch}` : ''}`} target="_blank" rel="noreferrer"><GithubIcon size={14} />{s.github}<ExternalLink size={12} /></a>
-        : null}
-      {s.pr && <a className="btn btn-ghost" href={s.pr.url} target="_blank" rel="noreferrer"><GitPullRequest size={14} />{t('pr')} #{s.pr.number} · {s.pr.state.toLowerCase()}</a>}
+    <div className="popover-anchor" ref={ref}>
+      <button type="button" className="icon-btn" aria-haspopup="menu" aria-expanded={open} aria-label={t('moreActions')} title={t('moreActions')} onClick={() => setOpen(!open)}>
+        <MoreHorizontal size={16} />
+      </button>
+      {open && (
+        <div className="popover menu-pop" role="menu">
+          <button type="button" role="menuitem" onClick={pick(() => onExport('csv'))}><Download size={14} />{t('exportCsv')}</button>
+          <button type="button" role="menuitem" onClick={pick(() => onExport('json'))}><Download size={14} />{t('exportJson')}</button>
+          <hr />
+          <button type="button" role="menuitem" className="is-danger" onClick={pick(onClear)}><Trash2 size={14} />{t('clearHistory')}…</button>
+        </div>
+      )}
     </div>
   )
 }
