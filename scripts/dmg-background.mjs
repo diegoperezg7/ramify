@@ -1,7 +1,8 @@
 // Renders the background of the macOS installer window (the DMG) into apps/desktop/resources/dmg-background.tiff:
 // a dark violet field with git branches forking from the app towards Applications, in the logo's colours.
 // One TIFF holds the 1x and @2x images, so the window is sharp on Retina screens.
-// The icon positions here must match build.dmg.contents in apps/desktop/package.json. Run: node scripts/dmg-background.mjs
+// The icon positions here must match build.dmg.contents in apps/desktop/package.json. Finder shows the image under a
+// title bar, so about the bottom 32 px stay hidden: nothing important goes there. Run: node scripts/dmg-background.mjs
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -57,7 +58,11 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" 
   <circle cx="${x1 - 30}" cy="${trunkY - 70}" r="6.5" fill="#fb923c" stroke="#0d0720" stroke-width="2"/>
   <circle cx="${x1 - 30}" cy="${trunkY + 70}" r="6.5" fill="#38bdf8" stroke="#0d0720" stroke-width="2"/>
 
-  <text x="${W / 2}" y="${H - 34}" text-anchor="middle" fill="#9a92b8" font-family="-apple-system, 'SF Pro Text', Helvetica, sans-serif" font-size="13" letter-spacing="0.3">ramify</text>
+  <!-- Finder writes icon names in black on a custom background (in dark mode too): a light tag under each name keeps it readable -->
+  <rect x="${APP.x - 50}" y="${APP.y + 52}" width="100" height="24" rx="12" fill="#ece8f8" fill-opacity="0.92"/>
+  <rect x="${APPS.x - 60}" y="${APPS.y + 52}" width="120" height="24" rx="12" fill="#ece8f8" fill-opacity="0.92"/>
+
+  <text x="${W / 2}" y="${H - 64}" text-anchor="middle" fill="#9a92b8" font-family="-apple-system, 'SF Pro Text', Helvetica, sans-serif" font-size="13" letter-spacing="0.3">ramify</text>
 </svg>`
 
 const dir = mkdtempSync(join(tmpdir(), 'ramify-dmg-'))
