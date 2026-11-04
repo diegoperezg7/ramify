@@ -2,6 +2,7 @@
 //  - browser: ui/server.py (what `ramify ui` starts)
 //  - editor:  the VS Code webview protocol, answered by the same handlers the extension uses
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
+import { createServer as netServer } from 'node:net'
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { createServer, type Server } from 'node:http'
 import { tmpdir } from 'node:os'
@@ -27,6 +28,18 @@ const aw = (...a: string[]) => execFileSync(BIN, a, { cwd: REPO, env }).toString
 let browser: Browser
 let py: ChildProcess
 let web: Server
+let PY = 0
+let WEB = 0
+
+/** A port nobody is listening on right now. */
+function freePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const srv = netServer().once('error', reject).listen(0, '127.0.0.1', () => {
+      const { port } = srv.address() as { port: number }
+      srv.close(() => resolve(port))
+    })
+  })
+}
 
 before(async () => {
   git(T, 'init', '-q', '-b', 'main', REPO)
@@ -40,17 +53,21 @@ before(async () => {
   git(wt, 'commit', '-qm', 'Stripe payment intent')
   writeFileSync(join(wt, 'draft.ts'), 'wip\n')
 
-  py = spawn('python3', ['-I', 'server.py', '--main', REPO, '--bin', BIN, '--port', '4978', '--token', 'tok'], { cwd: join(ROOT_DIR, 'ui'), env, stdio: 'ignore' })
+  // Ports come from the system, so the suite can run in several worktrees at once.
+  PY = await freePort()
+  py = spawn('python3', ['-I', 'server.py', '--main', REPO, '--bin', BIN, '--port', String(PY), '--token', 'tok'], { cwd: join(ROOT_DIR, 'ui'), env, stdio: 'ignore' })
   web = createServer((req, res) => {
     const rel = (req.url ?? '/').split('?')[0].replace(/^\/+/, '') || 'index.html'
     const file = join(DIST, rel)
     if (!file.startsWith(DIST) || !existsSync(file)) { res.writeHead(404).end(); return }
     const types: Record<string, string> = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css' }
     res.writeHead(200, { 'Content-Type': types[extname(file)] ?? 'application/octet-stream' }).end(readFileSync(file))
-  }).listen(4979, '127.0.0.1')
+  }).listen(0, '127.0.0.1')
+  await new Promise((r) => web.once('listening', r))
+  WEB = (web.address() as { port: number }).port
   browser = await chromium.launch()
   for (let i = 0; i < 50; i++) {
-    try { await fetch('http://127.0.0.1:4978/'); break } catch { await new Promise((r) => setTimeout(r, 200)) }
+    try { await fetch(`http://127.0.0.1:${PY}/`); break } catch { await new Promise((r) => setTimeout(r, 200)) }
   }
 })
 
@@ -66,7 +83,7 @@ describe('web UI', () => {
     const page = await browser.newPage({ locale: 'en-US', viewport: { width: 1440, height: 900 } })
     const errors: string[] = []
     page.on('pageerror', (e) => errors.push(String(e)))
-    await page.goto('http://127.0.0.1:4978/#token=tok')
+    await page.goto(`http://127.0.0.1:${PY}/#token=tok`)
     await page.waitForSelector('.graph-row:has-text("Stripe payment intent")')
     assert.match(await page.textContent('.metrics') ?? '', /1\s*worktree(?!s)/) // singular for one
     await page.click('.wt-row:has-text("feat/checkout")')
@@ -80,7 +97,7 @@ describe('web UI', () => {
 
   it('browser host: language and theme switch', async () => {
     const page = await browser.newPage({ locale: 'en-US', colorScheme: 'light' })
-    await page.goto('http://127.0.0.1:4978/#token=tok')
+    await page.goto(`http://127.0.0.1:${PY}/#token=tok`)
     await page.waitForSelector('.graph-row')
     await page.click('.popover-anchor > button')
     await page.click('.choice button:has-text("Español")')
@@ -94,7 +111,7 @@ describe('web UI', () => {
   it('nothing is clipped from 390px to 1920px', async () => {
     for (const width of [390, 768, 1024, 1280, 1920]) {
       const page = await browser.newPage({ viewport: { width, height: 860 } })
-      await page.goto('http://127.0.0.1:4978/#token=tok')
+      await page.goto(`http://127.0.0.1:${PY}/#token=tok`)
       await page.waitForSelector('.graph-row')
       await page.click('.wt-row:has-text("feat/checkout")')
       await page.waitForTimeout(300)
@@ -140,7 +157,7 @@ describe('web UI', () => {
         },
       })
     })
-    await page.goto('http://127.0.0.1:4979/index.html')
+    await page.goto(`http://127.0.0.1:${WEB}/index.html`)
     await page.waitForSelector('.graph-row')
     await page.click('.new-btn')
     await page.fill('.form input >> nth=0', 'feat/wishlist')
@@ -180,7 +197,7 @@ describe('web UI', () => {
         },
       })
     })
-    await page.goto('http://127.0.0.1:4979/index.html')
+    await page.goto(`http://127.0.0.1:${WEB}/index.html`)
     await page.waitForSelector('.graph-row')
     await page.click('.view-tabs button:has-text("Timeline")')
     await page.waitForSelector('.tl-branch')
