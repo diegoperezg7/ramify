@@ -50,6 +50,10 @@
       {
         "from": "resources/tray.png",
         "to": "tray.png"
+      },
+      {
+        "from": "resources/tray",
+        "to": "tray"
       }
     ],
     "mac": {

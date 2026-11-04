@@ -48,6 +48,7 @@ no plugin to install in each tool.
 - **40 agent CLIs, 32 editors, 16 terminals and 14 AI apps** recognised, with their official logos.
 - It follows a conversation to the project it is really working in, even when the agent was started in your home folder.
 - A history of every session (where, which repo and branch, how long, its pull request), exported to CSV or JSON.
+- In the menu bar: how many agents are working, in amber when one is waiting for you, and each one's logo and branch a click away.
 
 ### 2. One branch per agent, without the mess
 
@@ -103,6 +104,20 @@ Any other agent works too: Ramify launches whatever command you give it.
 | An agent working on `main` | You find out later | A warning and a one-click branch |
 | What each agent changed | `git diff` in each folder | GitHub-style diff per branch |
 | Last month's branches | Gone from memory | A timeline, merged ones included |
+
+## Status
+
+**Version 0.6.0.** Desktop app for macOS (Apple silicon and Intel) and Windows (x64), VS Code / Cursor extension,
+CLI and Claude Code plugin, all built from this repository.
+
+- **Tested:** 56 engine tests, 5 end-to-end UI tests in a real browser and 45 CLI tests run on every push; the engine
+  suite, the Windows installer and a smoke test that opens the packaged app also run on Windows.
+- **Not signed yet:** macOS and Windows show a warning the first time (see below). Signing and notarization switch on
+  by themselves once the release has certificates.
+- **GitHub sign-in** needs the Ramify GitHub App to be registered for the build; until then GitHub features use the
+  `gh` CLI you are signed in to.
+- **Windows:** terminal agents are listed without their repository (Windows does not expose another process's folder),
+  and the app has been verified in CI rather than by hand.
 
 ## Install
 

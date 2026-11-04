@@ -257,32 +257,56 @@ async function notifyFinished(f: Live) {
 // --- menu bar -------------------------------------------------------------------
 
 let tray: Tray | null = null
+const trayDir = () => (app.isPackaged ? process.resourcesPath : resolve(__dirname, '../resources'))
 function trayIcon() {
-  const dir = app.isPackaged ? process.resourcesPath : resolve(__dirname, '../resources')
   // macOS: a monochrome template the menu bar tints. Windows / Linux: the coloured logo.
-  if (process.platform !== 'darwin') return nativeImage.createFromPath(join(dir, 'tray.png'))
-  const img = nativeImage.createFromPath(join(dir, 'trayTemplate.png'))
+  if (process.platform !== 'darwin') return nativeImage.createFromPath(join(trayDir(), 'tray.png'))
+  const img = nativeImage.createFromPath(join(trayDir(), 'trayTemplate.png'))
   img.setTemplateImage(true)
   return img
+}
+
+/** A pill with the glyph and the count (scripts/tray-assets.mjs): violet while agents work, amber when one waits for you. */
+function trayBadge(count: number, waiting: boolean) {
+  // Self-contained colours: readable on a light or dark menu bar alike.
+  const img = nativeImage.createFromPath(join(trayDir(), 'tray', `badge-${waiting ? 'waiting' : 'working'}-${Math.min(count, 10)}.png`))
+  return img.isEmpty() ? trayIcon() : img
+}
+
+const agentIcons = new Map<string, Electron.NativeImage | null>()
+/** 16 pt logo of an agent for the menu, or null when it has none. */
+function agentIcon(id: string) {
+  if (!agentIcons.has(id)) {
+    const img = nativeImage.createFromPath(join(trayDir(), 'tray', `agent-${id}.png`))
+    agentIcons.set(id, img.isEmpty() ? null : img)
+  }
+  return agentIcons.get(id) ?? undefined
 }
 
 let traySignature = ''
 function updateTray(count: number) {
   if (!config.settings.menuBar) { tray?.destroy(); tray = null; traySignature = ''; return }
+  // Agents in followed repositories that are waiting for an answer (Claude Code reports it).
+  const waitingAt = new Set(sessionLog.sessions
+    .filter((s) => s.end === null && !s.inferred && s.state === 'waiting' && s.repo && config.repos.includes(s.repo))
+    .map((s) => `${s.repo}#${s.branch ?? ''}`))
   // Rebuilding the menu every scan costs work on the main thread: only when what it shows changed.
-  const signature = `${count}|${es()}|${live.map((l) => `${l.path}:${l.agents.join(',')}`).join(';')}`
+  const signature = `${count}|${es()}|${[...waitingAt].join(',')}|${live.map((l) => `${l.path}:${l.agents.join(',')}`).join(';')}`
   if (tray && signature === traySignature) return
   traySignature = signature
-  if (!tray) {
-    tray = new Tray(trayIcon())
-    tray.setToolTip('Ramify')
-  }
-  tray.setTitle(count ? ` ${count}` : '', { fontType: 'monospacedDigit' })
+  if (!tray) tray = new Tray(trayIcon())
+  tray.setImage(count ? trayBadge(count, waitingAt.size > 0) : trayIcon())
+  tray.setTitle('')
+  const waits = es() ? `${waitingAt.size} te espera(n)` : `${waitingAt.size} waiting for you`
+  tray.setToolTip(count ? `Ramify · ${es() ? `${count} agente(s) trabajando` : `${count} agent(s) working`}${waitingAt.size ? ` · ${waits}` : ''}` : 'Ramify')
   const items: Electron.MenuItemConstructorOptions[] = [
-    { label: count ? (es() ? `${count} agente(s) trabajando` : `${count} agent(s) working`) : (es() ? 'Ningún agente trabajando' : 'No agents working'), enabled: false },
-    ...live.map((l) => ({
-      label: `${l.agents.join(', ')}  ·  ${l.repo.split('/').pop()} / ${l.branch}`,
-      click: () => focus({ repo: l.repo, path: l.path }),
+    { label: count ? `${es() ? `${count} agente(s) trabajando` : `${count} agent(s) working`}${waitingAt.size ? `  ·  ${waits}` : ''}` : (es() ? 'Ningún agente trabajando' : 'No agents working'), enabled: false },
+    // One line per agent: its logo, where it works, and whether it waits for you. The name stays as a tooltip.
+    ...live.flatMap((l) => l.agents.map((a) => {
+      const icon = agentIcon(a)
+      const where = `${l.repo.split('/').pop()} / ${l.branch}`
+      const wait = waitingAt.has(`${l.repo}#${l.branch}`) ? (es() ? '  ·  te espera' : '  ·  waiting for you') : ''
+      return { label: `${icon ? '' : `${a}  ·  `}${where}${wait}`, icon, toolTip: a, click: () => focus({ repo: l.repo, path: l.path }) }
     })),
     { type: 'separator' },
     { label: es() ? 'Abrir Ramify' : 'Open Ramify', click: () => focus() },
@@ -292,6 +316,7 @@ function updateTray(count: number) {
   ]
   tray.setContextMenu(Menu.buildFromTemplate(items))
 }
+
 
 // --- editors ---------------------------------------------------------------------
 

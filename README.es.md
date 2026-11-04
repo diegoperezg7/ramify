@@ -42,6 +42,7 @@ instalar en cada herramienta.
 - **40 agentes CLI, 32 editores, 16 terminales y 14 apps de IA** reconocidos, con sus logos oficiales.
 - Sigue cada conversación hasta el proyecto en el que trabaja de verdad, aunque el agente se abriera en tu carpeta personal.
 - Historial de cada sesión (dónde, qué repo y rama, cuánto duró, su pull request), exportable a CSV o JSON.
+- En la barra de menús: cuántos agentes trabajan, en ámbar si alguno te espera, y el logo y la rama de cada uno a un clic.
 
 ### 2. Una rama por agente, sin líos
 
@@ -97,6 +98,20 @@ Cualquier otro agente también funciona: Ramify lanza el comando que le digas.
 | Un agente trabajando en `main` | Te enteras después | Un aviso y una rama con un clic |
 | Qué cambió cada agente | `git diff` en cada carpeta | Diff estilo GitHub por rama |
 | Las ramas del mes pasado | Olvidadas | Una línea de tiempo, mergeadas incluidas |
+
+## Estado
+
+**Versión 0.6.0.** App de escritorio para macOS (Apple silicon e Intel) y Windows (x64), extensión de VS Code / Cursor,
+CLI y plugin de Claude Code, todo compilado desde este repositorio.
+
+- **Probado:** 56 tests del motor, 5 tests de la interfaz en un navegador real y 45 del CLI en cada push; la batería
+  del motor, el instalador de Windows y una prueba de humo que abre la app empaquetada también corren en Windows.
+- **Aún sin firmar:** macOS y Windows avisan la primera vez (ver abajo). La firma y la notarización se activan solas
+  cuando la release tenga certificados.
+- **Login con GitHub:** necesita que la GitHub App de Ramify esté registrada para la build; mientras tanto, las funciones
+  de GitHub usan el CLI `gh` con el que ya hayas iniciado sesión.
+- **Windows:** los agentes de terminal salen sin su repositorio (Windows no deja leer la carpeta de otro proceso) y la
+  app se ha verificado en CI, no a mano.
 
 ## Instalación
 
