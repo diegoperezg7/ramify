@@ -112,6 +112,7 @@ export interface InstalledTools {
 }
 
 export type SessionVia = 'terminal' | 'ide' | 'app'
+export type SessionState = 'working' | 'idle' | 'waiting'
 
 /** One AI session seen on this machine: an agent CLI, an IDE's AI chat or a desktop AI app. */
 export interface AgentSession {
@@ -133,6 +134,8 @@ export interface AgentSession {
   /** owner/name on GitHub. */
   github: string | null
   pr?: { number: number; url: string; state: string; title: string } | null
+  /** What it is doing right now, when the agent reports it. */
+  state?: SessionState
   start: number
   /** null while it is running. */
   end: number | null

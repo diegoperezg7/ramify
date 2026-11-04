@@ -1,9 +1,10 @@
 import { execFile } from 'node:child_process'
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { closeSync, existsSync, fstatSync, openSync, readdirSync, readFileSync, readSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
+import { AI_APP_LIST, EDITORS, TERMINALS } from './catalog.ts'
 import { agentOf } from './projects.ts'
-import type { AgentSession, SessionVia } from './types.ts'
+import type { AgentSession, SessionState, SessionVia } from './types.ts'
 
 // Every AI session on this machine, wherever it runs:
 //  - agent CLIs (claude, codex, gemini…) in any terminal, in tmux, or started by an IDE extension;
@@ -26,6 +27,8 @@ export interface LiveSession {
   cwd: string | null
   start: number
   pid?: number
+  /** What the agent is doing, when it says so (Claude Code does). */
+  state?: SessionState
 }
 
 function run(cmd: string, args: string[], env?: NodeJS.ProcessEnv): Promise<{ code: number; stdout: string }> {
@@ -70,31 +73,39 @@ export function parseWinPs(stdout: string): Map<number, Proc> {
   return procs
 }
 
-const WIN_APPS: Record<string, string> = {
-  windowsterminal: 'Windows Terminal', code: 'VS Code', cursor: 'Cursor', windsurf: 'Windsurf', chatgpt: 'ChatGPT',
-  idea64: 'IntelliJ IDEA', pycharm64: 'PyCharm', webstorm64: 'WebStorm', studio64: 'Android Studio', zed: 'Zed',
-  'wezterm-gui': 'WezTerm', alacritty: 'Alacritty', tabby: 'Tabby', hyper: 'Hyper', mintty: 'Git Bash', conemu64: 'ConEmu', warp: 'Warp',
-}
+// App names from the catalog: macOS bundle → name, Windows executable → name.
+const ALL_APPS = [...EDITORS, ...TERMINALS, ...AI_APP_LIST]
+const MAC_APPS = new Map<string, string>([
+  ...ALL_APPS.flatMap((a) => a.mac.map((b) => [b.split('/').pop()!, a.name] as const)),
+  ['iTerm2', 'iTerm'],
+])
+const WIN_APPS = new Map<string, string>([
+  ...ALL_APPS.flatMap((a) => a.win.map((w) => [(w.split('/').pop() ?? '').replace(/\.exe$/i, '').toLowerCase(), a.name] as const)),
+  ['windowsterminal', 'Windows Terminal'], ['openconsole', 'Windows Terminal'], ['mintty', 'Git Bash'],
+  ['code', 'VS Code'], ['code - insiders', 'VS Code Insiders'],
+])
+/** Agents launched from these are "in an IDE"; from AI apps they are that app's own session. */
+export const IDE_HOSTS = new Set(EDITORS.map((e) => e.name))
+export const AI_APPS: Record<string, string> = Object.fromEntries(AI_APP_LIST.map((a) => [a.name, a.id]))
 
 /** The Windows app an executable belongs to, or null. */
 export function winAppOf(exe: string): string | null {
   if (/\/AnthropicClaude\//i.test(exe)) return 'Claude'
   const name = (exe.split('/').pop() ?? '').replace(/\.exe$/i, '').toLowerCase()
-  return WIN_APPS[name] ?? null
+  return WIN_APPS.get(name) ?? null
 }
 
 const procApp = (p: Proc) => (WIN ? winAppOf(p.exe) : appOf(p.args))
 
-const APP_NAMES: Record<string, string> = {
-  'Visual Studio Code': 'VS Code', 'Visual Studio Code - Insiders': 'VS Code', iTerm2: 'iTerm', iTerm: 'iTerm',
-}
-export const IDE_HOSTS = new Set(['VS Code', 'Cursor', 'Windsurf', 'Zed', 'Xcode', 'IntelliJ IDEA', 'PyCharm', 'WebStorm', 'Android Studio', 'Fleet'])
-export const AI_APPS: Record<string, string> = { ChatGPT: 'chatgpt', Claude: 'claude-app', Perplexity: 'perplexity' }
-
 /** The macOS app a command line belongs to (the outermost X.app in its path), or null. */
 export function appOf(args: string): string | null {
   const m = /\/([^/]+?)\.app\/Contents\//.exec(args)
-  return m ? (APP_NAMES[m[1]] ?? m[1]) : null
+  return m ? (MAC_APPS.get(m[1]) ?? m[1]) : null
+}
+
+/** The main process of an app (not one of its helpers). */
+function isMainProcess(p: Proc, win: boolean): boolean {
+  return win ? !/--type=/.test(p.args) : /\.app\/Contents\/MacOS\/[^/]+$/.test(p.args.split(' --')[0]) && !/--type=/.test(p.args)
 }
 
 const isTmux = (args: string) => /^-?(?:\S*\/)?tmux(?:\s|$)/.test(args)
@@ -140,15 +151,6 @@ async function tmuxMap(env?: NodeJS.ProcessEnv) {
 
 // --- IDE chat ---------------------------------------------------------------------
 
-interface IdeSpec { host: string; agent: string; storage: string; exe: RegExp; winExe: RegExp; chatOnly: boolean }
-const IDES: IdeSpec[] = [
-  // Cursor's AI is built in: any recent activity in a workspace counts.
-  { host: 'Cursor', agent: 'cursor', storage: 'Cursor', exe: /\/Cursor\.app\/Contents\/MacOS\/Cursor$/, winExe: /\/Cursor\.exe$/i, chatOnly: false },
-  { host: 'Windsurf', agent: 'windsurf', storage: 'Windsurf', exe: /\/Windsurf\.app\/Contents\/MacOS\/(Electron|Windsurf)$/, winExe: /\/Windsurf\.exe$/i, chatOnly: false },
-  // VS Code: only when its chat (Copilot and friends) has been written to.
-  { host: 'VS Code', agent: 'copilot', storage: 'Code', exe: /\/Visual Studio Code\.app\/Contents\/MacOS\/(Electron|Code)$/, winExe: /\/Code\.exe$/i, chatOnly: true },
-]
-/** A workspace counts as in use while its storage changed within this window. */
 export const IDE_IDLE_MS = 5 * 60_000
 
 function mtime(p: string): number {
@@ -178,8 +180,9 @@ export const appSupportDir = () => WIN ? (process.env.APPDATA ?? join(homedir(),
 
 export function ideSessions(procs: Map<number, Proc>, now: number, support = appSupportDir(), win = WIN): LiveSession[] {
   const out: LiveSession[] = []
-  for (const ide of IDES) {
-    if (![...procs.values()].some((p) => (win ? ide.winExe.test(p.exe) : ide.exe.test(p.args)))) continue
+  const running = new Set([...procs.values()].filter((p) => isMainProcess(p, win)).map((p) => (win ? winAppOf(p.exe) : appOf(p.args))))
+  for (const ide of EDITORS) {
+    if (!ide.storage || !ide.ai || !running.has(ide.name)) continue
     const root = join(support, ide.storage, 'User', 'workspaceStorage')
     let dirs: string[] = []
     try { dirs = readdirSync(root) } catch { continue }
@@ -192,7 +195,7 @@ export function ideSessions(procs: Map<number, Proc>, now: number, support = app
       let folder: string | null = null
       try { folder = folderOf(readFileSync(join(ws, 'workspace.json'), 'utf8')) } catch { /* empty window */ }
       if (!folder || !existsSync(folder)) continue
-      out.push({ key: `ide:${ide.host}:${folder}`, agent: ide.agent, host: ide.host, via: 'ide', inferred: true, cwd: folder, start: last })
+      out.push({ key: `ide:${ide.name}:${folder}`, agent: ide.ai, host: ide.name, via: 'ide', inferred: true, cwd: folder, start: last })
     }
   }
   return out
@@ -240,13 +243,33 @@ export async function scanSessions(env?: NodeJS.ProcessEnv, now = Date.now()): P
     }
   }
 
+  // Codex keeps its session file open: the rollout records the folder it works in.
+  const rollouts = new Map<number, string>()
+  const codexPids = top.filter((a) => a.agent === 'codex').map((a) => a.proc.pid)
+  if (codexPids.length && !WIN) {
+    const open = await run('lsof', ['-p', codexPids.join(','), '-Fn'], env)
+    let pid = 0
+    for (const line of open.stdout.split('\n')) {
+      if (line.startsWith('p')) pid = Number(line.slice(1))
+      else if (line.startsWith('n') && /\/\.codex\/sessions\/.*\.jsonl$/.test(line)) rollouts.set(pid, line.slice(1))
+    }
+  }
+
   for (const { proc, agent } of top) {
     const { host, via } = hostOf(proc.pid, procs, tmux)
     // An agent inside a desktop AI app (Codex in ChatGPT) is that app's session, listed below.
     if (via === 'app') continue
     const start = Math.round((now - proc.elapsed * 1000) / 1000) * 1000
-    const cwd = cwds.get(proc.pid) ?? null
-    sessions.push({ key: `pid:${proc.pid}`, agent, host, via, inferred: false, cwd: cwd === '/' ? null : cwd, start, pid: proc.pid })
+    let cwd = cwds.get(proc.pid) ?? null
+    let state: SessionState | undefined
+    if (agent === 'claude') {
+      const ctx = claudeContext(proc.pid)
+      if (ctx?.cwd) cwd = ctx.cwd
+      state = ctx?.state
+    } else if (rollouts.has(proc.pid)) {
+      cwd = lastCwd(rollouts.get(proc.pid)!) ?? cwd
+    }
+    sessions.push({ key: `pid:${proc.pid}`, agent, host, via, inferred: false, cwd: cwd === '/' ? null : cwd, start, pid: proc.pid, state })
   }
 
   for (const proc of procs.values()) {
@@ -263,13 +286,66 @@ export async function scanSessions(env?: NodeJS.ProcessEnv, now = Date.now()): P
 /** Name of the desktop AI app whose main process this is, or null (helpers and crash handlers are not). */
 export function aiAppMain(proc: Proc, procs: Map<number, Proc>, win = WIN): string | null {
   if (!win) {
-    const m = /^\/Applications\/([^/]+)\.app\/Contents\/MacOS\/([^/\s]+)$/.exec(proc.args)
-    return m && m[1] === m[2] && AI_APPS[m[1]] ? m[1] : null
+    const m = /^(?:\/Applications|\/Users\/[^/]+\/Applications)\/([^/]+)\.app\/Contents\/MacOS\/([^/]+)$/.exec(proc.args)
+    if (!m || m[1].toLowerCase() !== m[2].toLowerCase()) return null
+    const app = MAC_APPS.get(m[1])
+    return app && AI_APPS[app] ? app : null
   }
   const app = winAppOf(proc.exe)
   if (!app || !AI_APPS[app] || /--type=/.test(proc.args)) return null
   const parent = procs.get(proc.ppid)
   return parent && winAppOf(parent.exe) === app ? null : app
+}
+
+// --- where an agent really works -------------------------------------------------------
+// An agent started in ~ that then works in ~/code/shop has its process cwd in ~. The agents' own
+// session files say where each conversation is: read them (locally, read-only) to find the project.
+
+/** Last "cwd" recorded in a JSONL transcript (reads only its tail). */
+export function lastCwd(file: string, bytes = 256 * 1024): string | null {
+  let fd: number | null = null
+  try {
+    fd = openSync(file, 'r')
+    const size = fstatSync(fd).size
+    const len = Math.min(size, bytes)
+    const buf = Buffer.alloc(len)
+    readSync(fd, buf, 0, len, size - len)
+    const lines = buf.toString('utf8').split('\n')
+    // The first line may be cut by the window: skip it unless the file is read whole.
+    for (let i = lines.length - 1; i >= (len < size ? 1 : 0); i--) {
+      if (!lines[i].includes('"cwd"')) continue
+      try {
+        const entry = JSON.parse(lines[i]) as { cwd?: unknown; payload?: { cwd?: unknown } }
+        // Top-level field (Claude Code) or the payload of a turn (Codex), never text quoted inside a message.
+        const cwd = typeof entry.cwd === 'string' ? entry.cwd : typeof entry.payload?.cwd === 'string' ? entry.payload.cwd : null
+        if (cwd) return cwd
+      } catch { /* not JSON */ }
+    }
+  } catch { /* unreadable */ } finally { if (fd !== null) closeSync(fd) }
+  return null
+}
+
+const transcriptCache = new Map<string, string>()
+/** Claude Code: ~/.claude/sessions/<pid>.json → session id and status → its transcript's latest cwd. */
+export function claudeContext(pid: number, home = homedir()): { cwd: string | null; state?: SessionState } | null {
+  let info: { sessionId?: string; status?: string; cwd?: string }
+  try { info = JSON.parse(readFileSync(join(home, '.claude', 'sessions', `${pid}.json`), 'utf8')) } catch { return null }
+  const state: SessionState | undefined = info.status === 'busy' ? 'working' : info.status === 'idle' ? 'idle' : info.status === 'waiting' ? 'waiting' : undefined
+  let cwd: string | null = null
+  if (info.sessionId) {
+    let file = transcriptCache.get(info.sessionId)
+    if (!file || !existsSync(file)) {
+      const root = join(home, '.claude', 'projects')
+      try {
+        for (const d of readdirSync(root)) {
+          const f = join(root, d, `${info.sessionId}.jsonl`)
+          if (existsSync(f)) { file = f; transcriptCache.set(info.sessionId, f); break }
+        }
+      } catch { /* no projects */ }
+    }
+    if (file) cwd = lastCwd(file)
+  }
+  return { cwd: cwd ?? info.cwd ?? null, state }
 }
 
 // --- history ------------------------------------------------------------------------
@@ -310,12 +386,15 @@ export class SessionLog {
       if (cur && !same(cur)) { cur.end = now; ended.push(cur); this.open.delete(l.key); cur = undefined }
       if (cur) {
         cur.lastSeen = lastSeen
-        if (!cur.repo && l.repo) Object.assign(cur, { repo: l.repo, branch: l.branch, github: l.github })
+        // A conversation can move to another project: keep where it is now, and what it is doing.
+        if (l.cwd && (l.cwd !== cur.cwd || l.repo !== cur.repo)) Object.assign(cur, { cwd: l.cwd, repo: l.repo, branch: l.branch, github: l.github })
+        else if (l.repo && l.branch !== cur.branch) cur.branch = l.branch
+        cur.state = l.state
         continue
       }
       const s: AgentSession = {
         id: `${l.key}:${l.start}`, key: l.key, agent: l.agent, host: l.host, via: l.via, inferred: l.inferred,
-        cwd: l.cwd, repo: l.repo, branch: l.branch, github: l.github, start: l.start, end: null, lastSeen,
+        cwd: l.cwd, repo: l.repo, branch: l.branch, github: l.github, start: l.start, end: null, lastSeen, state: l.state,
       }
       this.open.set(l.key, s)
       this.sessions.push(s)
@@ -325,6 +404,7 @@ export class SessionLog {
     for (const [key, s] of this.open) {
       if (seen.has(key)) continue
       s.end = s.via === 'ide' ? s.lastSeen : now
+      delete s.state
       this.open.delete(key)
       ended.push(s)
     }

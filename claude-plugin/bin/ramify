@@ -9,7 +9,7 @@ PORT_MIN="${RAMIFY_PORT_MIN:-4100}"
 PORT_MAX="${RAMIFY_PORT_MAX:-4990}"
 PORT_BLOCK=10
 # Process names counted as agents in `ls` (node/bun/python count as the worktree's recorded agent).
-AGENT_NAMES="claude codex gemini copilot cursor-agent opencode aider amp goose droid qwen crush kimi cline kilocode kiro-cli auggie"
+AGENT_NAMES="claude codex gemini copilot cursor-agent opencode qwen deepcode deepseek-tui deepseek deepy kimi kimi-code vibe grok amp droid kiro-cli qchat junie auggie qodercli codebuddy iflow mimo trae-cli hermes cline kilocode kilo goose crush openhands aider qodo letta codebuff plandex pdx gptme interpreter neovate tabnine"
 SELF_DIR=$(cd "$(dirname "$(readlink "$0" 2>/dev/null || echo "$0")")" && pwd)
 # Physical path of the current directory. Git Bash on Windows prints C:/... so git and
 # native programs (the desktop app, editors) get paths they understand.

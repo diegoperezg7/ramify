@@ -45,7 +45,7 @@ export function Sessions() {
   const groups = useMemo(() => {
     const m = new Map<string, { s: AgentSession; n: number }>()
     for (const s of [...live].sort((a, b) => a.start - b.start)) {
-      const k = [s.agent, s.host, s.via, s.cwd, s.branch].join('\u0000')
+      const k = [s.agent, s.host, s.via, s.cwd, s.branch, s.state].join('\u0000')
       const g = m.get(k)
       if (g) g.n++
       else m.set(k, { s, n: 1 })
@@ -170,6 +170,7 @@ export function Sessions() {
                     <AgentBadge agent={s.agent} size={26} live={!s.inferred} />
                     <span className="live-agent">{s.agent}</span>
                     {n > 1 && <span className="live-count" title={t('sessionsCount')}>×{n}</span>}
+                    {s.state && <span className={`state-chip is-${s.state}`}>{t(s.state === 'working' ? 'stateWorking' : s.state === 'waiting' ? 'stateWaiting' : 'stateIdle')}</span>}
                     <span className="live-time" title={t('colDuration')}>{duration(now - s.start)}</span>
                   </div>
                   <p className="live-where"><ViaIcon via={s.via} host={s.host} />{s.host}

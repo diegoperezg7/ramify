@@ -902,3 +902,7 @@ kbd {
 .warn-card p { margin: 2px 0 0; color: var(--text-2); font-size: 13px; }
 .warn-card.is-main { border-color: var(--border); background: var(--surface); }
 .warn-card.is-main > svg { color: var(--accent-text); }
+
+.state-chip { font: 600 10.5px/1 var(--mono); padding: 3px 6px; border-radius: 5px; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); background: var(--surface-hover); }
+.state-chip.is-working { color: var(--good); background: color-mix(in srgb, var(--good) 12%, transparent); }
+.state-chip.is-waiting { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); }

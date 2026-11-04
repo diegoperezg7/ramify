@@ -2,6 +2,7 @@ import { execFile } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
+import { launchBin } from './catalog.ts'
 import type { Commit, Created, CreateRequest, Detail, FileChange, RepoInfo, State, Worktree } from './types.ts'
 
 const MAX_COMMITS = 300
@@ -298,7 +299,7 @@ export class Engine {
     if (!/^[\w./-]+$/.test(branch) || branch.startsWith('-')) throw new EngineError('invalid branch name')
     const args = ['new', branch, '--no-launch']
     if (req.agent && !/^[\w.-]+$/.test(req.agent)) throw new EngineError('invalid agent name')
-    if (req.agent) args.push('-a', req.agent)
+    if (req.agent) args.push('-a', launchBin(req.agent))
     if (req.base) args.push('-f', req.base)
     const out = await this.mustBin(args, repo)
     const path = out.trim().split('\n').pop() ?? ''
@@ -308,7 +309,7 @@ export class Engine {
   /** Shell command that starts `agent` inside the worktree at `path`. */
   launchCommand(path: string, agent: string, prompt?: string): string {
     if (!/^[\w.-]+$/.test(agent)) throw new EngineError('invalid agent name')
-    const parts = [WIN ? this.bin.replace(/\\/g, '/') : this.bin, 'open', path, '-a', agent]
+    const parts = [WIN ? this.bin.replace(/\\/g, '/') : this.bin, 'open', path, '-a', launchBin(agent)]
     if (prompt) parts.push('-p', prompt)
     return `cd ${shellQuote(path)} && ${parts.map(shellQuote).join(' ')}`
   }

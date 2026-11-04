@@ -180,3 +180,45 @@ describe('Windows', () => {
     assert.equal(folderOf('{"folder":"file:///c%3A/Users/d/proj"}'), 'c:/Users/d/proj')
   })
 })
+
+describe('catalog', () => {
+  it('recognises agents by executable, by package and only trusts generic names by path', async () => {
+    const { agentOf } = await import('../src/projects.ts')
+    assert.equal(agentOf('/opt/homebrew/bin/codex', 'codex'), 'codex')
+    assert.equal(agentOf('node', 'node /usr/local/lib/node_modules/@vegamo/deepcode-cli/dist/cli.js'), 'deepcode')
+    assert.equal(agentOf('C:\\Users\\d\\AppData\\Roaming\\npm\\qwen.cmd', 'qwen'), 'qwen')
+    assert.equal(agentOf('/Users/d/.local/bin/agent', 'agent'), null)
+    assert.equal(agentOf('/Users/d/.local/share/cursor-agent/versions/1/agent', 'agent'), 'cursor')
+    assert.equal(agentOf('/usr/bin/python3', 'python3 /Users/d/.local/bin/vibe'), 'vibe')
+  })
+
+  it('finds installed agents by executable or by the folder they create', async () => {
+    const { installedTools } = await import('../src/tools.ts')
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'ramify-home-')))
+    mkdirSync(join(home, 'bin'))
+    writeFileSync(join(home, 'bin', 'gemini'), '')
+    mkdirSync(join(home, '.codex'))
+    writeFileSync(join(home, 'bin', 'agent'), '')
+    const found = installedTools({ PATH: join(home, 'bin') }, home).agents
+    assert.ok(found.includes('gemini') && found.includes('codex'))
+    assert.ok(!found.includes('cursor'))
+  })
+})
+
+describe('where an agent really works', () => {
+  it('follows a Claude Code session from its pid to the project in its transcript', async () => {
+    const { claudeContext } = await import('../src/activity.ts')
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'ramify-claude-')))
+    mkdirSync(join(home, '.claude', 'sessions'), { recursive: true })
+    mkdirSync(join(home, '.claude', 'projects', '-Users-d'), { recursive: true })
+    writeFileSync(join(home, '.claude', 'sessions', '42.json'), JSON.stringify({ pid: 42, sessionId: 's1', cwd: '/Users/d', status: 'busy' }))
+    writeFileSync(join(home, '.claude', 'projects', '-Users-d', 's1.jsonl'), [
+      JSON.stringify({ cwd: '/Users/d', type: 'user' }),
+      JSON.stringify({ cwd: '/Users/d/code/shop', type: 'assistant' }),
+      // Text that merely mentions a cwd must not count.
+      JSON.stringify({ type: 'user', message: { content: '"cwd":"/elsewhere"' } }),
+    ].join('\n') + '\n')
+    assert.deepEqual(claudeContext(42, home), { cwd: '/Users/d/code/shop', state: 'working' })
+    assert.equal(claudeContext(7, home), null)
+  })
+})

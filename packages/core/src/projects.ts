@@ -3,12 +3,14 @@ import { existsSync, readdirSync, statSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { normPath } from './engine.ts'
+import { AGENT_BINS, agentForBin, agentForScript } from './catalog.ts'
 import type { GithubRepo } from './types.ts'
 
 // Finding the projects a person works on: running agents, local clones and GitHub.
 
-export const AGENT_PROCESSES = ['claude', 'codex', 'gemini', 'copilot', 'cursor-agent', 'opencode', 'aider', 'amp', 'goose', 'droid', 'qwen', 'crush', 'kimi', 'cline', 'kilocode', 'kiro-cli', 'auggie']
-const INTERPRETERS = /^(node|bun|deno|[Pp]ython[\d.]*)$/
+/** Every agent executable Ramify recognises (see catalog.ts). */
+export const AGENT_PROCESSES = AGENT_BINS
+const INTERPRETERS = /^(node|bun|deno|uv|[Pp]ython[\d.]*)$/
 
 function out(cmd: string, args: string[], env?: NodeJS.ProcessEnv, cwd?: string): Promise<{ code: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
@@ -18,18 +20,18 @@ function out(cmd: string, args: string[], env?: NodeJS.ProcessEnv, cwd?: string)
   })
 }
 
-/** Name of the agent a process is, from its executable or, for interpreters, its script. */
+/** Id of the agent a process is (see catalog.ts), from its executable or, for interpreters, its script. */
 export function agentOf(comm: string, args: string): string | null {
-  const exe = basename(comm.replace(/\\/g, '/')).replace(/\.(exe|cmd)$/i, '')
-  if (AGENT_PROCESSES.includes(exe)) return exe
+  const path = comm.replace(/\\/g, '/')
+  const exe = basename(path).replace(/\.(exe|cmd)$/i, '')
+  const direct = agentForBin(exe, path)
+  if (direct) return direct
   if (!INTERPRETERS.test(exe)) return null
-  for (const word of args.split(/\s+/).slice(1, 4)) {
-    const name = basename(word).replace(/\.(js|mjs|cjs|py)$/, '')
-    if (AGENT_PROCESSES.includes(name)) return name
-    if (/@google\/gemini-cli|gemini-cli/.test(word)) return 'gemini'
-    if (/@github\/copilot/.test(word)) return 'copilot'
-    if (/@anthropic-ai\/claude-code/.test(word)) return 'claude'
-    if (/@openai\/codex/.test(word)) return 'codex'
+  for (const word of args.replace(/\\/g, '/').split(/\s+/).slice(1, 4)) {
+    const byName = agentForBin(basename(word).replace(/\.(js|mjs|cjs|py)$/, ''), word)
+    if (byName) return byName
+    const byPackage = agentForScript(word)
+    if (byPackage) return byPackage
   }
   return null
 }
