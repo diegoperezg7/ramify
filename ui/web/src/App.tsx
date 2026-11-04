@@ -10,7 +10,7 @@ import { StatusBar } from './components/Stats'
 import { CommandPalette } from './components/CommandPalette'
 import { TopBar } from './components/TopBar'
 import { Sessions } from './components/Sessions'
-import { MergeProblemDialog } from './components/MergeProblem'
+import { MergeDoneDialog, MergeProblemDialog } from './components/MergeProblem'
 import { RepoSkeleton } from './components/Skeletons'
 import { Onboarding } from './components/Onboarding'
 import { Timeline } from './components/Timeline'
@@ -40,6 +40,7 @@ export function App() {
   const selected = useStore((s) => s.selected)
   const select = useStore((s) => s.select)
   const mergeProblem = useStore((s) => s.mergeProblem)
+  const mergeDone = useStore((s) => s.mergeDone)
   const view = useStore((s) => s.view)
   const setView = useStore((s) => s.setView)
 
@@ -176,6 +177,7 @@ export function App() {
       {modal === 'onboarding' && <Onboarding />}
       {modal === 'guide' && <Guide />}
       {mergeProblem && <MergeProblemDialog />}
+      {mergeDone && <MergeDoneDialog />}
       <div className="toasts" aria-live="polite">
         {toasts.map((x) => (
           <div key={x.id} className={`toast toast-${x.kind}`}>

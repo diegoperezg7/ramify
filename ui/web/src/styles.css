@@ -1306,3 +1306,6 @@ kbd {
 .mp-detail { margin: 8px 0 0; padding: 10px 12px; max-height: 160px; overflow: auto; border-radius: 8px; background: var(--surface-hover); color: var(--text-2); font: 12px/1.5 var(--code); white-space: pre-wrap; }
 .mp-command { display: flex; align-items: center; gap: 8px; margin-top: 8px; padding: 6px 6px 6px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface-hover); min-width: 0; }
 .mp-command code { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 12px var(--code); color: var(--text); }
+.mp-icon.is-ok { color: var(--good); background: color-mix(in srgb, var(--good) 12%, transparent); }
+.merge-done { width: min(440px, calc(100vw - 32px)); }
+.merge-done .mp-head { margin-bottom: 4px; }

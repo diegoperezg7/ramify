@@ -196,9 +196,10 @@ export class MergeError extends Error {
  * Merge with a short message on success (a different one when generated files were rebuilt along the way)
  * and a MergeError, with its reason, on failure.
  */
-export async function friendlyMerge(merge: () => Promise<unknown>, ctx: { branch: string; base: string; path: string }, ok: string, okRebuilt: string): Promise<{ message: string }> {
+export async function friendlyMerge(merge: () => Promise<unknown>, ctx: { branch: string; base: string; path: string }, ok: string, okRebuilt: string): Promise<{ message: string; rebuilt: boolean }> {
   let out: unknown
   try { out = await merge() } catch (e) { throw new MergeError(mergeProblem((e as Error).message, ctx)) }
   const said = typeof out === 'string' ? out : (out as { message?: string } | undefined)?.message ?? ''
-  return { message: /regenerated: /.test(said) ? okRebuilt : ok }
+  const rebuilt = /regenerated: /.test(said)
+  return { message: rebuilt ? okRebuilt : ok, rebuilt }
 }

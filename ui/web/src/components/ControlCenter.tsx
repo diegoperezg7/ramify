@@ -26,6 +26,7 @@ export function ControlCenter() {
   const select = useStore((s) => s.select)
   const toast = useStore((s) => s.toast)
   const setMergeProblem = useStore((s) => s.setMergeProblem)
+  const setMergeDone = useStore((s) => s.setMergeDone)
   const [boards, setBoards] = useState<Board[] | null>(null)
   const [days, setDays] = useState<Record<number, number> | null>(null)
   const [picked, setPicked] = useState<number | null>(null)
@@ -248,7 +249,8 @@ export function ControlCenter() {
             const key = b.path
             if (action === 'move') void run(key, () => bridge.moveToBranch(board.repo, b.running[0] || b.agent || 'claude'))
             if (action === 'pr') void run(key, () => bridge.openPr(board.repo, b.path))
-            if (action === 'merge') void run(key, () => friendlyMerge(() => bridge.merge(board.repo, b.path), { branch: b.branch, base: board.health.base, path: b.path }, t('mergedOk', { branch: b.branch, base: board.health.base }), t('mergedRebuilt', { branch: b.branch, base: board.health.base })))
+            if (action === 'merge') void run(key, () => friendlyMerge(() => bridge.merge(board.repo, b.path), { branch: b.branch, base: board.health.base, path: b.path }, t('mergedOk', { branch: b.branch, base: board.health.base }), t('mergedRebuilt', { branch: b.branch, base: board.health.base }))
+              .then((r) => { setMergeDone({ branch: b.branch, base: board.health.base, rebuilt: r.rebuilt }); return r }))
             if (action === 'remove') void run(key, () => bridge.remove(board.repo, b.path, false))
           }}>
           <p>{t(`confirm_${confirm.action}` as 'confirm_move', { branch: confirm.b.branch, base: confirm.board.health.base, agent: confirm.b.running[0] || confirm.b.agent || 'claude' })}</p>

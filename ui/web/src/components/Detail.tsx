@@ -22,6 +22,7 @@ export function Detail() {
   const file = useStore((s) => s.file)
   const openFile = useStore((s) => s.openFile)
   const select = useStore((s) => s.select)
+  const setMergeDone = useStore((s) => s.setMergeDone)
   const run = useStore((s) => s.run)
   const busy = useStore((s) => s.busy)
   const lang = useStore((s) => s.lang)
@@ -161,7 +162,8 @@ export function Detail() {
       {dialog === 'merge' && (
         <Dialog title={t('mergeTitle')} confirmLabel={`${t('merge')} ${state.base}`}
           onCancel={() => setDialog(null)}
-          onConfirm={async () => { setDialog(null); await run(() => friendlyMerge(() => bridge.merge(repo, w.path), { branch: w.branch, base: state.base, path: w.path }, t('mergedOk', { branch: w.branch, base: state.base }), t('mergedRebuilt', { branch: w.branch, base: state.base }))) }}>
+          onConfirm={async () => { setDialog(null); await run(() => friendlyMerge(() => bridge.merge(repo, w.path), { branch: w.branch, base: state.base, path: w.path }, t('mergedOk', { branch: w.branch, base: state.base }), t('mergedRebuilt', { branch: w.branch, base: state.base }))
+            .then((r) => { setMergeDone({ branch: w.branch, base: state.base, rebuilt: r.rebuilt }); return r })) }}>
           <p>{t('mergeText', { branch: w.branch, base: state.base })}</p>
         </Dialog>
       )}
