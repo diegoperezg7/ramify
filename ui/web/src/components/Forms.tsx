@@ -3,6 +3,7 @@ import { AgentBadge } from './AgentBadge'
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { agentVar, KNOWN_AGENTS } from '../agents'
 import { bridge } from '../bridge'
+import { IDE_LABELS } from './Detail'
 import { useStore } from '../store'
 import type { Settings } from '../types'
 
@@ -133,6 +134,14 @@ export function SettingsDialog() {
           <input value={draft.projectsDir} onChange={(e) => setDraft({ ...draft, projectsDir: e.target.value })} spellCheck={false} />
           <small className="muted">{t('projectsDirHint')}</small>
         </label>
+        {caps?.host === 'desktop' && (caps.ides.length > 1) && (
+          <label>
+            <span>{t('defaultIde')}</span>
+            <select value={draft.defaultIde ?? caps.ides[0]} onChange={(e) => setDraft({ ...draft, defaultIde: e.target.value })}>
+              {caps.ides.filter((id) => id !== 'Finder').map((id) => <option key={id} value={id}>{IDE_LABELS[id] ?? id}</option>)}
+            </select>
+          </label>
+        )}
         {caps?.sessions && (
           <label>
             <span>{t('historyKeep')}</span>

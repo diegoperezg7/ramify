@@ -40,6 +40,13 @@ function installedApp(spec: AppSpec, env: NodeJS.ProcessEnv, home: string): bool
   return spec.mac.some((name) => roots.some((r) => existsSync(join(r, `${name}.app`))))
 }
 
+/** Windows: the executable of an installed app from the catalog, or null. */
+export function windowsAppPath(spec: AppSpec, env: NodeJS.ProcessEnv = process.env): string | null {
+  const roots = [env.LOCALAPPDATA, env.ProgramFiles, env['ProgramFiles(x86)']].filter(Boolean) as string[]
+  for (const rel of spec.win) for (const r of roots) if (existsSync(join(r, rel))) return join(r, rel)
+  return null
+}
+
 export function installedTools(env: NodeJS.ProcessEnv = process.env, home = homedir()): InstalledTools {
   const dirs = binDirs(env, home)
   return {

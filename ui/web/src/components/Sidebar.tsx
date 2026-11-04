@@ -79,7 +79,7 @@ function RepoItem({ r }: { r: RepoInfo }) {
 
   return (
     <li>
-      <button type="button" className={`repo-item${r.path === repo && view === 'repo' ? ' is-active' : ''}`} onClick={() => setRepo(r.path)}
+      <button type="button" className={`repo-item${r.path === repo && view !== 'sessions' ? ' is-active' : ''}`} onClick={() => setRepo(r.path)}
         title={`${r.name}\n${r.path}${working ? `\n${r.active!.join(', ')}` : ''}`}>
         <span className="repo-avatar">
           <FolderGit2 size={15} className="repo-icon" />

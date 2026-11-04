@@ -11,6 +11,8 @@ import { CommandPalette } from './components/CommandPalette'
 import { TopBar } from './components/TopBar'
 import { Sessions } from './components/Sessions'
 import { Onboarding } from './components/Onboarding'
+import { Timeline } from './components/Timeline'
+import { GanttChart, Network } from 'lucide-react'
 import { sortWorktrees, WorktreeList } from './components/WorktreeList'
 import { bridge } from './bridge'
 import { useStore } from './store'
@@ -34,6 +36,7 @@ export function App() {
   const selected = useStore((s) => s.selected)
   const select = useStore((s) => s.select)
   const view = useStore((s) => s.view)
+  const setView = useStore((s) => s.setView)
 
   useEffect(() => { document.documentElement.dataset.density = density }, [density])
 
@@ -130,6 +133,13 @@ export function App() {
           </div>
         )}
         {view === 'sessions' && caps?.sessions && <Sessions />}
+        {(view === 'repo' || view === 'timeline') && caps?.timeline && state && !noRepos && (
+          <div className="view-tabs" role="tablist">
+            <button type="button" role="tab" aria-selected={view === 'repo'} className={view === 'repo' ? 'is-on' : ''} onClick={() => setView('repo')}><Network size={14} />{t('viewTree')}</button>
+            <button type="button" role="tab" aria-selected={view === 'timeline'} className={view === 'timeline' ? 'is-on' : ''} onClick={() => setView('timeline')}><GanttChart size={14} />{t('viewTimeline')}</button>
+          </div>
+        )}
+        {view === 'timeline' && caps?.timeline && !noRepos && <Timeline />}
         {view === 'repo' && state && !noRepos && (
           <>
             <main className={`layout${selected ? ' has-selection' : ''}`}>

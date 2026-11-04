@@ -11,7 +11,7 @@ import { AgentBadge } from './AgentBadge'
 import { Activity } from './Activity'
 import { upstreamLabel } from './WorktreeList'
 
-const IDE_LABELS: Record<string, string> = { xcode: 'Xcode', cursor: 'Cursor', code: 'VS Code', zed: 'Zed', idea: 'IntelliJ IDEA' }
+export const IDE_LABELS: Record<string, string> = { xcode: 'Xcode', cursor: 'Cursor', code: 'VS Code', zed: 'Zed', idea: 'IntelliJ IDEA' }
 
 export function Detail() {
   const state = useStore((s) => s.state)!
@@ -75,13 +75,14 @@ export function Detail() {
       <div className="actions">
         <div className="ide-row" role="group" aria-label={t('openIn')}>
           <span className="muted small">{t('openIn')}</span>
-          {(caps?.ides ?? []).filter((id) => id !== 'Finder').map((id) => (
-            <button key={id} type="button" className="btn btn-ghost" disabled={busy}
+          {/* Only the editors installed here; the first is the default one (Settings). */}
+          {(caps?.ides ?? []).filter((id) => id !== 'Finder').map((id, i) => (
+            <button key={id} type="button" className={`btn ${i === 0 ? 'btn-ide-main' : 'btn-ghost'}`} disabled={busy}
               onClick={() => run(() => bridge.open(repo, w.path, id))}><BrandIcon name={IDE_LABELS[id] ?? id} size={14} />{IDE_LABELS[id] ?? id}</button>
           ))}
           {caps?.ides.includes('Finder') && (
             <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => run(() => bridge.open(repo, w.path, 'Finder'))}>
-              <FolderOpen size={14} />Finder
+              <FolderOpen size={14} />{caps.platform === 'win32' ? t('explorer') : 'Finder'}
             </button>
           )}
         </div>

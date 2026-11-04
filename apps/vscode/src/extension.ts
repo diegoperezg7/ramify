@@ -46,7 +46,7 @@ export function activate(ctx: vscode.ExtensionContext) {
   const handlers = {
     ...createHandlers({
       engine,
-      capabilities: { host: 'vscode', multiRepo: false, create: true, settings: false, github: false, ides: IDES },
+      capabilities: { host: 'vscode', multiRepo: false, create: true, settings: false, github: false, timeline: true, ides: IDES },
       repo: () => need(repoOf),
       runInTerminal: terminal,
       // "VS Code" / "Cursor" mean this editor: open the worktree in a new window of it.

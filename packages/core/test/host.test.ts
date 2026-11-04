@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { dispatch, isSafeExternal, sanitizeSettings, strings } from '../src/host.ts'
+import { idesFor, knownIde } from '../src/engine.ts'
 import { SessionLog } from '../src/activity.ts'
 import type { AgentSession, Settings } from '../src/types.ts'
 
@@ -75,5 +76,24 @@ describe('session history', () => {
     log.sessions.push(s('done', 500))
     log.clear()
     assert.deepEqual(log.sessions.map((x) => x.agent), ['codex'])
+  })
+})
+
+describe('editors', () => {
+  it('offers only installed editors, the preferred one first, then Finder', () => {
+    assert.deepEqual(idesFor(['Xcode', 'VS Code', 'Cursor']), ['cursor', 'code', 'Xcode'.toLowerCase(), 'Finder'])
+    assert.deepEqual(idesFor(['Xcode', 'VS Code', 'Android Studio'], 'Android Studio'), ['Android Studio', 'code', 'xcode', 'Finder'])
+    assert.deepEqual(idesFor([]), ['Finder'])
+  })
+
+  it('accepts short ids and catalog editors, nothing else', () => {
+    assert.ok(knownIde('cursor') && knownIde('Android Studio') && knownIde('Finder'))
+    assert.ok(!knownIde('rm -rf') && !knownIde('Calculator'))
+  })
+
+  it('keeps a valid default editor from the UI', () => {
+    const current: Settings = { terminal: 'Terminal', defaultAgent: 'claude', projectsDir: '/p', autoDetect: true }
+    assert.equal(sanitizeSettings({ defaultIde: 'PyCharm' }, current).defaultIde, 'PyCharm')
+    assert.equal(sanitizeSettings({ defaultIde: 'open -a Terminal' }, current).defaultIde, undefined)
   })
 })

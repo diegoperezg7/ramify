@@ -1,13 +1,30 @@
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { existsSync, readdirSync, readFileSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
-import { launchBin } from './catalog.ts'
-import type { Commit, Created, CreateRequest, Detail, FileChange, RepoInfo, State, Worktree } from './types.ts'
+import { EDITORS, launchBin } from './catalog.ts'
+import { windowsAppPath } from './tools.ts'
+import type { Commit, Created, CreateRequest, Detail, FileChange, RepoInfo, State, Timeline, TimelineBranch, TimelineCommit, Worktree } from './types.ts'
 
 const MAX_COMMITS = 300
 const MAX_DIFF = 400_000
 export const IDES = ['xcode', 'cursor', 'code', 'zed', 'idea', 'Finder']
+
+/** Short ids the ramify script knows, by editor name in the catalog. Other editors are opened by app name. */
+export const IDE_IDS: Record<string, string> = { Xcode: 'xcode', Cursor: 'cursor', 'VS Code': 'code', Zed: 'zed', 'IntelliJ IDEA': 'idea' }
+
+/** An editor Ramify can open: a short id, Finder, or any editor of the catalog by name. */
+export function knownIde(ide: string): boolean {
+  return IDES.includes(ide) || EDITORS.some((e) => e.name === ide)
+}
+
+/** Editors installed here as the ids "Open in" uses, the preferred one first, then Finder / Explorer. */
+export function idesFor(installed: string[], preferred?: string): string[] {
+  const order = ['Cursor', 'VS Code', 'Windsurf', 'Zed', 'Antigravity', 'Kiro', 'Trae', ...EDITORS.map((e) => e.name)]
+  const ids = [...new Set(order)].filter((n) => installed.includes(n)).map((n) => IDE_IDS[n] ?? n)
+  const first = preferred && ids.includes(preferred) ? [preferred] : []
+  return [...new Set([...first, ...ids]), 'Finder']
+}
 
 export class EngineError extends Error {}
 
@@ -279,11 +296,17 @@ export class Engine {
 
   async openIde(repo: string, path: string, ide: string): Promise<string> {
     await this.find(repo, path)
-    if (!IDES.includes(ide)) throw new EngineError('unknown IDE')
+    if (!knownIde(ide)) throw new EngineError('unknown IDE')
     if (ide === 'Finder') {
       // explorer.exe exits with 1 even when it opened the folder.
       if (WIN) await this.run('explorer.exe', [path.replace(/\//g, '\\')])
       else await this.must(process.platform === 'darwin' ? 'open' : 'xdg-open', [path])
+    } else if (WIN && !IDES.includes(ide)) {
+      // Editors without a command of their own: start their executable with the folder.
+      const spec = EDITORS.find((e) => e.name === ide)
+      const exe = spec && windowsAppPath(spec, this.env)
+      if (!exe) throw new EngineError(`${ide} is not installed`)
+      spawn(exe, [path.replace(/\//g, '\\')], { detached: true, stdio: 'ignore' }).unref()
     } else await this.mustBin(['open', path, '-i', ide], repo)
     return 'ok'
   }
@@ -324,6 +347,89 @@ export class Engine {
     return { path, command: req.agent ? this.launchCommand(path, req.agent, req.prompt) : null }
   }
 
+  // --- timeline ----------------------------------------------------------------
+
+  private async commitsOf(repo: string, ...range: string[]): Promise<TimelineCommit[]> {
+    const out = await this.git(repo, 'log', '--no-ext-diff', '-n', '400', '--format=%H%x1f%ct%x1f%s%x1e', ...range, '--')
+    return out.split('\x1e').map((l) => l.trim()).filter(Boolean).map((l) => {
+      const [hash, ct, subject] = l.split('\x1f')
+      return { hash, time: Number(ct), subject }
+    }).sort((a, b) => a.time - b.time)
+  }
+
+  private async commitTime(repo: string, ref: string): Promise<number> {
+    return Number((await this.git(repo, 'log', '-1', '--format=%ct', ref)).trim()) || 0
+  }
+
+  /**
+   * Every local branch, and every branch merged into the base within the range even if it was deleted
+   * (rebuilt from its merge commit): where it forked, its commits, where it was merged.
+   */
+  async timeline(repo: string, days: number): Promise<Timeline> {
+    const now = Math.floor(Date.now() / 1000)
+    const base = await this.base(repo)
+    const since = days > 0 ? now - days * 86400 : 0
+    const sinceArgs = since ? [`--since=${since}`] : []
+    const [wts, refs, baseCommits] = await Promise.all([
+      this.worktrees(repo).catch(() => [] as Worktree[]),
+      this.git(repo, 'for-each-ref', 'refs/heads', '--format=%(refname:short)%1f%(objectname)'),
+      this.commitsOf(repo, '--first-parent', ...sinceArgs, base),
+    ])
+    const branches: TimelineBranch[] = []
+    const seenTips = new Set<string>()
+    const week = now - 7 * 86400
+
+    for (const line of refs.split('\n').filter(Boolean)) {
+      const [name, tip] = line.split('\x1f')
+      if (name === base) continue
+      seenTips.add(tip)
+      const inBase = (await this.run('git', ['-C', repo, 'merge-base', '--is-ancestor', name, base])).code === 0
+      // A branch already merged forks where the base stood before its merge commit, not at its own tip.
+      let merge: TimelineBranch['merge'] = null
+      let forkHash = (await this.git(repo, 'merge-base', base, name)).trim()
+      if (inBase) {
+        const m = (await this.git(repo, 'rev-list', '--ancestry-path', '--merges', '--reverse', `${name}..${base}`)).split('\n')[0]?.trim()
+        if (m) {
+          merge = { hash: m, time: await this.commitTime(repo, m) }
+          forkHash = (await this.git(repo, 'merge-base', `${m}^1`, name)).trim()
+        }
+      }
+      if (!forkHash) continue
+      const commits = await this.commitsOf(repo, `${forkHash}..${name}`)
+      // In the base with no merge commit and nothing of its own: a fresh branch, not a merged one.
+      const merged = inBase && !!merge && commits.length > 0
+      const wt = wts.find((w) => w.branch === name)
+      const last = commits.at(-1)?.time ?? 0
+      branches.push({
+        name, agent: wt?.agent || null, exists: true, live: !!wt?.running.length, worktree: wt?.path ?? null,
+        status: merged && commits.length ? 'merged' : last >= week || wt?.running.length || !commits.length ? 'active' : 'stale',
+        fork: { hash: forkHash, time: await this.commitTime(repo, forkHash) }, merge, commits,
+      })
+    }
+
+    // Branches merged and deleted: each merge commit on the base names one in its subject.
+    const merges = await this.git(repo, 'log', '--first-parent', '--merges', ...sinceArgs, '--format=%H%x1f%P%x1f%ct%x1f%s%x1e', base, '--')
+    for (const rec of merges.split('\x1e').map((l) => l.trim()).filter(Boolean)) {
+      const [hash, parents, ct, subject] = rec.split('\x1f')
+      const [p1, p2] = parents.split(' ')
+      if (!p2 || seenTips.has(p2) || branches.some((b) => b.commits.some((c) => c.hash === p2))) continue
+      const name = mergedBranchName(subject) ?? p2.slice(0, 7)
+      const forkHash = (await this.git(repo, 'merge-base', p1, p2)).trim()
+      branches.push({
+        name, agent: null, exists: false, live: false, worktree: null, status: 'merged',
+        fork: { hash: forkHash, time: await this.commitTime(repo, forkHash) },
+        merge: { hash, time: Number(ct) }, commits: await this.commitsOf(repo, `${forkHash}..${p2}`),
+      })
+    }
+
+    const end = (b: TimelineBranch) => Math.max(b.merge?.time ?? 0, b.commits.at(-1)?.time ?? b.fork.time)
+    const inRange = branches.filter((b) => !since || b.status !== 'merged' || end(b) >= since)
+    // Newest activity first, live ones on top.
+    inRange.sort((a, b) => Number(b.live) - Number(a.live) || end(b) - end(a))
+    const from = since || Math.min(now, ...baseCommits.map((c) => c.time), ...inRange.map((b) => b.fork.time))
+    return { base, from, now, baseCommits, branches: inRange }
+  }
+
   /** Shell command that starts `agent` inside the worktree at `path`. */
   launchCommand(path: string, agent: string, prompt?: string): string {
     if (!/^[\w.-]+$/.test(agent)) throw new EngineError('invalid agent name')
@@ -331,6 +437,14 @@ export class Engine {
     if (prompt) parts.push('-p', prompt)
     return `cd ${shellQuote(path)} && ${parts.map(shellQuote).join(' ')}`
   }
+}
+
+/** Branch name from a merge commit subject (git, GitHub and GitLab wording), or null. */
+export function mergedBranchName(subject: string): string | null {
+  const m = /^Merge (?:remote-tracking )?branch '(?:origin\/)?([^']+)'/.exec(subject)
+    ?? /^Merge pull request #\d+ from [^/\s]+\/(\S+)/.exec(subject)
+    ?? /^Merge branch '([^']+)' into/.exec(subject)
+  return m ? m[1] : null
 }
 
 export function shellQuote(s: string): string {

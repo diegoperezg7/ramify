@@ -125,7 +125,7 @@ describe('web UI', () => {
     const launched: { cwd: string; command: string }[] = []
     const handlers = createHandlers({
       engine: new Engine({ bin: BIN, env }),
-      capabilities: { host: 'vscode', multiRepo: false, create: true, settings: false, github: false, ides: IDES },
+      capabilities: { host: 'vscode', multiRepo: false, create: true, settings: false, github: false, timeline: true, ides: IDES },
       repo: () => REPO,
       runInTerminal: (_n, cwd, command) => { launched.push({ cwd, command }) },
     })
@@ -151,6 +151,49 @@ describe('web UI', () => {
     assert.equal(launched.length, 1)
     assert.match(launched[0].command, /open .*feat-wishlist -a codex -p 'add a wishlist, it'\\''s fine'$/)
     assert.ok(existsSync(join(T, 'wts', 'shop', 'feat-wishlist', '.worktree.env')))
+    await page.close()
+  })
+
+  it('editor host: the branch timeline shows each branch from its fork to its merge', async () => {
+    // A branch merged into main and deleted, rebuilt from its merge commit.
+    git(REPO, 'checkout', '-qb', 'fix/typo')
+    writeFileSync(join(REPO, 'typo.txt'), 'fixed\n')
+    git(REPO, 'add', '.')
+    git(REPO, 'commit', '-qm', 'Fix typo')
+    git(REPO, 'checkout', '-q', 'main')
+    git(REPO, 'merge', '--no-ff', '-q', '-m', "Merge branch 'fix/typo'", 'fix/typo')
+    git(REPO, 'branch', '-qd', 'fix/typo')
+    const handlers = createHandlers({
+      engine: new Engine({ bin: BIN, env }),
+      capabilities: { host: 'vscode', multiRepo: false, create: true, settings: false, github: false, timeline: true, ides: IDES },
+      repo: () => REPO,
+      runInTerminal: () => {},
+    })
+    const page = await browser.newPage({ locale: 'en-US', viewport: { width: 1280, height: 860 } })
+    await page.exposeFunction('__host', (method: string, args: unknown[]) =>
+      dispatch(handlers, method, args).then((result) => ({ result }), (e: Error) => ({ error: e.message })))
+    await page.addInitScript(() => {
+      const w = window as unknown as { acquireVsCodeApi: () => unknown; __host: (m: string, a: unknown[]) => Promise<{ result?: unknown; error?: string }> }
+      w.acquireVsCodeApi = () => ({
+        postMessage: (msg: { id: number; method: string; args: unknown[] }) => {
+          void w.__host(msg.method, msg.args).then((r) => window.postMessage({ id: msg.id, ...r }, '*'))
+        },
+      })
+    })
+    await page.goto('http://127.0.0.1:4979/index.html')
+    await page.waitForSelector('.graph-row')
+    await page.click('.view-tabs button:has-text("Timeline")')
+    await page.waitForSelector('.tl-branch')
+    const labels = await page.locator('.tl-label .tl-name').allTextContents()
+    assert.ok(labels.includes('feat/checkout'), labels.join(','))
+    assert.ok(labels.includes('fix/typo'), 'merged and deleted branch is rebuilt')
+    assert.equal(await page.locator('.tl-label.is-merged .tl-name').first().textContent(), 'fix/typo')
+    // The merged branch draws its merge back into main; the open one has its commits.
+    assert.ok(await page.locator('.tl-branch.is-merged .tl-merge').count() >= 1)
+    assert.ok(await page.locator('.tl-branch.is-active .tl-dot').count() >= 1)
+    // Nothing overflows the plot horizontally.
+    const overflow = await page.evaluate(() => { const p = document.querySelector('.tl-plot')!; return p.scrollWidth - p.clientWidth })
+    assert.ok(overflow <= 1, `plot overflows by ${overflow}px`)
     await page.close()
   })
 })

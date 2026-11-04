@@ -4,7 +4,7 @@ import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, realpathS
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
-  cloneGithub, createHandlers, defaultProjectsDir, dispatch, Engine, EngineError, githubRepos, IDES, openInTerminal, originSlug,
+  cloneGithub, createHandlers, defaultProjectsDir, dispatch, Engine, EngineError, githubRepos, idesFor, openInTerminal, originSlug,
   accessibleRepos, AuthError, currentUser, hardenedGitEnv, isSafeExternal, sanitizeSettings, strings, installedTools, pollForTokens, publishGithub, pullRequestFor, pullRequestWithToken,
   refreshTokens, requestDeviceCode, scanRepos, scanSessions, SessionLog, sessionsCsv, type Resolved, type Tokens,
 } from '../../../packages/core/src/index.ts'
@@ -270,6 +270,15 @@ function updateTray(count: number) {
   tray.setContextMenu(Menu.buildFromTemplate(items))
 }
 
+// --- editors ---------------------------------------------------------------------
+
+let idesCache: { at: number; ides: string[] } | null = null
+function installedIdes(): string[] {
+  if (!idesCache || Date.now() - idesCache.at > 60_000) idesCache = { at: Date.now(), ides: idesFor(installedTools(env).editors) }
+  const preferred = config.settings.defaultIde
+  return preferred && idesCache.ides.includes(preferred) ? [preferred, ...idesCache.ides.filter((i) => i !== preferred)] : idesCache.ides
+}
+
 // --- GitHub ---------------------------------------------------------------------
 
 let githubCache: { at: number; repos: GithubRepo[] } | null = null
@@ -430,7 +439,8 @@ async function addPath(path: string): Promise<RepoInfo> {
 const handlers = {
   ...createHandlers({
     engine,
-    capabilities: { host: 'desktop', platform: process.platform, multiRepo: true, create: true, settings: true, github: true, sessions: true, ides: IDES },
+    // Only the editors installed on this machine, the chosen default first.
+    capabilities: () => ({ host: 'desktop', platform: process.platform, multiRepo: true, create: true, settings: true, github: true, sessions: true, timeline: true, ides: installedIdes() }),
     repo: knownRepo,
     runInTerminal: (_name, cwd, command) => openInTerminal(config.settings.terminal, command, cwd),
   }),

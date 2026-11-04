@@ -7,7 +7,7 @@ export type Theme = 'system' | 'light' | 'dark'
 export type Density = 'comfortable' | 'compact'
 type Conn = 'ok' | 'offline' | 'unauthorized'
 type Modal = 'create' | 'settings' | 'github' | 'palette' | 'onboarding' | null
-export type View = 'repo' | 'sessions'
+export type View = 'repo' | 'sessions' | 'timeline'
 
 interface Toast { id: number; kind: 'ok' | 'error'; text: string }
 
@@ -173,7 +173,7 @@ export const useStore = create<Store>((set, get) => ({
 
   setRepo: (path) => {
     save('ramify-repo', path)
-    set({ repo: path, state: null, selected: null, detail: null, file: null, diff: '', menuOpen: false, view: 'repo' })
+    set({ repo: path, state: null, selected: null, detail: null, file: null, diff: '', menuOpen: false, view: get().view === 'timeline' ? 'timeline' : 'repo' })
     void get().poll()
   },
 
@@ -245,7 +245,8 @@ export const useStore = create<Store>((set, get) => ({
 
   saveSettings: async (s) => {
     await bridge.saveSettings(s)
-    set({ settings: s })
+    // The default editor changes the order of "Open in": read what the host offers again.
+    set({ settings: s, caps: await bridge.capabilities().catch(() => get().caps) })
   },
 
   setModal: (modal) => set(modal === null ? { modal, createPrefill: null } : { modal }),

@@ -1,4 +1,4 @@
-import { Engine, EngineError, IDES } from './engine.ts'
+import { Engine, EngineError, knownIde } from './engine.ts'
 import type { Capabilities, CreateRequest, Settings } from './types.ts'
 
 // The request handlers every host (desktop app, editor extension) exposes to the UI.
@@ -6,7 +6,8 @@ import type { Capabilities, CreateRequest, Settings } from './types.ts'
 
 export interface HostOptions {
   engine: Engine
-  capabilities: Capabilities
+  /** What this host can do; a function when it depends on the machine (installed editors). */
+  capabilities: Capabilities | (() => Capabilities)
   /** Validate the repository the UI asks for and return its path (throw if not allowed). */
   repo: (requested: string) => Promise<string> | string
   /** Run `command` in a terminal named `name`, starting in `cwd`. */
@@ -25,14 +26,14 @@ export function createHandlers(o: HostOptions): Handlers {
   }
 
   return {
-    capabilities: () => o.capabilities,
+    capabilities: () => (typeof o.capabilities === 'function' ? o.capabilities() : o.capabilities),
     state: async (r: string) => engine.state(await repo(r)),
     worktree: async (r: string, path: string) => { strings(path); return engine.worktree(await repo(r), path) },
     diff: async (r: string, path: string, file: string) => { strings(path, file); return { diff: await engine.diff(await repo(r), path, file) } },
     open: async (r: string, path: string, ide: string) => {
       strings(path, ide)
       const main = await repo(r)
-      if (!IDES.includes(ide)) throw new EngineError('unknown IDE')
+      if (!knownIde(ide)) throw new EngineError('unknown IDE')
       if (o.openFolder?.ides.includes(ide)) {
         await ensureWorktree(main, path)
         await o.openFolder.open(path)
@@ -49,6 +50,10 @@ export function createHandlers(o: HostOptions): Handlers {
       const created = await engine.create(await repo(r), req)
       if (created.command) await o.runInTerminal(req.branch, created.path, created.command)
       return { path: created.path, message: created.command ? `${req.branch} · ${req.agent}` : req.branch }
+    },
+    timeline: async (r: string, days: number) => {
+      if (typeof days !== 'number' || !Number.isInteger(days) || days < 0 || days > 3650) throw new Error('bad arguments')
+      return engine.timeline(await repo(r), days)
     },
     launch: async (r: string, path: string, agent: string, prompt?: string) => {
       strings(path, agent, prompt ?? '')
@@ -96,6 +101,7 @@ export function sanitizeSettings(input: unknown, current: Settings): Settings {
     ...current,
     terminal: str('terminal', (v) => ['Terminal', 'iTerm', 'Ghostty'].includes(v)) as Settings['terminal'],
     defaultAgent: str('defaultAgent', (v) => /^[\w.-]{1,64}$/.test(v)) as string,
+    defaultIde: str('defaultIde', (v) => knownIde(v)) as string | undefined,
     projectsDir: str('projectsDir', (v) => v.length < 1024 && !v.includes('\0')) as string,
     autoDetect: bool('autoDetect') as boolean,
     notifications: bool('notifications') as boolean | undefined,

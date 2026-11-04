@@ -48,6 +48,34 @@ export interface Detail {
   files: FileChange[]
 }
 
+export interface TimelineCommit { hash: string; time: number; subject: string }
+
+/** One branch on the timeline: from where it forked off the base to its last commit or its merge. */
+export interface TimelineBranch {
+  name: string
+  /** Agent of its worktree, when it has one. */
+  agent: string | null
+  /** active: has commits not in the base and moved in the last week; stale: older; merged: in the base. */
+  status: 'active' | 'stale' | 'merged'
+  /** Still a local branch (false: merged and deleted, rebuilt from its merge commit). */
+  exists: boolean
+  /** Agent working in its worktree right now. */
+  live: boolean
+  worktree: string | null
+  fork: { hash: string; time: number }
+  merge: { hash: string; time: number } | null
+  commits: TimelineCommit[]
+}
+
+export interface Timeline {
+  base: string
+  /** Unix seconds: start of the range and now. */
+  from: number
+  now: number
+  baseCommits: TimelineCommit[]
+  branches: TimelineBranch[]
+}
+
 export interface CreateRequest {
   branch: string
   agent: string
@@ -102,6 +130,8 @@ export interface Settings {
   onboarded?: boolean
   /** Agents or apps (by name) the user does not want tracked. */
   ignored?: string[]
+  /** Editor that "Open in" offers first (an id such as cursor, or an editor name). */
+  defaultIde?: string
   /** Days of AI-session history to keep (0 = keep everything). */
   historyDays?: number
 }
@@ -186,6 +216,8 @@ export interface Capabilities {
   github: boolean
   /** Tracks AI sessions across the machine. */
   sessions?: boolean
+  /** Branch timeline view. */
+  timeline?: boolean
   ides: string[]
 }
 
@@ -200,6 +232,8 @@ export interface Bridge {
   remove(repo: string, path: string, force: boolean): Promise<{ message: string }>
   create(repo: string, req: CreateRequest): Promise<{ message: string; path: string }>
   launch(repo: string, path: string, agent: string, prompt?: string): Promise<{ message: string }>
+  /** Every local branch and every branch merged into the base in the last `days` days (0: all history). */
+  timeline(repo: string, days: number): Promise<Timeline>
   repos(): Promise<RepoInfo[]>
   addRepo(): Promise<RepoInfo | null>
   removeRepo(path: string): Promise<void>

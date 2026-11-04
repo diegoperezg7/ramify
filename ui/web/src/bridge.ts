@@ -1,4 +1,4 @@
-import type { AgentSession, Bridge, Capabilities, GithubAccount, GithubSync, InstalledTools, Detail, GithubRepo, RepoInfo, Settings, State } from './types'
+import type { AgentSession, Bridge, Capabilities, GithubAccount, GithubSync, InstalledTools, Timeline, Detail, GithubRepo, RepoInfo, Settings, State } from './types'
 
 // One UI, three hosts:
 //  - desktop app: Electron preload exposes window.ramify.invoke
@@ -36,6 +36,7 @@ function rpc(invoke: Invoke, subscribe: (cb: (e: HostEvent) => void) => void): B
     remove: (repo, path, force) => call('remove', repo, path, force),
     create: (repo, req) => call('create', repo, req),
     launch: (repo, path, agent, prompt) => call('launch', repo, path, agent, prompt),
+    timeline: (repo, days) => call<Timeline>('timeline', repo, days),
     repos: () => call<RepoInfo[]>('repos'),
     addRepo: () => call<RepoInfo | null>('addRepo'),
     removeRepo: (path) => call<void>('removeRepo', path),
@@ -124,6 +125,7 @@ function httpBridge(): Bridge {
     remove: (_r, path, force) => post('/api/remove', { path, force }),
     create: unsupported,
     launch: unsupported,
+    timeline: unsupported,
     repos: async () => [],
     addRepo: async () => null,
     removeRepo: async () => {},
