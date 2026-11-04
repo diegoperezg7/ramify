@@ -1309,3 +1309,20 @@ kbd {
 .mp-icon.is-ok { color: var(--good); background: color-mix(in srgb, var(--good) 12%, transparent); }
 .merge-done { width: min(440px, calc(100vw - 32px)); }
 .merge-done .mp-head { margin-bottom: 4px; }
+
+/* side branches: thin git lanes down the left and right margins of the window, starting under the top bar, in the
+   logo's colours. They live in the side padding only (never under text or buttons), behind everything, never
+   clickable, fading out downwards; the page background stays pure white or pure black. */
+.app { position: relative; isolation: isolate; }
+.app::before, .app::after {
+  content: ''; position: absolute; top: calc(var(--topbar-h) + 6px); z-index: -1; width: 24px; height: 340px; pointer-events: none;
+  background: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2224%22 height=%22340%22 viewBox=%220 0 24 340%22 fill=%22none%22 stroke-linecap=%22round%22 stroke-width=%221.6%22%3E%3Cpath d=%22M7 0 V340%22 stroke=%22%23a855f7%22/%3E%3Cpath d=%22M7 26 C7 46 18 40 18 60 V150 C18 170 7 166 7 186%22 stroke=%22%23fb923c%22/%3E%3Cpath d=%22M7 206 C7 226 18 220 18 240 V318%22 stroke=%22%2338bdf8%22/%3E%3Ccircle cx=%227%22 cy=%2212%22 r=%223%22 fill=%22%23a855f7%22/%3E%3Ccircle cx=%2218%22 cy=%2296%22 r=%223%22 fill=%22%23fb923c%22/%3E%3Ccircle cx=%2218%22 cy=%22132%22 r=%223%22 fill=%22%23fb923c%22/%3E%3Ccircle cx=%227%22 cy=%22196%22 r=%223%22 fill=%22%23a855f7%22/%3E%3Ccircle cx=%2218%22 cy=%22272%22 r=%223%22 fill=%22%2338bdf8%22/%3E%3C/svg%3E") no-repeat top left / 24px 340px;
+  -webkit-mask-image: linear-gradient(to bottom, #000 45%, transparent); mask-image: linear-gradient(to bottom, #000 45%, transparent);
+  opacity: 0.5;
+}
+.app::before { left: max(0px, calc(var(--pad-x) - 26px)); }
+.app::after { right: max(0px, calc(var(--pad-x) - 26px)); transform: scaleX(-1); }
+:root[data-theme='dark'] .app::before, :root[data-theme='dark'] .app::after { opacity: 0.6; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) .app::before, :root:not([data-theme='light']) .app::after { opacity: 0.6; } }
+/* A narrow window has almost no side margin: no lanes there. */
+.app.is-sm::before, .app.is-sm::after { display: none; }
