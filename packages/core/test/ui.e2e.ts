@@ -68,7 +68,7 @@ describe('web UI', () => {
     page.on('pageerror', (e) => errors.push(String(e)))
     await page.goto('http://127.0.0.1:4978/#token=tok')
     await page.waitForSelector('.graph-row:has-text("Stripe payment intent")')
-    assert.match(await page.textContent('.metrics') ?? '', /1\s*worktrees/)
+    assert.match(await page.textContent('.metrics') ?? '', /1\s*worktree(?!s)/) // singular for one
     await page.click('.wt-row:has-text("feat/checkout")')
     await page.waitForSelector('.file:has-text("draft.ts")')
     await page.click('.file:has-text("pay.ts")')

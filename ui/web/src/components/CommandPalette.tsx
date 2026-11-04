@@ -15,6 +15,7 @@ export function CommandPalette() {
   const setModal = useStore((s) => s.setModal)
   const setRepo = useStore((s) => s.setRepo)
   const select = useStore((s) => s.select)
+  const setView = useStore((s) => s.setView)
   const setTheme = useStore((s) => s.setTheme)
   const dark = useDarkMode()
   const ref = useRef<HTMLDialogElement>(null)
@@ -40,14 +41,14 @@ export function CommandPalette() {
       if (w.main) continue
       list.push({
         id: `wt:${w.path}`, group: t('groupWorktrees'), label: w.branch, hint: w.agent || undefined,
-        icon: <AgentBadge agent={w.agent} size={18} live={w.running.length > 0} />, run: close(() => select(w.path)),
+        icon: <AgentBadge agent={w.agent} size={18} live={w.running.length > 0} />, run: close(() => { setView('repo'); select(w.path) }),
       })
     }
     for (const r of repos) {
       list.push({ id: `repo:${r.path}`, group: t('groupRepos'), label: r.name, hint: r.active?.length ? `● ${r.active.join(', ')}` : undefined, icon: <FolderGit2 size={15} />, run: close(() => setRepo(r.path)) })
     }
     return list
-  }, [caps, state, repos, dark, t, setModal, setRepo, select, setTheme])
+  }, [caps, state, repos, dark, t, setModal, setRepo, select, setView, setTheme])
 
   const filtered = useMemo(() => {
     const words = q.toLowerCase().split(/\s+/).filter(Boolean)

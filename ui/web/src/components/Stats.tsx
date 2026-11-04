@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react'
 import { useStore } from '../store'
 
 /** Inline metrics in the header: compact, monospaced, always visible. */
@@ -12,7 +13,7 @@ export function Metrics() {
   const ahead = wts.reduce((n, w) => n + w.commits, 0)
   return (
     <div className="metrics" aria-label="summary">
-      <span><b>{wts.length}</b> {t('worktrees').toLowerCase()}</span>
+      <span><b>{wts.length}</b> {wts.length === 1 ? t('worktreeOne') : t('worktrees').toLowerCase()}</span>
       <span className={live ? 'is-live' : ''}>{live > 0 && <i className="pulse" />}<b>{live}</b> {t('live2')}</span>
       <span className={dirty ? 'is-warn' : ''}><b>{dirty}</b> {t('uncommittedShort')}</span>
       <span><b>{ahead}</b> {t('toMergeShort')}</span>
@@ -27,6 +28,12 @@ export function StatusBar() {
   const lastSync = useStore((s) => s.lastSync)
   const caps = useStore((s) => s.caps)
   const t = useStore((s) => s.t)
+  // "synced Ns ago" has to move on its own between polls.
+  const [, tick] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => tick((n) => n + 1), 1000)
+    return () => clearInterval(id)
+  }, [])
   const ago = lastSync ? Math.max(0, Math.round((Date.now() - lastSync) / 1000)) : 0
   return (
     <footer className="statusbar">
