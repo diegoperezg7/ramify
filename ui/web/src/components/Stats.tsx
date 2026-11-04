@@ -21,7 +21,7 @@ export function Metrics() {
 
 /** Bottom status bar, like an editor's. */
 export function StatusBar() {
-  const state = useStore((s) => s.state)
+  const state = useStore((s) => (s.view === 'repo' ? s.state : null))
   const conn = useStore((s) => s.conn)
   const lastSync = useStore((s) => s.lastSync)
   const caps = useStore((s) => s.caps)

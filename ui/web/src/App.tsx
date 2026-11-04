@@ -8,6 +8,7 @@ import { Sidebar } from './components/Sidebar'
 import { StatusBar } from './components/Stats'
 import { CommandPalette } from './components/CommandPalette'
 import { TopBar } from './components/TopBar'
+import { Sessions } from './components/Sessions'
 import { sortWorktrees, WorktreeList } from './components/WorktreeList'
 import { bridge } from './bridge'
 import { useStore } from './store'
@@ -30,6 +31,7 @@ export function App() {
   const density = useStore((s) => s.density)
   const selected = useStore((s) => s.selected)
   const select = useStore((s) => s.select)
+  const view = useStore((s) => s.view)
 
   useEffect(() => { document.documentElement.dataset.density = density }, [density])
 
@@ -116,14 +118,15 @@ export function App() {
         {conn !== 'ok' && !noRepos && (
           <div className="banner" role="alert"><AlertTriangle size={16} />{conn === 'unauthorized' ? t('badToken') : t('offline')}</div>
         )}
-        {noRepos && (
+        {noRepos && view === 'repo' && (
           <div className="welcome">
             <span className="welcome-icon"><FolderGit2 size={28} /></span>
             <p>{t('noRepos')}</p>
             <button type="button" className="btn btn-primary" onClick={() => addRepo()}><Plus size={15} />{t('addRepo')}</button>
           </div>
         )}
-        {state && !noRepos && (
+        {view === 'sessions' && caps?.sessions && <Sessions />}
+        {view === 'repo' && state && !noRepos && (
           <>
             <main className={`layout${selected ? ' has-selection' : ''}`}>
               <WorktreeList />

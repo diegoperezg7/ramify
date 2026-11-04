@@ -1,4 +1,4 @@
-import { FolderGit2, PanelLeftClose, PanelLeftOpen, Plus, Settings, X } from 'lucide-react'
+import { FolderGit2, MessagesSquare, PanelLeftClose, PanelLeftOpen, Plus, Settings, X } from 'lucide-react'
 import { GithubIcon } from './GithubIcon'
 import { agentVar } from '../agents'
 import { Logo } from './Logo'
@@ -15,6 +15,9 @@ export function Sidebar() {
   const menuOpen = useStore((s) => s.menuOpen)
   const setMenuOpen = useStore((s) => s.setMenuOpen)
   const t = useStore((s) => s.t)
+  const view = useStore((s) => s.view)
+  const setView = useStore((s) => s.setView)
+  const liveCount = repos.reduce((n, r) => n + (r.active?.length ?? 0), 0)
 
   const active = repos.filter((r) => r.active?.length).sort((a, b) => a.name.localeCompare(b.name))
   const rest = repos.filter((r) => !r.active?.length).sort((a, b) => a.name.localeCompare(b.name))
@@ -37,6 +40,12 @@ export function Sidebar() {
           <span className="side-brand-name">Ramify</span>
         </div>
         <div className="sidebar-section">
+          {caps?.sessions && (
+            <button type="button" className={`side-btn side-view${view === 'sessions' ? ' is-active' : ''}`} onClick={() => setView('sessions')} title={t('sessions')}>
+              <MessagesSquare size={16} /><span>{t('sessions')}</span>
+              {liveCount > 0 && <span className="repo-count is-live">{liveCount}</span>}
+            </button>
+          )}
           {active.length > 0 && (
             <>
               <span className="sidebar-label"><span className="pulse" />{t('activeNow')}</span>
@@ -64,12 +73,13 @@ function RepoItem({ r }: { r: RepoInfo }) {
   const repo = useStore((s) => s.repo)
   const setRepo = useStore((s) => s.setRepo)
   const removeRepo = useStore((s) => s.removeRepo)
+  const view = useStore((s) => s.view)
   const t = useStore((s) => s.t)
   const working = (r.active ?? []).length > 0
 
   return (
     <li>
-      <button type="button" className={`repo-item${r.path === repo ? ' is-active' : ''}`} onClick={() => setRepo(r.path)}
+      <button type="button" className={`repo-item${r.path === repo && view === 'repo' ? ' is-active' : ''}`} onClick={() => setRepo(r.path)}
         title={`${r.name}\n${r.path}${working ? `\n${r.active!.join(', ')}` : ''}`}>
         <span className="repo-avatar">
           <FolderGit2 size={15} className="repo-icon" />

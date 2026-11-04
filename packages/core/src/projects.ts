@@ -123,3 +123,27 @@ export async function cloneGithub(nameWithOwner: string, intoDir: string, env?: 
   if (r.code !== 0) throw new GithubError(r.stderr.trim() || 'clone failed')
   return target
 }
+
+/** The pull request for `branch` on GitHub (open, merged or closed), or null. */
+export async function pullRequestFor(slug: string, branch: string, env?: NodeJS.ProcessEnv): Promise<{ number: number; url: string; state: string; title: string } | null> {
+  if (!/^[\w.-]+\/[\w.-]+$/.test(slug) || !branch || branch.startsWith('-')) return null
+  const r = await out('gh', ['pr', 'list', '--repo', slug, '--head', branch, '--state', 'all', '--limit', '1', '--json', 'number,url,state,title'], env)
+  if (r.code !== 0) return null
+  try { return (JSON.parse(r.stdout) as { number: number; url: string; state: string; title: string }[])[0] ?? null } catch { return null }
+}
+
+/**
+ * Create a GitHub repository for a local repository that has no remote yet, and push it.
+ * Refuses when there is already an origin or no commit to push.
+ */
+export async function publishGithub(repo: string, name: string, isPrivate: boolean, env?: NodeJS.ProcessEnv): Promise<string> {
+  if (!/^[\w.-]+$/.test(name) || name.startsWith('.')) throw new GithubError('invalid repository name')
+  if ((await out('git', ['-C', repo, 'remote'], env)).stdout.trim().split('\n').includes('origin')) throw new GithubError('this repository already has an origin remote')
+  if ((await out('git', ['-C', repo, 'rev-parse', '--verify', '-q', 'HEAD'], env)).code !== 0) throw new GithubError('nothing to push: the repository has no commits')
+  const r = await out('gh', ['repo', 'create', name, isPrivate ? '--private' : '--public', '--source', repo, '--remote', 'origin', '--push'], env)
+  if (r.code !== 0) {
+    if (/not found|ENOENT/i.test(r.stderr) || r.code === 127) throw new GithubError('gh-missing')
+    throw new GithubError(r.stderr.trim() || 'gh repo create failed')
+  }
+  return (await originSlug(repo, env)) ?? name
+}

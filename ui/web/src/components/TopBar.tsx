@@ -26,7 +26,8 @@ export function useDarkMode(): boolean {
 }
 
 export function TopBar() {
-  const state = useStore((s) => s.state)
+  const view = useStore((s) => s.view)
+  const state = useStore((s) => view === 'repo' ? s.state : null)
   const caps = useStore((s) => s.caps)
   const conn = useStore((s) => s.conn)
   const lastSync = useStore((s) => s.lastSync)

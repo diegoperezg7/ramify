@@ -1,12 +1,13 @@
 import { create } from 'zustand'
 import { bridge, BridgeError } from './bridge'
 import { dict, format, type Key, type Lang } from './i18n'
-import type { Capabilities, CreateRequest, Detail, RepoInfo, Settings, State } from './types'
+import type { AgentSession, Capabilities, CreateRequest, Detail, RepoInfo, Settings, State } from './types'
 
 export type Theme = 'system' | 'light' | 'dark'
 export type Density = 'comfortable' | 'compact'
 type Conn = 'ok' | 'offline' | 'unauthorized'
 type Modal = 'create' | 'settings' | 'github' | 'palette' | null
+export type View = 'repo' | 'sessions'
 
 interface Toast { id: number; kind: 'ok' | 'error'; text: string }
 
@@ -30,6 +31,8 @@ interface Store {
   menuOpen: boolean
   toasts: Toast[]
   busy: boolean
+  view: View
+  sessions: AgentSession[] | null
 
   t: (key: Key, vars?: Record<string, string | number>) => string
   init: () => Promise<void>
@@ -52,6 +55,8 @@ interface Store {
   addRepoPath: (path: string) => Promise<void>
   cloneRepo: (nameWithOwner: string) => Promise<boolean>
   toast: (kind: Toast['kind'], text: string) => void
+  setView: (view: View) => void
+  refreshSessions: () => Promise<void>
   run: (action: () => Promise<{ message: string }>) => Promise<boolean>
 }
 
@@ -87,6 +92,8 @@ export const useStore = create<Store>((set, get) => ({
   menuOpen: false,
   toasts: [],
   busy: false,
+  view: 'repo',
+  sessions: null,
 
   t: (key, vars) => format(dict[get().lang][key], vars),
 
@@ -94,6 +101,7 @@ export const useStore = create<Store>((set, get) => ({
     const caps = await bridge.capabilities().catch(() => null)
     set({ caps })
     if (caps?.settings) set({ settings: await bridge.settings().catch(() => null) })
+    if (caps?.sessions && load<View>('ramify-view', 'repo') === 'sessions') get().setView('sessions')
     if (caps?.multiRepo) {
       const repos = await bridge.repos()
       const saved = load('ramify-repo', '')
@@ -104,6 +112,7 @@ export const useStore = create<Store>((set, get) => ({
 
   poll: async () => {
     const { caps, repo } = get()
+    if (get().view === 'sessions') void get().refreshSessions()
     if (caps?.multiRepo && !repo) { await get().refreshRepos(); return }
     const seq = ++pollSeq
     try {
@@ -157,7 +166,7 @@ export const useStore = create<Store>((set, get) => ({
 
   setRepo: (path) => {
     save('ramify-repo', path)
-    set({ repo: path, state: null, selected: null, detail: null, file: null, diff: '', menuOpen: false })
+    set({ repo: path, state: null, selected: null, detail: null, file: null, diff: '', menuOpen: false, view: 'repo' })
     void get().poll()
   },
 
@@ -238,6 +247,14 @@ export const useStore = create<Store>((set, get) => ({
   setDensity: (density) => { save('ramify-density', density); set({ density }) },
   setRail: (rail) => { save('ramify-rail', rail ? '1' : ''); set({ rail }) },
   setMenuOpen: (menuOpen) => set({ menuOpen }),
+  setView: (view) => {
+    save('ramify-view', view)
+    set({ view, menuOpen: false })
+    if (view === 'sessions') void get().refreshSessions()
+  },
+  refreshSessions: async () => {
+    try { set({ sessions: await bridge.sessions() }) } catch { /* keep the last list */ }
+  },
 
   toast: (kind, text) => {
     const id = ++toastId

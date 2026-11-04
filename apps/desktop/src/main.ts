@@ -5,9 +5,9 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
   cloneGithub, createHandlers, defaultProjectsDir, dispatch, Engine, EngineError, githubRepos, IDES, openInTerminal, originSlug,
-  runningAgents, scanRepos,
+  publishGithub, pullRequestFor, scanRepos, scanSessions, SessionLog, sessionsCsv, type Resolved,
 } from '../../../packages/core/src/index.ts'
-import type { GithubRepo, RepoInfo, Settings } from '../../../packages/core/src/types.ts'
+import type { AgentSession, GithubRepo, RepoInfo, Settings } from '../../../packages/core/src/types.ts'
 
 // Apps started from Finder get a minimal PATH: borrow the login shell's so agents,
 // xcodegen, npm and friends are found exactly as in the terminal.
@@ -98,22 +98,75 @@ function worktreesOf(repo: string) {
   return list
 }
 
+// --- AI sessions ------------------------------------------------------------------
+// Every AI session on the machine (agent CLIs, IDE chat, desktop AI apps), kept as a history.
+
+const sessionsFile = join(app.getPath('userData'), 'sessions.json')
+function readSessions(): AgentSession[] {
+  try { return JSON.parse(readFileSync(sessionsFile, 'utf8')) as AgentSession[] } catch { return [] }
+}
+const sessionLog = new SessionLog(readSessions())
+let sessionsWritten = 0
+function saveSessions(force: boolean) {
+  // Changes are written at once; "still running" heartbeats at most once a minute.
+  if (!force && Date.now() - sessionsWritten < 60_000) return
+  sessionLog.prune()
+  try { writeFileSync(sessionsFile, JSON.stringify(sessionLog.sessions)); sessionsWritten = Date.now() } catch { /* next scan retries */ }
+}
+
+async function resolveCwd(cwd: string | null): Promise<Resolved & { worktree: string | null }> {
+  const none = { repo: null, branch: null, github: null, worktree: null }
+  if (!cwd) return none
+  const main = await cachedMain(cwd)
+  if (!main) return none
+  let wt: { path: string; branch: string } | undefined
+  try {
+    wt = worktreesOf(main).filter((w) => cwd === w.path || cwd.startsWith(`${w.path}/`)).sort((a, b) => b.path.length - a.path.length)[0]
+  } catch { /* not readable */ }
+  return { repo: main, branch: wt?.branch ?? null, github: await cachedSlug(main), worktree: wt?.path ?? null }
+}
+
 async function scan(): Promise<Live[]> {
+  const sessions = await Promise.all((await scanSessions(env)).map(async (s) => ({ ...s, ...(await resolveCwd(s.cwd)) })))
+  const { started, ended } = sessionLog.update(sessions)
+  saveSessions(started.length > 0 || ended.length > 0)
+  // Worktree view, Dock badge and notifications: agent CLIs at work in a repository.
   const found = new Map<string, Live>()
-  for (const { agent, cwd } of await runningAgents(env)) {
-    const main = await cachedMain(cwd)
-    if (!main) continue
-    if (config.settings.autoDetect) addRepoToConfig(main)
-    if (!config.repos.includes(main)) continue
-    let wts: { path: string; branch: string }[] = []
-    try { wts = worktreesOf(main) } catch { continue }
-    const wt = wts.filter((w) => cwd === w.path || cwd.startsWith(`${w.path}/`)).sort((a, b) => b.path.length - a.path.length)[0]
-    if (!wt) continue
-    const entry = found.get(wt.path) ?? { repo: main, path: wt.path, branch: wt.branch, agents: [] }
-    if (!entry.agents.includes(agent)) entry.agents.push(agent)
-    found.set(wt.path, entry)
+  for (const s of sessions) {
+    if (s.inferred || !s.repo || !s.worktree) continue
+    if (config.settings.autoDetect) addRepoToConfig(s.repo)
+    if (!config.repos.includes(s.repo)) continue
+    const entry = found.get(s.worktree) ?? { repo: s.repo, path: s.worktree, branch: s.branch ?? '', agents: [] }
+    if (!entry.agents.includes(s.agent)) entry.agents.push(s.agent)
+    found.set(s.worktree, entry)
   }
   return [...found.values()]
+}
+
+// Pull requests of the branches agents worked on, looked up in the background.
+const prCache = new Map<string, { at: number; pr: AgentSession['pr'] }>()
+const prQueue: string[] = []
+let prBusy = false
+async function drainPrs() {
+  if (prBusy) return
+  prBusy = true
+  try {
+    while (prQueue.length) {
+      const key = prQueue.shift()!
+      const [slug, branch] = key.split('#')
+      prCache.set(key, { at: Date.now(), pr: await pullRequestFor(slug, branch, env) })
+    }
+  } finally { prBusy = false }
+}
+function withPrs(list: AgentSession[]): AgentSession[] {
+  const week = Date.now() - 7 * 86400_000
+  return list.map((s) => {
+    if (!s.github || !s.branch) return s
+    const key = `${s.github}#${s.branch}`
+    const hit = prCache.get(key)
+    if ((!hit || Date.now() - hit.at > 5 * 60_000) && (s.end ?? Date.now()) > week && !prQueue.includes(key)) prQueue.push(key)
+    return hit ? { ...s, pr: hit.pr } : s
+  })
 }
 
 let firstScan = true
@@ -234,7 +287,7 @@ async function addPath(path: string): Promise<RepoInfo> {
 const handlers = {
   ...createHandlers({
     engine,
-    capabilities: { host: 'desktop', multiRepo: true, create: true, settings: true, github: true, ides: IDES },
+    capabilities: { host: 'desktop', multiRepo: true, create: true, settings: true, github: true, sessions: true, ides: IDES },
     repo: knownRepo,
     runInTerminal: (_name, cwd, command) => openInTerminal(config.settings.terminal, command, cwd),
   }),
@@ -261,6 +314,35 @@ const handlers = {
     addRepoToConfig(path)
     githubCache = null
     return engine.repoInfo(path)
+  },
+  sessions: async () => {
+    const list = withPrs(sessionLog.list(1500))
+    void drainPrs()
+    // A repository may have been published since the session: show its GitHub link as it is now.
+    const repos = [...new Set(list.map((s) => s.repo).filter((r): r is string => !!r && existsSync(r)))]
+    const slugs = new Map(await Promise.all(repos.map(async (r) => [r, await cachedSlug(r)] as const)))
+    return list.map((s) => (s.repo && slugs.has(s.repo) ? { ...s, github: slugs.get(s.repo) ?? null } : s))
+  },
+  exportSessions: async (format: 'csv' | 'json') => {
+    const ext = format === 'json' ? 'json' : 'csv'
+    const opts = { defaultPath: join(app.getPath('downloads'), `ramify-sessions-${new Date().toISOString().slice(0, 10)}.${ext}`), filters: [{ name: ext.toUpperCase(), extensions: [ext] }] }
+    const res = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts)
+    if (res.canceled || !res.filePath) return { message: '' }
+    const all = withPrs(sessionLog.list(Number.MAX_SAFE_INTEGER))
+    writeFileSync(res.filePath, ext === 'json' ? JSON.stringify(all, null, 2) : sessionsCsv(all))
+    return { message: res.filePath }
+  },
+  publishRepo: async (path: string, name: string, isPrivate: boolean) => {
+    // Only repositories the app knows: listed ones or ones an AI session worked in.
+    if (!config.repos.includes(path) && !sessionLog.sessions.some((s) => s.repo === path)) throw new EngineError('unknown repository')
+    const github = await publishGithub(path, name, !!isPrivate, env)
+    slugCache.delete(path)
+    infoCache.delete(path)
+    githubCache = null
+    for (const s of sessionLog.sessions) if (s.repo === path) s.github = github
+    saveSessions(true)
+    addRepoToConfig(path)
+    return { message: `github.com/${github}`, github }
   },
   settings: () => config.settings,
   saveSettings: (s: Settings) => {
@@ -392,5 +474,6 @@ if (!app.requestSingleInstanceLock()) {
     app.on('activate', () => focus())
   })
   // On macOS the app keeps running in the menu bar after the window closes, like other background tools.
+  app.on('before-quit', () => saveSessions(true))
   app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit() })
 }

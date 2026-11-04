@@ -100,6 +100,34 @@ export interface Settings {
   menuBar?: boolean
 }
 
+export type SessionVia = 'terminal' | 'ide' | 'app'
+
+/** One AI session seen on this machine: an agent CLI, an IDE's AI chat or a desktop AI app. */
+export interface AgentSession {
+  id: string
+  /** Identity of the live session (process or IDE workspace), used to resume it after a restart. */
+  key?: string
+  /** claude, codex, gemini…, cursor / copilot / windsurf (IDE chat), chatgpt / claude-app (desktop apps). */
+  agent: string
+  /** Where it runs: Terminal, iTerm, Ghostty · tmux, Cursor, VS Code, ChatGPT… */
+  host: string
+  via: SessionVia
+  /** Seen open, not a confirmed conversation (IDE chat, desktop apps). */
+  inferred: boolean
+  /** Folder it works in, when known. */
+  cwd: string | null
+  /** Main checkout of the git repository around cwd. */
+  repo: string | null
+  branch: string | null
+  /** owner/name on GitHub. */
+  github: string | null
+  pr?: { number: number; url: string; state: string; title: string } | null
+  start: number
+  /** null while it is running. */
+  end: number | null
+  lastSeen: number
+}
+
 /** What the current host can do. The browser build (ramify ui) is single-repo. */
 export interface Capabilities {
   host: 'browser' | 'desktop' | 'vscode'
@@ -107,6 +135,8 @@ export interface Capabilities {
   create: boolean
   settings: boolean
   github: boolean
+  /** Tracks AI sessions across the machine. */
+  sessions?: boolean
   ides: string[]
 }
 
@@ -129,6 +159,11 @@ export interface Bridge {
   addRepoPath(path: string): Promise<RepoInfo>
   settings(): Promise<Settings>
   saveSettings(s: Settings): Promise<void>
+  sessions(): Promise<AgentSession[]>
+  /** Save the whole history to a file the user picks. */
+  exportSessions(format: 'csv' | 'json'): Promise<{ message: string }>
+  /** Create a GitHub repository for a local repository without a remote, and push it. */
+  publishRepo(path: string, name: string, isPrivate: boolean): Promise<{ message: string; github: string }>
   /** Host-initiated events: open a repository/worktree, show the "new worktree" form. */
   onEvent(cb: (e: { repo?: string; path?: string; event?: string }) => void): void
 }
