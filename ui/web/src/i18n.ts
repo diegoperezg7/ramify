@@ -1,0 +1,126 @@
+export type Lang = 'es' | 'en'
+
+const es = {
+  live: 'En vivo',
+  offline: 'Sin conexión con agent-wt ui. ¿Sigue abierto en el terminal?',
+  badToken: 'La sesión no es válida. Abre de nuevo el enlace que imprime agent-wt ui.',
+  updated: 'actualizado',
+  worktrees: 'Worktrees',
+  activeAgents: 'Agentes trabajando',
+  uncommitted: 'Cambios sin commitear',
+  toMerge: 'Commits por mergear',
+  branchTree: 'Árbol de ramas',
+  graphHint: 'Cada color es un agente. Pulsa un commit para ver su worktree.',
+  mainCheckout: 'checkout principal',
+  noAgent: 'sin agente',
+  running: 'trabajando',
+  idle: 'inactivo',
+  change: 'cambio',
+  changes: 'cambios',
+  commit: 'commit',
+  commits: 'commits',
+  upstream: 'Remoto',
+  pushed: 'subido',
+  local: 'solo local',
+  unpushed: 'sin subir',
+  ports: 'puertos',
+  select: 'Selecciona un worktree para ver sus commits, archivos y acciones.',
+  empty: 'Todavía no hay worktrees. Crea uno desde el terminal:',
+  openIn: 'Abrir en',
+  copyCmd: 'Copiar comando',
+  copyPath: 'Copiar ruta',
+  copied: 'Copiado',
+  merge: 'Mergear en',
+  remove: 'Eliminar',
+  files: 'Archivos',
+  noCommits: 'Sin commits nuevos respecto a',
+  noFiles: 'Sin cambios.',
+  pending: 'sin commitear',
+  mergeTitle: 'Mergear rama',
+  mergeText: 'Se hará un merge --no-ff de {branch} en {base} dentro del checkout principal. Si hay conflictos, no se cambia nada.',
+  removeTitle: 'Eliminar worktree',
+  removeText: 'Se borra la carpeta {path}. La rama {branch} solo se borra si ya está mergeada.',
+  force: 'Forzar: descartar cambios sin commitear (la rama y sus commits se conservan)',
+  cancel: 'Cancelar',
+  confirm: 'Confirmar',
+  whyNoMergeChanges: 'Commitea antes los cambios pendientes',
+  whyNoMergeCommits: 'No hay commits que mergear',
+  done: 'Hecho',
+  error: 'Error',
+  theme: 'Tema',
+  language: 'Idioma',
+  ahead: 'por delante de',
+  openLocalhost: 'Abrir localhost',
+  close: 'Cerrar',
+}
+
+const en: typeof es = {
+  live: 'Live',
+  offline: 'Lost connection to agent-wt ui. Is it still running in the terminal?',
+  badToken: 'This session is not valid. Open the link printed by agent-wt ui again.',
+  updated: 'updated',
+  worktrees: 'Worktrees',
+  activeAgents: 'Agents working',
+  uncommitted: 'Uncommitted changes',
+  toMerge: 'Commits to merge',
+  branchTree: 'Branch tree',
+  graphHint: 'Each color is an agent. Click a commit to open its worktree.',
+  mainCheckout: 'main checkout',
+  noAgent: 'no agent',
+  running: 'working',
+  idle: 'idle',
+  change: 'change',
+  changes: 'changes',
+  commit: 'commit',
+  commits: 'commits',
+  upstream: 'Upstream',
+  pushed: 'pushed',
+  local: 'local only',
+  unpushed: 'unpushed',
+  ports: 'ports',
+  select: 'Select a worktree to see its commits, files and actions.',
+  empty: 'No worktrees yet. Create one from the terminal:',
+  openIn: 'Open in',
+  copyCmd: 'Copy command',
+  copyPath: 'Copy path',
+  copied: 'Copied',
+  merge: 'Merge into',
+  remove: 'Remove',
+  files: 'Files',
+  noCommits: 'No new commits compared to',
+  noFiles: 'No changes.',
+  pending: 'uncommitted',
+  mergeTitle: 'Merge branch',
+  mergeText: 'This runs merge --no-ff of {branch} into {base} in the main checkout. On conflicts nothing changes.',
+  removeTitle: 'Remove worktree',
+  removeText: 'The folder {path} is deleted. Branch {branch} is only deleted if it is already merged.',
+  force: 'Force: discard uncommitted changes (the branch and its commits are kept)',
+  cancel: 'Cancel',
+  confirm: 'Confirm',
+  whyNoMergeChanges: 'Commit the pending changes first',
+  whyNoMergeCommits: 'Nothing to merge',
+  done: 'Done',
+  error: 'Error',
+  theme: 'Theme',
+  language: 'Language',
+  ahead: 'ahead of',
+  openLocalhost: 'Open localhost',
+  close: 'Close',
+}
+
+export type Key = keyof typeof es
+export const dict: Record<Lang, typeof es> = { es, en }
+
+export function format(text: string, vars: Record<string, string | number> = {}): string {
+  return text.replace(/\{(\w+)\}/g, (_, k) => String(vars[k] ?? ''))
+}
+
+export function relTime(lang: Lang, seconds: number, now: number): string {
+  const diff = seconds - now
+  const rtf = new Intl.RelativeTimeFormat(lang, { numeric: 'auto' })
+  const abs = Math.abs(diff)
+  if (abs < 60) return rtf.format(Math.round(diff), 'second')
+  if (abs < 3600) return rtf.format(Math.round(diff / 60), 'minute')
+  if (abs < 86400) return rtf.format(Math.round(diff / 3600), 'hour')
+  return rtf.format(Math.round(diff / 86400), 'day')
+}

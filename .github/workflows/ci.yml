@@ -14,3 +14,16 @@ jobs:
         run: shellcheck -S warning agent-wt install.sh tests/run.sh examples/*/*.sh
       - name: tests
         run: bash tests/run.sh
+
+  dashboard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - name: build
+        working-directory: ui/web
+        run: npm ci && npm run build
+      - name: ui/dist is up to date
+        run: git diff --stat --exit-code -- ui/dist

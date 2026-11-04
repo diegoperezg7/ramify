@@ -43,7 +43,7 @@ git clone https://github.com/diegoperezg7/agent-wt.git
 cd agent-wt && ./install.sh          # symlinks agent-wt into ~/.local/bin
 ```
 
-Requires `git` 2.31+ and `bash` 3.2+ (macOS default works). `jq` for the Claude Code hooks, `tmux` for `--tmux`.
+Requires `git` 2.31+ and `bash` 3.2+ (macOS default works). `python3` for the dashboard, `jq` for the Claude Code hooks, `tmux` for `--tmux`.
 
 ## Usage
 
@@ -56,6 +56,7 @@ agent-wt open fix/cart -a gemini                  # reopen an existing worktree 
 
 agent-wt ls                                       # every worktree at a glance
 agent-wt graph                                    # branch graph with the agent on each branch
+agent-wt ui                                       # live web dashboard
 agent-wt rm fix/cart                              # refuses if anything would be lost
 agent-wt prune                                    # remove clean worktrees that are already merged
 ```
@@ -90,6 +91,23 @@ or as a command on Linux.
 
 `agent-wt graph` lists which agent works on which branch and draws the commit graph of all of them,
 so you can see what each agent did, what is pushed and what is ready to merge.
+
+## Live dashboard
+
+```bash
+agent-wt ui
+```
+
+Opens a local web dashboard (127.0.0.1 only, one-time token per session) that refreshes every few
+seconds: every worktree with its agent and whether it is working right now, the branch tree coloured
+by agent, and for each branch its commits, changed files and diffs. From there you can open a
+worktree in Xcode, Cursor, VS Code, Zed or Finder, merge it into the main branch, or remove it, with
+the same safety rules as the CLI. English and Spanish, light and dark.
+
+<p align="center"><img src="docs/dashboard-dark.png" alt="agent-wt ui: worktrees, branch tree coloured by agent and a diff of the selected branch"></p>
+
+It needs `python3`. The web app is prebuilt in `ui/dist`; to change it, edit `ui/web` (React, Vite,
+TypeScript) and run `npm ci && npm run build` there.
 
 ## Inside a worktree
 

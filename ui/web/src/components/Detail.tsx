@@ -1,0 +1,159 @@
+import { Check, Copy, ExternalLink, FolderOpen, GitMerge, Trash2, X } from 'lucide-react'
+import { useState } from 'react'
+import { agentVar } from '../agents'
+import { api } from '../api'
+import { relTime } from '../i18n'
+import { useStore } from '../store'
+import { Dialog } from './Dialog'
+import { DiffView } from './DiffView'
+import { upstreamLabel } from './WorktreeList'
+
+const IDES = [
+  { id: 'xcode', label: 'Xcode' },
+  { id: 'cursor', label: 'Cursor' },
+  { id: 'code', label: 'VS Code' },
+  { id: 'zed', label: 'Zed' },
+]
+
+export function Detail() {
+  const state = useStore((s) => s.state)!
+  const selected = useStore((s) => s.selected)
+  const detail = useStore((s) => s.detail)
+  const file = useStore((s) => s.file)
+  const openFile = useStore((s) => s.openFile)
+  const select = useStore((s) => s.select)
+  const run = useStore((s) => s.run)
+  const busy = useStore((s) => s.busy)
+  const lang = useStore((s) => s.lang)
+  const t = useStore((s) => s.t)
+  const [tab, setTab] = useState<'files' | 'commits'>('files')
+  const [dialog, setDialog] = useState<'merge' | 'remove' | null>(null)
+  const [force, setForce] = useState(false)
+  const [copied, setCopied] = useState<string | null>(null)
+
+  const w = state.worktrees.find((x) => x.path === selected)
+  if (!w) {
+    return <section className="panel detail-panel placeholder"><p className="muted">{t('select')}</p></section>
+  }
+
+  const copy = async (key: string, text: string) => {
+    try { await navigator.clipboard.writeText(text); setCopied(key); setTimeout(() => setCopied(null), 1500) } catch { /* denied */ }
+  }
+  const command = `agent-wt open ${w.branch}${w.agent ? ` -a ${w.agent}` : ''}`
+  const mergeBlocked = w.changes > 0 ? t('whyNoMergeChanges') : w.commits === 0 ? t('whyNoMergeCommits') : null
+
+  return (
+    <section className="panel detail-panel" style={{ ['--c' as string]: w.main ? 'var(--lane-base)' : agentVar(w.agent) }}>
+      <header className="detail-head">
+        <div className="detail-title">
+          <span className="agent-chip"><span className="dot" />{w.main ? t('mainCheckout') : w.agent || t('noAgent')}</span>
+          <h2 className="branch">{w.branch}</h2>
+          <button type="button" className="path" onClick={() => copy('path', w.path)} title={t('copyPath')}>
+            {copied === 'path' ? <Check size={13} /> : <Copy size={13} />}<span>{w.path}</span>
+          </button>
+        </div>
+        <button type="button" className="icon-btn" onClick={() => select(null)} aria-label={t('close')}><X size={18} /></button>
+      </header>
+
+      <dl className="facts">
+        <div><dt>{t('changes')}</dt><dd className={w.changes ? 'warn' : ''}>{w.changes}</dd></div>
+        {!w.main && <div><dt>{t('commits')}</dt><dd>{w.commits}</dd></div>}
+        <div><dt>{t('upstream')}</dt><dd>{upstreamLabel(w, t)}</dd></div>
+        {w.port && (
+          <div><dt>{t('ports')}</dt><dd>
+            <a href={`http://localhost:${w.port}`} target="_blank" rel="noreferrer">{w.port}–{w.port + 9}<ExternalLink size={12} /></a>
+          </dd></div>
+        )}
+      </dl>
+
+      <div className="actions">
+        <div className="ide-row" role="group" aria-label={t('openIn')}>
+          <span className="muted small">{t('openIn')}</span>
+          {IDES.map((ide) => (
+            <button key={ide.id} type="button" className="btn btn-ghost" disabled={busy}
+              onClick={() => run(() => api.open(w.path, ide.id))}>{ide.label}</button>
+          ))}
+          <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => run(() => api.open(w.path, 'Finder'))}>
+            <FolderOpen size={14} />Finder
+          </button>
+        </div>
+        <div className="main-actions">
+          <button type="button" className="btn btn-ghost" onClick={() => copy('cmd', command)}>
+            {copied === 'cmd' ? <Check size={14} /> : <Copy size={14} />}{copied === 'cmd' ? t('copied') : t('copyCmd')}
+          </button>
+          {!w.main && (
+            <>
+              <button type="button" className="btn btn-primary" disabled={busy || !!mergeBlocked}
+                title={mergeBlocked ?? undefined} onClick={() => setDialog('merge')}>
+                <GitMerge size={14} />{t('merge')} {state.base}
+              </button>
+              <button type="button" className="btn btn-danger" disabled={busy} onClick={() => { setForce(false); setDialog('remove') }}>
+                <Trash2 size={14} />{t('remove')}
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="tabs" role="tablist">
+        <button type="button" role="tab" aria-selected={tab === 'files'} onClick={() => setTab('files')}>
+          {t('files')} <span className="count">{detail?.files.length ?? '·'}</span>
+        </button>
+        {!w.main && (
+          <button type="button" role="tab" aria-selected={tab === 'commits'} onClick={() => setTab('commits')}>
+            {t('commits')} <span className="count">{detail?.commits.length ?? '·'}</span>
+          </button>
+        )}
+      </div>
+
+      <div className="tab-body">
+        {tab === 'files' && detail && (
+          detail.files.length === 0 ? <p className="muted small">{t('noFiles')}</p> : (
+            <ul className="files">
+              {detail.files.map((f) => (
+                <li key={f.file}>
+                  <button type="button" className={`file${file === f.file ? ' is-open' : ''}`} onClick={() => openFile(file === f.file ? null : f.file)}>
+                    <span className={`st st-${f.status === '?' ? 'A' : f.status}`}>{f.status === '?' ? 'A' : f.status}</span>
+                    <span className="fname">{f.file}</span>
+                    {f.uncommitted && <span className="pending">{t('pending')}</span>}
+                    {(f.add || f.del) && <span className="numstat"><ins>+{f.add}</ins><del>−{f.del}</del></span>}
+                  </button>
+                  {file === f.file && <DiffView />}
+                </li>
+              ))}
+            </ul>
+          )
+        )}
+        {tab === 'commits' && detail && (
+          detail.commits.length === 0 ? <p className="muted small">{t('noCommits')} {state.base}.</p> : (
+            <ul className="commits">
+              {detail.commits.map((c) => (
+                <li key={c.hash}>
+                  <span className="node" />
+                  <span className="subject">{c.subject}</span>
+                  <span className="meta">{relTime(lang, c.time, state.now)} <code>{c.hash.slice(0, 7)}</code></span>
+                </li>
+              ))}
+            </ul>
+          )
+        )}
+      </div>
+
+      {dialog === 'merge' && (
+        <Dialog title={t('mergeTitle')} confirmLabel={`${t('merge')} ${state.base}`}
+          onCancel={() => setDialog(null)}
+          onConfirm={async () => { setDialog(null); await run(() => api.merge(w.path)) }}>
+          <p>{t('mergeText', { branch: w.branch, base: state.base })}</p>
+        </Dialog>
+      )}
+      {dialog === 'remove' && (
+        <Dialog title={t('removeTitle')} confirmLabel={t('remove')} danger
+          onCancel={() => setDialog(null)}
+          onConfirm={async () => { setDialog(null); if (await run(() => api.remove(w.path, force))) select(null) }}>
+          <p>{t('removeText', { path: w.path, branch: w.branch })}</p>
+          <label className="check"><input type="checkbox" checked={force} onChange={(e) => setForce(e.target.checked)} />{t('force')}</label>
+        </Dialog>
+      )}
+    </section>
+  )
+}

@@ -38,7 +38,7 @@ git clone https://github.com/diegoperezg7/agent-wt.git
 cd agent-wt && ./install.sh          # enlaza agent-wt en ~/.local/bin
 ```
 
-Necesita `git` 2.31+ y `bash` 3.2+ (vale el de macOS). `jq` para los hooks de Claude Code y `tmux` para `--tmux`.
+Necesita `git` 2.31+ y `bash` 3.2+ (vale el de macOS). `python3` para el panel, `jq` para los hooks de Claude Code y `tmux` para `--tmux`.
 
 ## Uso
 
@@ -51,6 +51,7 @@ agent-wt open fix/cart -a gemini                  # reabrir un worktree con otro
 
 agent-wt ls                                       # todos los worktrees de un vistazo
 agent-wt graph                                    # grafo de ramas con el agente de cada una
+agent-wt ui                                       # panel web en vivo
 agent-wt rm fix/cart                              # se niega si algo se perdería
 agent-wt prune                                    # borra los worktrees limpios ya mergeados
 ```
@@ -85,6 +86,23 @@ o como comando en Linux.
 
 `agent-wt graph` dice qué agente trabaja en qué rama y dibuja el grafo de commits de todas, para ver
 qué ha hecho cada agente, qué está subido y qué está listo para mergear.
+
+## Panel en vivo
+
+```bash
+agent-wt ui
+```
+
+Abre un panel web local (solo 127.0.0.1, con un token de un solo uso por sesión) que se actualiza
+cada pocos segundos: todos los worktrees con su agente y si está trabajando ahora mismo, el árbol de
+ramas coloreado por agente y, para cada rama, sus commits, los archivos cambiados y sus diffs. Desde
+ahí puedes abrir un worktree en Xcode, Cursor, VS Code, Zed o Finder, mergearlo en la rama principal
+o eliminarlo, con las mismas protecciones que el CLI. En español e inglés, claro y oscuro.
+
+<p align="center"><img src="docs/dashboard-light.png" alt="agent-wt ui: worktrees, árbol de ramas coloreado por agente y diff de la rama seleccionada"></p>
+
+Necesita `python3`. La web viene ya compilada en `ui/dist`; para cambiarla, edita `ui/web` (React,
+Vite, TypeScript) y ejecuta `npm ci && npm run build` ahí.
 
 ## Dentro de un worktree
 

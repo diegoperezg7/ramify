@@ -68,9 +68,30 @@ check "last agent recorded in .worktree.env" 'grep -qx "WT_AGENT=aider" "$W/pago
 (cd "$W/pagos" && exec perl -e 'sleep 5') & sleep 1
 check "ls shows processes running inside a worktree" '"$AW" ls 2>/dev/null | grep -q "^pagos .*perl"'
 kill %1 2>/dev/null; wait 2>/dev/null
+check "ls --json is valid and has the worktree" '"$AW" ls --json | jq -e ".[] | select(.branch == \"pagos\") | .agent == \"aider\" and .main == false" >/dev/null'
 check "ls shows the agent" '"$AW" ls 2>/dev/null | grep -q "^pagos .*aider"'
 check "graph lists the branches" 'g=$("$AW" graph 2>&1); printf "%s" "$g" | grep -q "pagos"'
 check "path resolves by branch name" '[ "$("$AW" path feat/login)" = "$W/feat-login" ]'
+
+echo "dashboard api"
+if command -v python3 >/dev/null && command -v curl >/dev/null && [ -f "$(dirname "$AW")/ui/dist/index.html" ]; then
+  (cd "$(dirname "$AW")/ui" && exec python3 -I server.py --main "$T/demo" --bin "$AW" --port 4977 --token tok) >/dev/null 2>&1 &
+  srv=$!
+  for _ in $(seq 50); do curl -s -o /dev/null http://127.0.0.1:4977/ && break; sleep 0.2; done
+  api() { curl -s -H "X-Token: tok" "$@"; }
+  check "state lists worktrees and commits" 'api http://127.0.0.1:4977/api/state | jq -e "(.worktrees | length) >= 2 and (.commits | length) >= 1" >/dev/null'
+  check "api rejects a missing token" '[ "$(curl -s -o /dev/null -w %{http_code} http://127.0.0.1:4977/api/state)" = 401 ]'
+  check "api rejects a foreign Host header" '[ "$(curl -s -o /dev/null -w %{http_code} -H "Host: evil.test" -H "X-Token: tok" http://127.0.0.1:4977/api/state)" = 403 ]'
+  check "api refuses paths that are not worktrees" 'api -X POST -d "{\"path\":\"/etc\"}" http://127.0.0.1:4977/api/remove | jq -e ".error" >/dev/null'
+  echo dirty >> "$W/pagos/a.txt"
+  api -X POST -d "{\"path\":\"$(cd "$W/pagos" && pwd -P)\"}" http://127.0.0.1:4977/api/merge > "$T/merge.json"
+  check "merge refuses a worktree with uncommitted changes" 'jq -e ".error | test(\"uncommitted\")" "$T/merge.json" >/dev/null || { cat "$T/merge.json"; false; }'
+  check "the web app is served" 'curl -s http://127.0.0.1:4977/ | grep -q "<div id=\"root\">"'
+  git -C "$W/pagos" checkout -q -- a.txt
+  kill "$srv" 2>/dev/null; wait "$srv" 2>/dev/null
+else
+  echo "  skip (python3, curl or ui/dist missing)"
+fi
 
 echo "remove"
 mkdir -p "$W/.derived-data/keep"

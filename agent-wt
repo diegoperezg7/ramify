@@ -3,7 +3,7 @@
 # https://github.com/diegoperezg7/agent-wt
 set -euo pipefail
 
-VERSION=0.2.0
+VERSION=0.3.0
 ROOT="${AGENT_WT_ROOT:-$HOME/.worktrees}"
 PORT_MIN="${AGENT_WT_PORT_MIN:-4100}"
 PORT_MAX="${AGENT_WT_PORT_MAX:-4990}"
@@ -26,7 +26,8 @@ ${B}agent-wt${N} $VERSION - one git worktree per task, for any coding agent or I
 ${B}Usage${N}
   agent-wt new  <branch> [-a agent] [-i ide] [-p prompt] [-f base] [--tmux] [--no-setup] [-- agent args]
   agent-wt open <name>   [-a agent] [-i ide] [-p prompt] [--tmux] [-- agent args]
-  agent-wt ls                     worktrees, agent, activity, changes, ports
+  agent-wt ls [--json]            worktrees, agent, activity, changes, ports
+  agent-wt ui [--port N]          live web dashboard (needs python3)
   agent-wt graph [-n N]           branch graph of every worktree
   agent-wt path <name>            print a worktree path
   agent-wt rm <name> [--force]    remove a worktree (never deletes unmerged commits)
@@ -281,38 +282,59 @@ EOF
   CREATED_WT=$wt
 }
 
+json_str() { printf '"%s"' "$(printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\000-\037')"; }
+
 cmd_ls() {
-  local main base line cur="" branch="" dirty commits sync port agent name active procs c1 c2
+  local json=0 main base line cur="" branch="" dirty commits sync port agent name active procs c1 c2 first=1 run
+  [ "${1:-}" = --json ] && json=1
   main=$(main_checkout "$PWD")
   base=$(git -C "$main" branch --show-current)
   procs=$(active_agents)
-  printf "${B}%-20s %-24s %-9s %-13s %-8s %-8s %-9s %s${N}\n" \
-    WORKTREE BRANCH AGENT RUNNING CHANGES COMMITS UPSTREAM PORTS
+  if [ "$json" = 1 ]; then printf '['
+  else
+    printf "${B}%-20s %-24s %-9s %-13s %-8s %-8s %-9s %s${N}\n" \
+      WORKTREE BRANCH AGENT RUNNING CHANGES COMMITS UPSTREAM PORTS
+  fi
   while IFS= read -r line; do
     case "$line" in
-      "worktree "*) cur=${line#worktree }; branch="(detached)" ;;
+      "worktree "*) cur=${line#worktree }; branch="" ;;
       "branch "*) branch=${line#branch refs/heads/} ;;
       "")
         if [ -n "$cur" ] && [ -d "$cur" ]; then
           dirty=$(git -C "$cur" status --porcelain | wc -l | tr -d ' ')
-          if [ "$cur" = "$main" ]; then name="(main)"; commits=-
-          else name=$(basename "$cur"); commits=$(git -C "$cur" rev-list --count "$base..HEAD" 2>/dev/null || echo -); fi
+          if [ "$cur" = "$main" ]; then name="(main)"; commits=0
+          else name=$(basename "$cur"); commits=$(git -C "$cur" rev-list --count "$base..HEAD" 2>/dev/null || echo 0); fi
           if ! git -C "$cur" rev-parse -q --verify '@{u}' >/dev/null 2>&1; then sync=local
           else sync=$(git -C "$cur" rev-list --count '@{u}..HEAD'); [ "$sync" = 0 ] && sync=pushed || sync="+$sync"; fi
           port=$(env_get "$cur" PORT); agent=$(env_get "$cur" WT_AGENT)
           active=$(printf '%s\n' "$procs" | awk -F'\t' -v p="$cur" '$1 == p || index($1, p "/") == 1 { print $2 }' \
-            | grep -vxE -- '-?(zsh|bash|sh|fish|login|tmux|awk|lsof|sed|grep|sort|head|paste|cat|git|tr|wc)' \
+            | grep -vixE -- '-?(zsh|bash|sh|fish|login|tmux|awk|lsof|sed|grep|sort|head|paste|cat|git|tr|wc)' \
             | awk -v a="$agent" '{ print (a != "" && ($0 == "node" || $0 == "bun" || $0 ~ /^python/)) ? a : $0 }' \
-            | sort -u | head -2 | paste -sd, - || true)
-          if [ "$dirty" = 0 ]; then c1=$D; else c1=$Y; fi
-          if [ -n "$active" ]; then c2=$G; else c2=$D; active=-; fi
-          printf -v dirty '%-8s' "$dirty"; printf -v active '%-13s' "$active"
-          printf "%-20s ${M}%-24s${N} %-9s ${c2}%s${N} ${c1}%s${N} %-8s %-9s %s\n" "$name" "$branch" \
-            "${agent:--}" "$active" "$dirty" "$commits" "$sync" "${port:+$port-$((port + PORT_BLOCK - 1))}"
+            | sort -u | head -3 | paste -sd, - || true)
+          if [ "$json" = 1 ]; then
+            [ "$first" = 1 ] || printf ','; first=0
+            run=""
+            if [ -n "$active" ]; then
+              run=$(printf '%s\n' "$active" | tr ',' '\n' | while IFS= read -r x; do json_str "$x"; printf ','; done)
+              run=${run%,}
+            fi
+            printf '{"name":%s,"path":%s,"branch":%s,"main":%s,"agent":%s,"running":[%s],"changes":%s,"commits":%s,"upstream":%s,"port":%s}' \
+              "$(json_str "$name")" "$(json_str "$cur")" "$(json_str "$branch")" \
+              "$([ "$cur" = "$main" ] && echo true || echo false)" "$(json_str "$agent")" "$run" \
+              "$dirty" "${commits:-0}" "$(json_str "$sync")" "${port:-null}"
+          else
+            if [ "$cur" = "$main" ]; then commits=-; fi
+            if [ "$dirty" = 0 ]; then c1=$D; else c1=$Y; fi
+            if [ -n "$active" ]; then c2=$G; else c2=$D; active=-; fi
+            printf -v dirty '%-8s' "$dirty"; printf -v active '%-13s' "$active"
+            printf "%-20s ${M}%-24s${N} %-9s ${c2}%s${N} ${c1}%s${N} %-8s %-9s %s\n" "$name" "${branch:-(detached)}" \
+              "${agent:--}" "$active" "$dirty" "$commits" "$sync" "${port:+$port-$((port + PORT_BLOCK - 1))}"
+          fi
         fi
         cur="" ;;
     esac
   done < <(git -C "$main" worktree list --porcelain; echo)
+  if [ "$json" = 1 ]; then printf ']\n'; fi
 }
 
 cmd_graph() {
@@ -375,6 +397,29 @@ cmd_prune() {
     remove_wt "$main" "$wt" 0; n=$((n + 1))
   done
   log "$n clean, merged worktree(s) removed"
+}
+
+cmd_ui() {
+  local main port=0 open_browser=1 token
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --port) port=$2; shift 2 ;;
+      --no-open) open_browser=0; shift ;;
+      *) die "usage: agent-wt ui [--port N] [--no-open]" ;;
+    esac
+  done
+  command -v python3 >/dev/null || die "python3 is required for the dashboard"
+  main=$(main_checkout "$PWD")
+  token=$(python3 -I -c 'import secrets; print(secrets.token_hex(16))')
+  cd "$SELF_DIR/ui"
+  python3 -I server.py --main "$main" --bin "$SELF_DIR/agent-wt" --port "$port" --token "$token" \
+    | while IFS= read -r url; do
+        log "${B}agent-wt ui${N}  $url  ${D}(Ctrl-C to stop)${N}"
+        if [ "$open_browser" = 1 ]; then
+          if command -v open >/dev/null; then open "$url"
+          elif command -v xdg-open >/dev/null; then xdg-open "$url" >/dev/null 2>&1; fi
+        fi
+      done
 }
 
 cmd_hook() {
@@ -453,8 +498,9 @@ case "$sub" in
       main=$(main_checkout "$PWD"); wt=$(find_wt "$main" "$name")
     fi
     launch "$wt" "$agent" "$ide" "$prompt" "$tmux" "$@" ;;
-  ls|list) cmd_ls ;;
+  ls|list) cmd_ls "$@" ;;
   graph) cmd_graph "$@" ;;
+  ui) cmd_ui "$@" ;;
   path)
     [ $# -gt 0 ] || { usage; exit 1; }
     main=$(main_checkout "$PWD"); find_wt "$main" "$1" ;;
