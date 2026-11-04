@@ -35,7 +35,7 @@ export function StatusBar() {
       <span className="sb-spacer" />
       {state && !state.worktrees.some((w) => w.running.length) && <span className="sb-quiet">{t('allQuiet')}</span>}
       {caps?.host !== 'browser' && <span className="sb-keys">{t('shortcuts')}</span>}
-      <span className="sb-ver">Ramify</span>
+      <span className="sb-ver wordmark">ramify</span>
     </footer>
   )
 }

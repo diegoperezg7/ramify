@@ -3,6 +3,7 @@ import { useMemo, useState } from 'react'
 import { bridge } from '../bridge'
 import { useStore } from '../store'
 import type { AgentSession } from '../types'
+import { agentVar } from '../agents'
 import { AgentBadge } from './AgentBadge'
 import { Dialog } from './Dialog'
 import { GithubIcon } from './GithubIcon'
@@ -10,6 +11,8 @@ import { GithubIcon } from './GithubIcon'
 type Range = 'today' | 'week' | 'all'
 
 const base = (p: string | null) => (p ? p.split('/').filter(Boolean).pop() ?? p : '')
+/** /Users/me/x → ~/x (also /home/me and C:/Users/me). */
+const tilde = (p: string) => p.replace(/^(?:\/Users\/|\/home\/|[A-Za-z]:\/Users\/)[^/]+/, '~')
 
 export function duration(ms: number): string {
   const m = Math.max(0, Math.round(ms / 60_000))
@@ -36,6 +39,18 @@ export function Sessions() {
   const now = Date.now()
 
   const live = useMemo(() => (sessions ?? []).filter((s) => s.end === null), [sessions])
+  // Identical sessions (same agent, same place, same folder) read as one card with a count.
+  const groups = useMemo(() => {
+    const m = new Map<string, { s: AgentSession; n: number }>()
+    for (const s of [...live].sort((a, b) => a.start - b.start)) {
+      const k = [s.agent, s.host, s.via, s.cwd, s.branch].join('\u0000')
+      const g = m.get(k)
+      if (g) g.n++
+      else m.set(k, { s, n: 1 })
+    }
+    // Real conversations first, then inferred ones; busiest first.
+    return [...m.values()].sort((a, b) => Number(a.s.inferred) - Number(b.s.inferred) || Number(!!b.s.repo) - Number(!!a.s.repo) || a.s.start - b.s.start)
+  }, [live])
   const history = useMemo(() => {
     const from = range === 'today' ? new Date(new Date().setHours(0, 0, 0, 0)).getTime() : range === 'week' ? now - 7 * 86400_000 : 0
     return (sessions ?? []).filter((s) => (s.end ?? now) >= from)
@@ -109,19 +124,20 @@ export function Sessions() {
             <h2 className="pane-kicker"><span className="pulse" />{t('sessionsLive')}</h2>
             {live.length === 0 && <p className="muted small">{sessions.length ? t('sessionsNoneLive') : t('sessionsNone')}</p>}
             <div className="live-grid">
-              {live.map((s) => (
-                <article key={s.id} className="live-card">
+              {groups.map(({ s, n }) => (
+                <article key={s.id} className={`live-card${s.inferred ? ' is-inferred' : ''}`} style={{ ['--c' as string]: agentVar(s.agent) }}>
                   <div className="live-top">
-                    <AgentBadge agent={s.agent} size={22} live />
+                    <AgentBadge agent={s.agent} size={26} live={!s.inferred} />
                     <span className="live-agent">{s.agent}</span>
-                    <span className="live-time">{duration(now - s.start)}</span>
+                    {n > 1 && <span className="live-count" title={t('sessionsCount')}>×{n}</span>}
+                    <span className="live-time" title={t('colDuration')}>{duration(now - s.start)}</span>
                   </div>
                   <p className="live-where"><ViaIcon via={s.via} />{s.host}
                     {s.inferred && <span className="tag" title={t('inferredHint')}>{t('inferred')}</span>}
                   </p>
                   <p className="live-project" title={s.cwd ?? undefined}>
                     {s.repo ? <><FolderGit2 size={13} /><b>{base(s.repo)}</b>{s.branch && <span className="mono">⎇ {s.branch}</span>}</>
-                      : s.cwd ? <span className="muted">{s.cwd} · {t('noRepoFolder')}</span> : null}
+                      : s.cwd ? <span className="muted">{tilde(s.cwd)} · {t('noRepoFolder')}</span> : null}
                   </p>
                   <Links s={s} known={known(s.repo)} onOpen={() => s.repo && setRepo(s.repo)} onPublish={() => setPublishing(s.repo)} t={t} />
                 </article>
@@ -135,7 +151,7 @@ export function Sessions() {
               <ul className="unpub">
                 {unpublished.map((r) => (
                   <li key={r}>
-                    <FolderGit2 size={14} /><b>{base(r)}</b><span className="muted mono small" title={r}>{r}</span>
+                    <FolderGit2 size={14} /><b>{base(r)}</b><span className="muted mono small" title={r}>{tilde(r)}</span>
                     <button type="button" className="btn btn-ghost" onClick={() => setPublishing(r)}><Upload size={14} />{t('publish')}</button>
                   </li>
                 ))}
@@ -157,7 +173,7 @@ export function Sessions() {
                   <span className="hist-where"><ViaIcon via={s.via} />{s.host}{s.inferred && <span className="tag" title={t('inferredHint')}>{t('inferred')}</span>}</span>
                   <span className="hist-project" title={s.cwd ?? undefined}>
                     {s.repo ? <>{known(s.repo) ? <button type="button" className="link" onClick={() => setRepo(s.repo!)}>{base(s.repo)}</button> : base(s.repo)}
-                      {s.branch && <span className="mono muted"> ⎇ {s.branch}</span>}</> : <span className="muted">{s.cwd ? base(s.cwd) : '—'}</span>}
+                      {s.branch && <span className="mono muted"> ⎇ {s.branch}</span>}</> : <span className="muted">{s.cwd ? (tilde(s.cwd) === '~' ? '~' : base(s.cwd)) : '—'}</span>}
                   </span>
                   <span className="mono muted">{fmt.format(s.start)}</span>
                   <span className="mono">{duration((s.end ?? now) - s.start)}</span>

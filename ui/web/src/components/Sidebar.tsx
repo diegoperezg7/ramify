@@ -1,7 +1,7 @@
 import { FolderGit2, MessagesSquare, PanelLeftClose, PanelLeftOpen, Plus, Settings, X } from 'lucide-react'
 import { GithubIcon } from './GithubIcon'
 import { agentVar } from '../agents'
-import { Logo } from './Logo'
+import { Logo, Wordmark } from './Logo'
 import { useStore } from '../store'
 import type { RepoInfo } from '../types'
 
@@ -36,8 +36,8 @@ export function Sidebar() {
           </button>
         </div>
         <div className="side-brand">
-          <Logo size={28} />
-          <span className="side-brand-name">Ramify</span>
+          <Logo size={36} />
+          <Wordmark className="side-brand-name" />
         </div>
         <div className="sidebar-section">
           {caps?.sessions && (

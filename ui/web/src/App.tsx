@@ -1,4 +1,5 @@
-import { AlertTriangle, CheckCircle2, FolderGit2, Plus, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Plus, XCircle } from 'lucide-react'
+import { Logo, Wordmark } from './components/Logo'
 import { useEffect, useRef, useState } from 'react'
 import { Detail } from './components/Detail'
 import { CreateDialog, SettingsDialog } from './components/Forms'
@@ -120,7 +121,8 @@ export function App() {
         )}
         {noRepos && view === 'repo' && (
           <div className="welcome">
-            <span className="welcome-icon"><FolderGit2 size={28} /></span>
+            <Logo size={88} />
+            <Wordmark className="welcome-name" />
             <p>{t('noRepos')}</p>
             <button type="button" className="btn btn-primary" onClick={() => addRepo()}><Plus size={15} />{t('addRepo')}</button>
           </div>

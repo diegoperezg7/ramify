@@ -1,7 +1,7 @@
 import { Menu, Monitor, Moon, Plus, Search, SlidersHorizontal, Sun } from 'lucide-react'
 import { Metrics } from './Stats'
 import { useEffect, useRef, useState } from 'react'
-import { Logo } from './Logo'
+import { Logo, Wordmark } from './Logo'
 import { useStore, type Density, type Theme } from '../store'
 
 /** The theme actually on screen: the explicit choice, or the system's / editor's. */
@@ -52,7 +52,7 @@ export function TopBar() {
           <button type="button" className="icon-btn menu-btn" onClick={() => setMenuOpen(true)} aria-label={t('menu')}><Menu size={18} /></button>
         )}
         {!caps?.multiRepo && <Logo size={30} />}
-        {!caps?.multiRepo && <span className="name">Ramify</span>}
+        {!caps?.multiRepo && <Wordmark className="name" />}
         {state && (
           <>
             {!caps?.multiRepo && <span className="sep">/</span>}
