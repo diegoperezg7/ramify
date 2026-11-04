@@ -161,7 +161,7 @@ export function Detail() {
       {dialog === 'merge' && (
         <Dialog title={t('mergeTitle')} confirmLabel={`${t('merge')} ${state.base}`}
           onCancel={() => setDialog(null)}
-          onConfirm={async () => { setDialog(null); await run(() => friendlyMerge(() => bridge.merge(repo, w.path), t('mergedOk', { branch: w.branch, base: state.base }), t('mergeConflict', { branch: w.branch, base: state.base }))) }}>
+          onConfirm={async () => { setDialog(null); await run(() => friendlyMerge(() => bridge.merge(repo, w.path), { branch: w.branch, base: state.base, path: w.path }, t('mergedOk', { branch: w.branch, base: state.base }), t('mergedRebuilt', { branch: w.branch, base: state.base }))) }}>
           <p>{t('mergeText', { branch: w.branch, base: state.base })}</p>
         </Dialog>
       )}

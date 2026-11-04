@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { after, before, describe, it } from 'node:test'
@@ -71,6 +71,45 @@ describe('engine', () => {
     rmSync(join(wt, 'c.txt'))
     await engine.merge(REPO, wt)
     assert.match(sh(REPO, 'log', '-1', '--format=%s'), /Merge branch 'feat\/x'/)
+  })
+
+  it('a merge whose only conflicts are generated files rebuilds them with the project script', async () => {
+    // A folder and worktree root of its own: the discovery tests below scan T and ROOT.
+    const T2 = normPath(realpathSync(mkdtempSync(join(tmpdir(), 'ramify-merge-'))))
+    const own = new Engine({ bin: BIN, env: { ...env, RAMIFY_ROOT: P(T2, 'wts') } })
+    const R = P(T2, 'built')
+    sh(T2, 'init', '-q', '-b', 'main', R)
+    writeFileSync(join(R, 'a.txt'), 'a\n'); writeFileSync(join(R, 'b.txt'), 'b\n')
+    mkdirSync(join(R, 'dist')); writeFileSync(join(R, 'dist', 'out.txt'), 'a\nb\n')
+    writeFileSync(join(R, '.gitattributes'), 'dist/** ramify-generated\n')
+    mkdirSync(join(R, '.worktree')); writeFileSync(join(R, '.worktree', 'merge.sh'), '#!/bin/bash\ncat a.txt b.txt > dist/out.txt\n')
+    sh(R, 'add', '.'); sh(R, 'commit', '-qm', 'init')
+    const wt = (await own.create(R, { branch: 'feat/a', agent: '' })).path
+    writeFileSync(join(wt, 'a.txt'), 'a2\n'); writeFileSync(join(wt, 'dist', 'out.txt'), 'a2\nb\n')
+    sh(wt, 'commit', '-qam', 'a2')
+    writeFileSync(join(R, 'b.txt'), 'b2\n'); writeFileSync(join(R, 'dist', 'out.txt'), 'a\nb2\n')
+    sh(R, 'commit', '-qam', 'b2')
+    assert.match(await own.merge(R, wt), /regenerated: dist\/out.txt/)
+    assert.equal(readFileSync(join(R, 'dist', 'out.txt'), 'utf8'), 'a2\nb2\n')
+    assert.match(sh(R, 'log', '-1', '--format=%s'), /Merge branch 'feat\/a'/)
+    assert.equal(sh(R, 'status', '--porcelain'), '')
+
+    // A conflict in real code is not touched: the merge is undone and the files are named.
+    const wt2 = (await own.create(R, { branch: 'feat/c', agent: '' })).path
+    writeFileSync(join(wt2, 'a.txt'), 'c\n'); sh(wt2, 'commit', '-qam', 'c')
+    writeFileSync(join(R, 'a.txt'), 'main\n'); sh(R, 'commit', '-qam', 'main')
+    const head = sh(R, 'rev-parse', 'HEAD')
+    await assert.rejects(own.merge(R, wt2), (e: Error) => /merge conflict, nothing was changed/.test(e.message) && /^conflict: a\.txt$/m.test(e.message))
+    assert.equal(sh(R, 'rev-parse', 'HEAD'), head)
+    assert.equal(existsSync(join(R, '.git', 'MERGE_HEAD')), false)
+
+    // Without the project script, a generated conflict stays a conflict, as before.
+    rmSync(join(R, '.worktree', 'merge.sh')); sh(R, 'commit', '-qam', 'no script')
+    writeFileSync(join(wt2, 'a.txt'), 'main\n'); sh(wt2, 'commit', '-qam', 'same as main')
+    writeFileSync(join(wt2, 'dist', 'out.txt'), 'x\n'); sh(wt2, 'commit', '-qam', 'x')
+    writeFileSync(join(R, 'dist', 'out.txt'), 'y\n'); sh(R, 'commit', '-qam', 'y')
+    await assert.rejects(own.merge(R, wt2), /^conflict: dist\/out\.txt$/m)
+    rmSync(T2, { recursive: true, force: true })
   })
 
   it('refuses unknown paths and removes merged worktrees', async () => {

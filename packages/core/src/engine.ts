@@ -370,11 +370,36 @@ export class Engine {
     }
     if ((await this.git(path, 'status', '--porcelain')).trim()) throw new EngineError('the worktree has uncommitted changes')
     const r = await this.run('git', ['-C', repo, 'merge', '--no-ff', '--no-edit', wt.branch])
-    if (r.code !== 0) {
-      await this.run('git', ['-C', repo, 'merge', '--abort'])
-      throw new EngineError(`merge conflict, nothing was changed:\n${(r.stdout + r.stderr).trim()}`)
-    }
-    return r.stdout.trim()
+    if (r.code === 0) return r.stdout.trim()
+    const conflicted = (await this.git(repo, 'diff', '--name-only', '--diff-filter=U')).split('\n').map((f) => f.trim()).filter(Boolean)
+    const rebuilt = conflicted.length ? await this.rebuildGenerated(repo, conflicted) : null
+    if (rebuilt?.ok) return `merged ${wt.branch}; regenerated: ${conflicted.join(', ')}`
+    await this.run('git', ['-C', repo, 'merge', '--abort'])
+    if (rebuilt) throw new EngineError(`generated files could not be rebuilt, nothing was changed:\n${rebuilt.output}`)
+    // One `conflict: <path>` line per file, then git's own words: the UI lists the files from these lines.
+    throw new EngineError([`merge conflict, nothing was changed:`, ...conflicted.map((f) => `conflict: ${f}`), (r.stdout + r.stderr).trim()].join('\n'))
+  }
+
+  /**
+   * A merge whose only conflicts are generated files (marked `ramify-generated` in .gitattributes, such as
+   * a build output committed to the repository) is finished by the project's own .worktree/merge.sh, which
+   * rebuilds them from the merged sources. Null when that does not apply: a real conflict stays one.
+   */
+  private async rebuildGenerated(repo: string, files: string[]): Promise<{ ok: boolean; output: string } | null> {
+    const script = join(repo, '.worktree', 'merge.sh')
+    if (!existsSync(script)) return null
+    const attrs = await this.git(repo, 'check-attr', 'ramify-generated', '--', ...files)
+    const generated = new Set(attrs.split('\n').filter((l) => l.endsWith(': ramify-generated: set')).map((l) => l.slice(0, -': ramify-generated: set'.length)))
+    if (!files.every((f) => generated.has(f))) return null
+    // Either side will do: the script rebuilds them anyway. (A file deleted on one side has no "theirs": fine.)
+    await this.run('git', ['-C', repo, 'checkout', '--theirs', '--', ...files])
+    const tail = (out: string) => out.trim().split('\n').slice(-12).join('\n')
+    const s = await this.run(WIN ? gitBash(this.env) : 'bash', [WIN ? script.replace(/\\/g, '/') : script], repo)
+    if (s.code !== 0) return { ok: false, output: tail(s.stdout + s.stderr) }
+    await this.run('git', ['-C', repo, 'add', '-A', '--', ':(attr:ramify-generated)'])
+    if ((await this.git(repo, 'diff', '--name-only', '--diff-filter=U')).trim()) return { ok: false, output: 'conflicts remain after rebuilding' }
+    const c = await this.run('git', ['-C', repo, 'commit', '--no-edit'])
+    return c.code === 0 ? { ok: true, output: '' } : { ok: false, output: tail(c.stdout + c.stderr) }
   }
 
   /** Create a worktree (with setup) without starting the agent. */
