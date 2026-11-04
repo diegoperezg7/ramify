@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { agentTimeByDay, dayLanes, lastActivity, lastDays, levels, nextAction, parseDiff, peakParallel, splitMinor, taskSlug, timeBy, unionMs } from '../../../ui/web/src/logic.ts'
+import { agentTimeByDay, dayLanes, friendlyMerge, lastActivity, lastDays, levels, nextAction, parseDiff, peakParallel, splitMinor, taskSlug, timeBy, unionMs } from '../../../ui/web/src/logic.ts'
 import type { BranchHealth, PullRequest } from '../src/types.ts'
 
 const branch = (o: Partial<BranchHealth>): BranchHealth => ({
@@ -125,5 +125,15 @@ describe('control center: one day hour by hour', () => {
   })
   it('folds agents with a sliver of the time into others', () => {
     assert.deepEqual(splitMinor([['claude', 600], ['codex', 300], ['qwen', 10], ['opencode', 5]]), { main: ['claude', 'codex'], minor: ['qwen', 'opencode'] })
+  })
+})
+
+describe('merge notification', () => {
+  it('says it in one line instead of git output', async () => {
+    assert.deepEqual(await friendlyMerge(async () => ' a.ts | 3 ++-\n 1 file changed', 'ok', 'conflict'), { message: 'ok' })
+  })
+  it('turns a conflict into a short sentence and keeps other errors as they are', async () => {
+    await assert.rejects(friendlyMerge(async () => { throw new Error('merge conflict, nothing was changed:\nCONFLICT (content)') }, 'ok', 'conflict'), /^Error: conflict$/)
+    await assert.rejects(friendlyMerge(async () => { throw new Error('the worktree has uncommitted changes') }, 'ok', 'conflict'), /uncommitted/)
   })
 })

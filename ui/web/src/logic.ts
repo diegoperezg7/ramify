@@ -155,3 +155,14 @@ export function splitMinor(totals: [string, number][], share = 0.04): { main: st
   const main = sorted.filter(([, ms], i) => i === 0 || ms >= sum * share).map(([a]) => a)
   return { main, minor: sorted.map(([a]) => a).filter((a) => !main.includes(a)) }
 }
+
+/**
+ * Merge a branch, and say it in one short line: git's own output (every file and +/- count) is too much
+ * for a notification. A conflict says so, the details stay in git (nothing was changed).
+ */
+export async function friendlyMerge(merge: () => Promise<unknown>, ok: string, conflict: string): Promise<{ message: string }> {
+  try { await merge() } catch (e) {
+    throw /merge conflict/i.test((e as Error).message) ? new Error(conflict) : e
+  }
+  return { message: ok }
+}

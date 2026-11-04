@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { agentVar } from '../agents'
 import { bridge } from '../bridge'
 import { relTime } from '../i18n'
+import { friendlyMerge } from '../logic'
 import { useStore } from '../store'
 import { Dialog } from './Dialog'
 import { DiffStat, DiffView } from './DiffView'
@@ -160,7 +161,7 @@ export function Detail() {
       {dialog === 'merge' && (
         <Dialog title={t('mergeTitle')} confirmLabel={`${t('merge')} ${state.base}`}
           onCancel={() => setDialog(null)}
-          onConfirm={async () => { setDialog(null); await run(() => bridge.merge(repo, w.path)) }}>
+          onConfirm={async () => { setDialog(null); await run(() => friendlyMerge(() => bridge.merge(repo, w.path), t('mergedOk', { branch: w.branch, base: state.base }), t('mergeConflict', { branch: w.branch, base: state.base }))) }}>
           <p>{t('mergeText', { branch: w.branch, base: state.base })}</p>
         </Dialog>
       )}

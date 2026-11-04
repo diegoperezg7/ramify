@@ -8,7 +8,7 @@ import { Dialog } from './Dialog'
 import { GithubIcon } from './GithubIcon'
 import { ActivityCharts, DayPanel, NowPanel } from './Dashboard'
 import { HEAT_DAYS, Heatmap } from './Heatmap'
-import { nextAction, type Action } from '../logic'
+import { friendlyMerge, nextAction, type Action } from '../logic'
 
 /** Pull requests of ~400 changed lines or more are hard to review: say so. */
 const BIG = 400
@@ -247,7 +247,7 @@ export function ControlCenter() {
             const key = b.path
             if (action === 'move') void run(key, () => bridge.moveToBranch(board.repo, b.running[0] || b.agent || 'claude'))
             if (action === 'pr') void run(key, () => bridge.openPr(board.repo, b.path))
-            if (action === 'merge') void run(key, () => bridge.merge(board.repo, b.path))
+            if (action === 'merge') void run(key, () => friendlyMerge(() => bridge.merge(board.repo, b.path), t('mergedOk', { branch: b.branch, base: board.health.base }), t('mergeConflict', { branch: b.branch, base: board.health.base })))
             if (action === 'remove') void run(key, () => bridge.remove(board.repo, b.path, false))
           }}>
           <p>{t(`confirm_${confirm.action}` as 'confirm_move', { branch: confirm.b.branch, base: confirm.board.health.base, agent: confirm.b.running[0] || confirm.b.agent || 'claude' })}</p>
