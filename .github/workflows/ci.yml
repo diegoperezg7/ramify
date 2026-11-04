@@ -1,17 +1,23 @@
 name: ci
-on: [push, pull_request]
+on: [push, pull_request, workflow_dispatch]
 
 jobs:
   cli:
-    strategy:
-      matrix:
-        os: [ubuntu-latest, macos-latest]
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - name: shellcheck
-        if: runner.os == 'Linux'
         run: shellcheck -S warning ramify install.sh tests/run.sh examples/*/*.sh scripts/*.sh
+      - name: tests
+        run: bash tests/run.sh
+
+  # macOS runners can wait in the queue long enough to be cancelled, failing every push: the CLI suite runs on macOS
+  # for release tags and on demand (gh workflow run ci).
+  cli-macos:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/')
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
       - name: tests
         run: bash tests/run.sh
 

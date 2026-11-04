@@ -121,8 +121,8 @@ Cualquier otro agente también funciona: Ramify lanza el comando que le digas.
 **Versión 0.6.0.** App de escritorio para macOS (Apple silicon e Intel) y Windows (x64), extensión de VS Code / Cursor,
 CLI y plugin de Claude Code, todo compilado desde este repositorio.
 
-- **Probado:** 56 tests del motor, 5 tests de la interfaz en un navegador real y 45 del CLI en cada push; la batería
-  del motor, el instalador de Windows y una prueba de humo que abre la app empaquetada también corren en Windows.
+- **Probado:** 68 tests del núcleo, 5 tests de la interfaz en un navegador real y 72 del CLI en cada push; la batería
+  del núcleo, el instalador de Windows y una prueba de humo que abre la app empaquetada también corren en Windows.
 - **Aún sin firmar:** macOS y Windows avisan la primera vez (ver abajo). La firma y la notarización se activan solas
   cuando la release tenga certificados.
 - **Login con GitHub:** necesita que la GitHub App de Ramify esté registrada para la build; mientras tanto, las funciones

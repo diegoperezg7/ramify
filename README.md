@@ -127,7 +127,7 @@ Any other agent works too: Ramify launches whatever command you give it.
 **Version 0.6.0.** Desktop app for macOS (Apple silicon and Intel) and Windows (x64), VS Code / Cursor extension,
 CLI and Claude Code plugin, all built from this repository.
 
-- **Tested:** 56 engine tests, 5 end-to-end UI tests in a real browser and 45 CLI tests run on every push; the engine
+- **Tested:** 68 core tests, 5 end-to-end UI tests in a real browser and 72 CLI tests run on every push; the core
   suite, the Windows installer and a smoke test that opens the packaged app also run on Windows.
 - **Not signed yet:** macOS and Windows show a warning the first time (see below). Signing and notarization switch on
   by themselves once the release has certificates.
