@@ -34,7 +34,7 @@ export function Sidebar() {
         </div>
         <div className="side-brand">
           <Logo size={28} />
-          <span className="side-brand-name">agent-wt</span>
+          <span className="side-brand-name">Ramify</span>
         </div>
         <div className="sidebar-section">
           {active.length > 0 && (

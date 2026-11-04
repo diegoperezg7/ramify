@@ -80,10 +80,10 @@ export const useStore = create<Store>((set, get) => ({
   diff: '',
   settings: null,
   modal: null,
-  lang: load<Lang>('agent-wt-lang', defaultLang),
-  theme: load<Theme>('agent-wt-theme', 'system'),
-  density: load<Density>('agent-wt-density', 'comfortable'),
-  rail: load<string>('agent-wt-rail', '') === '1',
+  lang: load<Lang>('ramify-lang', defaultLang),
+  theme: load<Theme>('ramify-theme', 'system'),
+  density: load<Density>('ramify-density', 'comfortable'),
+  rail: load<string>('ramify-rail', '') === '1',
   menuOpen: false,
   toasts: [],
   busy: false,
@@ -96,7 +96,7 @@ export const useStore = create<Store>((set, get) => ({
     if (caps?.settings) set({ settings: await bridge.settings().catch(() => null) })
     if (caps?.multiRepo) {
       const repos = await bridge.repos()
-      const saved = load('agent-wt-repo', '')
+      const saved = load('ramify-repo', '')
       set({ repos, repo: repos.find((r) => r.path === saved)?.path ?? repos[0]?.path ?? '' })
     }
     await get().poll()
@@ -156,7 +156,7 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   setRepo: (path) => {
-    save('agent-wt-repo', path)
+    save('ramify-repo', path)
     set({ repo: path, state: null, selected: null, detail: null, file: null, diff: '', menuOpen: false })
     void get().poll()
   },
@@ -233,10 +233,10 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   setModal: (modal) => set({ modal }),
-  setLang: (lang) => { save('agent-wt-lang', lang); set({ lang }) },
-  setTheme: (theme) => { save('agent-wt-theme', theme); set({ theme }) },
-  setDensity: (density) => { save('agent-wt-density', density); set({ density }) },
-  setRail: (rail) => { save('agent-wt-rail', rail ? '1' : ''); set({ rail }) },
+  setLang: (lang) => { save('ramify-lang', lang); set({ lang }) },
+  setTheme: (theme) => { save('ramify-theme', theme); set({ theme }) },
+  setDensity: (density) => { save('ramify-density', density); set({ density }) },
+  setRail: (rail) => { save('ramify-rail', rail ? '1' : ''); set({ rail }) },
   setMenuOpen: (menuOpen) => set({ menuOpen }),
 
   toast: (kind, text) => {

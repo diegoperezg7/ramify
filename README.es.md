@@ -1,6 +1,6 @@
-<p align="center"><img src="docs/logo.png" width="112" alt="agent-wt logo"></p>
+<p align="center"><img src="docs/logo.png" width="112" alt="Ramify logo"></p>
 
-<h1 align="center">agent-wt</h1>
+<h1 align="center">Ramify</h1>
 
 <p align="center">
   <b>Un git worktree por tarea. Cualquier agente. Cualquier IDE.</b><br>
@@ -10,19 +10,19 @@
 
 <p align="center"><a href="README.md">English</a></p>
 
-<p align="center"><img src="docs/ls.svg" alt="agent-wt ls: cinco agentes trabajando en cinco ramas del mismo repositorio"></p>
+<p align="center"><img src="docs/ls.svg" alt="ramify ls: cinco agentes trabajando en cinco ramas del mismo repositorio"></p>
 
 ## Por qué
 
 Dos agentes en el mismo checkout se pisan los ficheros. `git worktree` lo resuelve, pero un worktree
 recién creado no está listo para trabajar: le falta el `.env`, los `node_modules` y el proyecto de
-Xcode generado, comparte puerto con las demás copias y todos usan el mismo simulador. agent-wt hace
+Xcode generado, comparte puerto con las demás copias y todos usan el mismo simulador. Ramify hace
 esa preparación con un comando, igual para todos los agentes: abres cinco terminales y cinco agentes
 trabajan en paralelo.
 
 ## Cómo funciona
 
-<p align="center"><img src="docs/architecture.svg" alt="agent-wt crea el worktree, copia ficheros ignorados, reserva puertos, prepara el proyecto y lanza el agente"></p>
+<p align="center"><img src="docs/architecture.svg" alt="Ramify crea el worktree, copia ficheros ignorados, reserva puertos, prepara el proyecto y lanza el agente"></p>
 
 1. **Worktree**: en `~/.worktrees/<repo>/<nombre>`, fuera del repo, para que los IDE, los tests y los
    watchers del checkout principal no lo indexen. Parte de tu `HEAD` actual.
@@ -36,8 +36,8 @@ trabajan en paralelo.
 ## Instalación
 
 ```bash
-git clone https://github.com/diegoperezg7/agent-wt.git
-cd agent-wt && ./install.sh          # enlaza agent-wt en ~/.local/bin
+git clone https://github.com/diegoperezg7/ramify.git
+cd ramify && ./install.sh          # enlaza ramify en ~/.local/bin
 ```
 
 Necesita `git` 2.31+ y `bash` 3.2+ (vale el de macOS). `python3` para el panel, `jq` para los hooks de Claude Code y `tmux` para `--tmux`.
@@ -45,18 +45,18 @@ Necesita `git` 2.31+ y `bash` 3.2+ (vale el de macOS). `python3` para el panel, 
 ## Uso
 
 ```bash
-agent-wt new feat/login -a claude -p "añade login con magic links"
-agent-wt new fix/cart -a codex -i cursor          # agente en la terminal y el worktree abierto en Cursor
-agent-wt new ios/widget -i xcode                  # abre el .xcodeproj generado
-agent-wt new docs/api -a opencode --tmux          # sesión tmux en segundo plano
-agent-wt open fix/cart -a gemini                  # reabrir un worktree con otro agente
+ramify new feat/login -a claude -p "añade login con magic links"
+ramify new fix/cart -a codex -i cursor          # agente en la terminal y el worktree abierto en Cursor
+ramify new ios/widget -i xcode                  # abre el .xcodeproj generado
+ramify new docs/api -a opencode --tmux          # sesión tmux en segundo plano
+ramify open fix/cart -a gemini                  # reabrir un worktree con otro agente
 
-agent-wt ls                                       # todos los worktrees de un vistazo
-agent-wt graph                                    # grafo de ramas con el agente de cada una
-agent-wt ui                                       # panel web en vivo
-agent-wt app                                      # abre este repo en la app de escritorio
-agent-wt rm fix/cart                              # se niega si algo se perdería
-agent-wt prune                                    # borra los worktrees limpios ya mergeados
+ramify ls                                       # todos los worktrees de un vistazo
+ramify graph                                    # grafo de ramas con el agente de cada una
+ramify ui                                       # panel web en vivo
+ramify app                                      # abre este repo en la app de escritorio
+ramify rm fix/cart                              # se niega si algo se perdería
+ramify prune                                    # borra los worktrees limpios ya mergeados
 ```
 
 `-f <ref>` elige la base, `--no-setup` omite la preparación y lo que va después de `--` se pasa al agente.
@@ -85,27 +85,27 @@ o como comando en Linux.
 
 ## Ver todas las ramas
 
-<p align="center"><img src="docs/graph.svg" alt="agent-wt graph: grafo de commits de todas las ramas, con su agente"></p>
+<p align="center"><img src="docs/graph.svg" alt="ramify graph: grafo de commits de todas las ramas, con su agente"></p>
 
-`agent-wt graph` dice qué agente trabaja en qué rama y dibuja el grafo de commits de todas, para ver
+`ramify graph` dice qué agente trabaja en qué rama y dibuja el grafo de commits de todas, para ver
 qué ha hecho cada agente, qué está subido y qué está listo para mergear.
 
 ## Apps
 
 La misma interfaz corre en cuatro sitios, y todas leen el repositorio en vivo cada pocos segundos.
 
-<p align="center"><img src="docs/app-dark.png" alt="App de escritorio de agent-wt: repos con agentes trabajando, worktrees, árbol de ramas por agente e inspector con diff"></p>
+<p align="center"><img src="docs/app-dark.png" alt="App de escritorio de Ramify: repos con agentes trabajando, worktrees, árbol de ramas por agente e inspector con diff"></p>
 
 | | Qué tienes |
 |---|---|
-| **App de escritorio** (macOS) | Vive en la barra de menús con el número de agentes trabajando, lo pone en el icono del Dock y te avisa cuando un agente termina (pulsas y ves sus cambios). `agent-wt app` abre el repo en el que estés. Todos tus repos en una ventana. Los repos donde hay un agente trabajando aparecen solos en *Trabajando ahora*, y tus repos de GitHub están a un clic (añadir el clon local o clonarlo). Creas un worktree, eliges agente y se abre en Terminal, iTerm o Ghostty. Paleta de comandos ⌘K, ⌘N nuevo worktree, ↑/↓ para moverte. |
-| **Extensión VS Code / Cursor** | El panel como pestaña del editor (`agent-wt: Open dashboard`, ⌘⌥W), los agentes en el terminal integrado y un contador de agentes trabajando en la barra de estado. |
-| **Plugin de Claude Code** | Todos los worktrees de Claude Code (`--worktree`, sesiones en segundo plano, `/batch`, subagentes) los crea agent-wt, más `/agent-wt:status` y `/agent-wt:ui`. |
-| **Navegador** (`agent-wt ui`) | Panel de un repositorio desde el terminal: solo 127.0.0.1 y token de un solo uso. |
+| **App de escritorio** (macOS) | Vive en la barra de menús con el número de agentes trabajando, lo pone en el icono del Dock y te avisa cuando un agente termina (pulsas y ves sus cambios). `ramify app` abre el repo en el que estés. Todos tus repos en una ventana. Los repos donde hay un agente trabajando aparecen solos en *Trabajando ahora*, y tus repos de GitHub están a un clic (añadir el clon local o clonarlo). Creas un worktree, eliges agente y se abre en Terminal, iTerm o Ghostty. Paleta de comandos ⌘K, ⌘N nuevo worktree, ↑/↓ para moverte. |
+| **Extensión VS Code / Cursor** | El panel como pestaña del editor (`Ramify: Open dashboard`, ⌘⌥W), los agentes en el terminal integrado y un contador de agentes trabajando en la barra de estado. |
+| **Plugin de Claude Code** | Todos los worktrees de Claude Code (`--worktree`, sesiones en segundo plano, `/batch`, subagentes) los crea Ramify, más `/ramify:status` y `/ramify:ui`. |
+| **Navegador** (`ramify ui`) | Panel de un repositorio desde el terminal: solo 127.0.0.1 y token de un solo uso. |
 
 <p align="center">
-  <img src="docs/app-light.png" width="49%" alt="agent-wt en modo claro">
-  <img src="docs/app-palette.png" width="49%" alt="Paleta de comandos de agent-wt">
+  <img src="docs/app-light.png" width="49%" alt="Ramify en modo claro">
+  <img src="docs/app-palette.png" width="49%" alt="Paleta de comandos de Ramify">
 </p>
 
 Modo claro y oscuro (o el del sistema), español e inglés, densidad cómoda o compacta, y un diseño que pasa de tres
@@ -115,17 +115,17 @@ columnas en pantalla ancha a un inspector deslizante y a una sola columna en el 
 
 ```bash
 # app de escritorio
-npm ci && npm run build:desktop        # → apps/desktop/release/agent-wt-<versión>-arm64.dmg
+npm ci && npm run build:desktop        # → apps/desktop/release/ramify-<versión>-arm64.dmg
 
 # VS Code / Cursor
-npm ci && npm run build:vscode         # → apps/vscode/agent-wt.vsix
-cursor --install-extension apps/vscode/agent-wt.vsix   # o: code --install-extension ...
+npm ci && npm run build:vscode         # → apps/vscode/ramify.vsix
+cursor --install-extension apps/vscode/ramify.vsix   # o: code --install-extension ...
 ```
 
 ```text
-# Plugin de Claude Code (usa el plugin o `agent-wt install claude-hooks`, no los dos)
-/plugin marketplace add diegoperezg7/agent-wt
-/plugin install agent-wt@agent-wt
+# Plugin de Claude Code (usa el plugin o `ramify install claude-hooks`, no los dos)
+/plugin marketplace add diegoperezg7/ramify
+/plugin install ramify@ramify
 ```
 
 La app no está firmada: la primera vez, clic derecho y *Abrir*. La integración con GitHub usa el CLI `gh` con el
@@ -134,7 +134,7 @@ que ya tienes sesión. El panel de navegador necesita `python3` y usa el `ui/dis
 ### Cómo está hecho
 
 `packages/core` es el motor en TypeScript (estado, diffs, merge, crear, detección de proyectos, GitHub). La app
-(Electron) y la extensión lo comparten y llevan dentro el script `agent-wt`, así que funcionan sin el CLI instalado.
+(Electron) y la extensión lo comparten y llevan dentro el script `ramify`, así que funcionan sin el CLI instalado.
 `ui/web` es una sola app React que habla con el host en el que corre: IPC de Electron, mensajes del webview de VS Code o HTTP.
 
 ## Dentro de un worktree
@@ -155,7 +155,7 @@ Cada worktree tiene un `.worktree.env`, excluido de git, que se exporta al agent
 Los agentes conocen las reglas por un bloque corto en sus instrucciones globales:
 
 ```bash
-agent-wt install instructions
+ramify install instructions
 ```
 
 Añade [`snippets/agent-instructions.md`](snippets/agent-instructions.md) una sola vez a cada agente
@@ -173,7 +173,7 @@ tu-repo/
     └── teardown.sh           # se ejecuta antes de borrar el worktree
 ```
 
-Los dos scripts son opcionales y pueden quedarse sin versionar: agent-wt también los busca en el
+Los dos scripts son opcionales y pueden quedarse sin versionar: Ramify también los busca en el
 checkout principal. Ejemplos en [`examples/`](examples):
 
 - [`ios-xcodegen`](examples/ios-xcodegen): `xcodegen generate` y un simulador propio por worktree
@@ -183,14 +183,14 @@ checkout principal. Ejemplos en [`examples/`](examples):
 ## Integración con Claude Code
 
 ```bash
-agent-wt install claude-hooks
+ramify install claude-hooks
 ```
 
-Registra agent-wt como hooks `WorktreeCreate` y `WorktreeRemove` de Claude Code (con copia de
+Registra Ramify como hooks `WorktreeCreate` y `WorktreeRemove` de Claude Code (con copia de
 `~/.claude/settings.json`). Desde entonces `claude --worktree`, las sesiones en segundo plano,
-`/batch`, los workflows y los subagentes con `isolation: worktree` crean sus worktrees con agent-wt,
+`/batch`, los workflows y los subagentes con `isolation: worktree` crean sus worktrees con Ramify,
 con la misma estructura, puertos y preparación que el resto de agentes. Claude Code conserva los
-worktrees de los subagentes al terminar, así que conviene lanzar `agent-wt prune` de vez en cuando.
+worktrees de los subagentes al terminar, así que conviene lanzar `ramify prune` de vez en cuando.
 
 ## Seguridad
 
@@ -204,9 +204,9 @@ worktrees de los subagentes al terminar, así que conviene lanzar `agent-wt prun
 
 | Variable            | Por defecto    |
 |---------------------|----------------|
-| `AGENT_WT_ROOT`     | `~/.worktrees` |
-| `AGENT_WT_PORT_MIN` | `4100`         |
-| `AGENT_WT_PORT_MAX` | `4990`         |
+| `RAMIFY_ROOT`     | `~/.worktrees` |
+| `RAMIFY_PORT_MIN` | `4100`         |
+| `RAMIFY_PORT_MAX` | `4990`         |
 | `NO_COLOR`          | sin definir    |
 
 ## Tests

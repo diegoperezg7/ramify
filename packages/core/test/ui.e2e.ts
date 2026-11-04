@@ -1,5 +1,5 @@
 // End-to-end: the real web UI against a real repository, in two hosts.
-//  - browser: ui/server.py (what `agent-wt ui` starts)
+//  - browser: ui/server.py (what `ramify ui` starts)
 //  - editor:  the VS Code webview protocol, answered by the same handlers the extension uses
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
@@ -13,12 +13,12 @@ import { createHandlers, dispatch } from '../src/host.ts'
 import { Engine, IDES } from '../src/engine.ts'
 
 const ROOT_DIR = resolve(import.meta.dirname, '../../..')
-const BIN = join(ROOT_DIR, 'agent-wt')
+const BIN = join(ROOT_DIR, 'ramify')
 const DIST = join(ROOT_DIR, 'ui', 'dist')
-const T = realpathSync(mkdtempSync(join(tmpdir(), 'agent-wt-e2e-')))
+const T = realpathSync(mkdtempSync(join(tmpdir(), 'ramify-e2e-')))
 const REPO = join(T, 'shop')
 const env = {
-  ...process.env, AGENT_WT_ROOT: join(T, 'wts'), NO_COLOR: '1',
+  ...process.env, RAMIFY_ROOT: join(T, 'wts'), NO_COLOR: '1',
   GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.com', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.com',
 }
 const git = (cwd: string, ...a: string[]) => execFileSync('git', ['-C', cwd, ...a], { env })

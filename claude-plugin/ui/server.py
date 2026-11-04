@@ -1,7 +1,7 @@
-"""Local web dashboard for agent-wt. Python standard library only.
+"""Local web dashboard for ramify. Python standard library only.
 
-Started by `agent-wt ui`. Listens on 127.0.0.1, every API call needs the session
-token, and mutating actions go through the agent-wt CLI so they keep its safety rules.
+Started by `ramify ui`. Listens on 127.0.0.1, every API call needs the session
+token, and mutating actions go through the ramify CLI so they keep its safety rules.
 """
 import argparse
 import json
@@ -179,7 +179,7 @@ class Dashboard:
         p = run(args, cwd=self.main, check=False)
         msg = (p.stderr or p.stdout).strip()
         if p.returncode != 0:
-            raise RuntimeError(msg.replace("agent-wt: ", ""))
+            raise RuntimeError(msg.replace("ramify: ", ""))
         return msg
 
     def merge(self, path):
@@ -289,7 +289,7 @@ def main():
     ap.add_argument("--token", required=True)
     a = ap.parse_args()
     if not (DIST / "index.html").is_file():
-        sys.exit(f"agent-wt ui: missing {DIST}/index.html (build it with: cd ui/web && npm ci && npm run build)")
+        sys.exit(f"ramify ui: missing {DIST}/index.html (build it with: cd ui/web && npm ci && npm run build)")
     dash = Dashboard(a.main, a.bin)
     srv = Server(("127.0.0.1", a.port), None)
     port = srv.server_address[1]

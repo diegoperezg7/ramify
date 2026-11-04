@@ -1,6 +1,6 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, screen, shell, Tray } from 'electron'
 import { execFileSync } from 'node:child_process'
-import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
@@ -20,7 +20,7 @@ function loginPath(): string | undefined {
   }
 }
 
-const bin = app.isPackaged ? join(process.resourcesPath, 'bin', 'agent-wt') : resolve(__dirname, '../../../agent-wt')
+const bin = app.isPackaged ? join(process.resourcesPath, 'bin', 'ramify') : resolve(__dirname, '../../../ramify')
 try { chmodSync(bin, 0o755) } catch { /* read-only bundle: already executable */ }
 const env = { ...process.env, PATH: loginPath() ?? process.env.PATH }
 const engine = new Engine({ bin, env })
@@ -28,11 +28,16 @@ const es = () => app.getLocale().toLowerCase().startsWith('es')
 
 // --- persisted config ---------------------------------------------------------
 
-if (process.env.AGENT_WT_USER_DATA) app.setPath('userData', process.env.AGENT_WT_USER_DATA)
+if (process.env.RAMIFY_USER_DATA) app.setPath('userData', process.env.RAMIFY_USER_DATA)
 
 interface Bounds { x: number; y: number; width: number; height: number }
 interface Config { repos: string[]; settings: Settings; bounds?: Bounds }
 const configFile = join(app.getPath('userData'), 'config.json')
+// Renamed from agent-wt: bring the old repositories and settings over once.
+const legacyConfig = join(app.getPath('appData'), 'agent-wt', 'config.json')
+if (!existsSync(configFile) && existsSync(legacyConfig)) {
+  try { mkdirSync(app.getPath('userData'), { recursive: true }); copyFileSync(legacyConfig, configFile) } catch { /* start fresh */ }
+}
 const defaultSettings: Settings = {
   terminal: 'Terminal', defaultAgent: 'claude', projectsDir: defaultProjectsDir(), autoDetect: true,
   notifications: true, openAtLogin: false, menuBar: true,
@@ -156,7 +161,7 @@ function updateTray(count: number) {
   if (!config.settings.menuBar) { tray?.destroy(); tray = null; return }
   if (!tray) {
     tray = new Tray(trayIcon())
-    tray.setToolTip('agent-wt')
+    tray.setToolTip('Ramify')
   }
   tray.setTitle(count ? ` ${count}` : '', { fontType: 'monospacedDigit' })
   const items: Electron.MenuItemConstructorOptions[] = [
@@ -166,7 +171,7 @@ function updateTray(count: number) {
       click: () => focus({ repo: l.repo, path: l.path }),
     })),
     { type: 'separator' },
-    { label: es() ? 'Abrir agent-wt' : 'Open agent-wt', click: () => focus() },
+    { label: es() ? 'Abrir Ramify' : 'Open Ramify', click: () => focus() },
     { label: es() ? 'Nuevo worktree…' : 'New worktree…', click: () => focus({ event: 'new' }) },
     { type: 'separator' },
     { role: 'quit', label: es() ? 'Salir' : 'Quit' },
@@ -268,7 +273,7 @@ const handlers = {
 }
 
 const rendererUrl = () => pathToFileURL(join(__dirname, '../renderer/index.html')).href
-ipcMain.handle('agent-wt', (e, method: string, args: unknown[]) => {
+ipcMain.handle('ramify', (e, method: string, args: unknown[]) => {
   // Only the app's own page may drive the host.
   if (!e.senderFrame || e.senderFrame.url.split('#')[0] !== rendererUrl()) throw new Error('forbidden')
   return dispatch(handlers, method, args)
@@ -281,7 +286,7 @@ let win: BrowserWindow | null = null
 let pending: Payload | null = null
 
 function send(payload: Payload) {
-  if (win && !win.webContents.isLoading()) win.webContents.send('agent-wt:event', payload)
+  if (win && !win.webContents.isLoading()) win.webContents.send('ramify:event', payload)
   else pending = payload
 }
 
@@ -293,10 +298,10 @@ function focus(payload?: Payload) {
   if (payload) send(payload)
 }
 
-/** agent-wt://open?path=/some/repo, or a folder passed as an argument: add the repository and show it. */
+/** ramify://open?path=/some/repo, or a folder passed as an argument: add the repository and show it. */
 async function openTarget(target: string) {
   let path = target
-  if (target.startsWith('agent-wt://')) {
+  if (target.startsWith('ramify://')) {
     try { path = new URL(target).searchParams.get('path') ?? '' } catch { path = '' }
   }
   if (!path || !existsSync(path)) { focus(); return }
@@ -306,7 +311,7 @@ async function openTarget(target: string) {
     focus()
     const { response } = await dialog.showMessageBox(win!, {
       type: 'question', buttons: [es() ? 'Añadir' : 'Add', es() ? 'Cancelar' : 'Cancel'], defaultId: 0, cancelId: 1,
-      message: es() ? '¿Añadir este repositorio a agent-wt?' : 'Add this repository to agent-wt?', detail: main,
+      message: es() ? '¿Añadir este repositorio a Ramify?' : 'Add this repository to Ramify?', detail: main,
     })
     if (response !== 0) return
   }
@@ -316,7 +321,7 @@ async function openTarget(target: string) {
     focus({ repo: info.path, path: wt?.path })
   } catch (e) {
     focus()
-    dialog.showErrorBox('agent-wt', (e as Error).message)
+    dialog.showErrorBox('Ramify', (e as Error).message)
   }
 }
 
@@ -339,7 +344,7 @@ function createWindow() {
     minWidth: 760,
     minHeight: 520,
     show: false,
-    title: 'agent-wt',
+    title: 'Ramify',
     titleBarStyle: 'hiddenInset',
     trafficLightPosition: { x: 16, y: 18 },
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#000000' : '#ffffff',
@@ -361,13 +366,13 @@ function createWindow() {
 
 function targetFrom(argv: string[]): string | undefined {
   return argv.slice(1).reverse().find((a) =>
-    a.startsWith('agent-wt://') || (a.startsWith('/') && !a.includes('.app/') && a !== process.execPath && a !== app.getAppPath() && existsSync(a)))
+    a.startsWith('ramify://') || (a.startsWith('/') && !a.includes('.app/') && a !== process.execPath && a !== app.getAppPath() && existsSync(a)))
 }
 
 if (!app.requestSingleInstanceLock()) {
   app.quit()
 } else {
-  if (app.isPackaged) app.setAsDefaultProtocolClient('agent-wt')
+  if (app.isPackaged) app.setAsDefaultProtocolClient('ramify')
   app.on('open-url', (e, url) => { e.preventDefault(); void app.whenReady().then(() => openTarget(url)) })
   app.on('second-instance', (_e, argv) => {
     const target = targetFrom(argv)
@@ -380,7 +385,7 @@ if (!app.requestSingleInstanceLock()) {
     ]))
     applyLoginItem()
     createWindow()
-    const target = app.isPackaged ? targetFrom(process.argv) : process.env.AGENT_WT_OPEN
+    const target = app.isPackaged ? targetFrom(process.argv) : process.env.RAMIFY_OPEN
     if (target) void openTarget(target)
     void monitor()
     setInterval(() => void monitor(), 4000)

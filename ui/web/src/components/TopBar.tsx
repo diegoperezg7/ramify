@@ -51,7 +51,7 @@ export function TopBar() {
           <button type="button" className="icon-btn menu-btn" onClick={() => setMenuOpen(true)} aria-label={t('menu')}><Menu size={18} /></button>
         )}
         {!caps?.multiRepo && <Logo size={30} />}
-        {!caps?.multiRepo && <span className="name">agent-wt</span>}
+        {!caps?.multiRepo && <span className="name">Ramify</span>}
         {state && (
           <>
             {!caps?.multiRepo && <span className="sep">/</span>}

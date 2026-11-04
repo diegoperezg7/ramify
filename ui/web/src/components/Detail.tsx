@@ -44,7 +44,7 @@ export function Detail() {
   const copy = async (key: string, text: string) => {
     try { await navigator.clipboard.writeText(text); setCopied(key); setTimeout(() => setCopied(null), 1500) } catch { /* denied */ }
   }
-  const command = `agent-wt open ${w.branch}${w.agent ? ` -a ${w.agent}` : ''}`
+  const command = `ramify open ${w.branch}${w.agent ? ` -a ${w.agent}` : ''}`
   const mergeBlocked = w.changes > 0 ? t('whyNoMergeChanges') : w.commits === 0 ? t('whyNoMergeCommits') : null
 
   return (

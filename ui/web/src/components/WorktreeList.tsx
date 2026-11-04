@@ -47,7 +47,7 @@ function GettingStarted() {
       </ol>
       {caps?.create
         ? <button type="button" className="btn btn-primary" onClick={() => setModal('create')}>{t('newWorktree')}</button>
-        : <code>agent-wt new feat/login -a claude</code>}
+        : <code>ramify new feat/login -a claude</code>}
     </div>
   )
 }

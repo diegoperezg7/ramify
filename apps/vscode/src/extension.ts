@@ -9,7 +9,7 @@ let ready = false
 const queued: unknown[] = []
 
 export function activate(ctx: vscode.ExtensionContext) {
-  const bin = join(ctx.extensionPath, 'bin', 'agent-wt')
+  const bin = join(ctx.extensionPath, 'bin', 'ramify')
   const engine = new Engine({ bin })
 
   const repoOf = async (): Promise<string | null> => {
@@ -19,7 +19,7 @@ export function activate(ctx: vscode.ExtensionContext) {
 
   // Status bar: how many agents are working in this repository right now.
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50)
-  status.command = 'agentWt.open'
+  status.command = 'ramify.open'
   ctx.subscriptions.push(status)
   const refreshStatus = async () => {
     const repo = await repoOf()
@@ -28,7 +28,7 @@ export function activate(ctx: vscode.ExtensionContext) {
       const wts = await engine.worktrees(repo)
       const live = wts.filter((w) => !w.main && w.running.length).length
       const total = wts.length - 1
-      status.text = `$(git-branch) agent-wt ${total}${live ? ` · $(pulse) ${live}` : ''}`
+      status.text = `$(git-branch) Ramify ${total}${live ? ` · $(pulse) ${live}` : ''}`
       status.tooltip = `${total} worktrees, ${live} agents working`
       status.show()
     } catch { status.hide() }
@@ -38,7 +38,7 @@ export function activate(ctx: vscode.ExtensionContext) {
   ctx.subscriptions.push({ dispose: () => clearInterval(timer) })
 
   const terminal = (name: string, cwd: string, command: string) => {
-    const term = vscode.window.createTerminal({ name: `agent-wt · ${name}`, cwd })
+    const term = vscode.window.createTerminal({ name: `Ramify · ${name}`, cwd })
     term.show()
     term.sendText(command)
   }
@@ -58,7 +58,7 @@ export function activate(ctx: vscode.ExtensionContext) {
   const open = async () => {
     if (panel) { panel.reveal(); return }
     const ui = vscode.Uri.joinPath(ctx.extensionUri, 'media', 'ui')
-    panel = vscode.window.createWebviewPanel('agentWt', 'agent-wt', vscode.ViewColumn.Active, {
+    panel = vscode.window.createWebviewPanel('ramify', 'Ramify', vscode.ViewColumn.Active, {
       enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [ui],
     })
     panel.iconPath = vscode.Uri.joinPath(ctx.extensionUri, 'media', 'icon.png')
@@ -77,8 +77,8 @@ export function activate(ctx: vscode.ExtensionContext) {
   }
 
   ctx.subscriptions.push(
-    vscode.commands.registerCommand('agentWt.open', open),
-    vscode.commands.registerCommand('agentWt.new', async () => {
+    vscode.commands.registerCommand('ramify.open', open),
+    vscode.commands.registerCommand('ramify.new', async () => {
       await open()
       if (ready) void panel?.webview.postMessage({ command: 'new' })
       else queued.push({ command: 'new' })

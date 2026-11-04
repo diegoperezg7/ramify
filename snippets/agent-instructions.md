@@ -1,4 +1,4 @@
-## Worktrees (agent-wt)
+## Worktrees (ramify)
 If `.worktree.env` exists at the project root, you are in an isolated git worktree, one per task:
 - Work only on branch `WT_BRANCH`. Never check out another branch or main: it is in use in another worktree.
 - Read `.worktree.env`. Dev servers must use ports `PORT` to `PORT+9`, never the main project's ports.

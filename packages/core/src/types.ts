@@ -100,7 +100,7 @@ export interface Settings {
   menuBar?: boolean
 }
 
-/** What the current host can do. The browser build (agent-wt ui) is single-repo. */
+/** What the current host can do. The browser build (ramify ui) is single-repo. */
 export interface Capabilities {
   host: 'browser' | 'desktop' | 'vscode'
   multiRepo: boolean

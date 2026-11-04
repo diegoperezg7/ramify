@@ -1,12 +1,12 @@
 #!/bin/bash
-# End-to-end tests for agent-wt. No dependencies beyond git, tar and jq.
+# End-to-end tests for ramify. No dependencies beyond git, tar and jq.
 # shellcheck disable=SC2034  # variables are used inside check() via eval
 set -uo pipefail
 
-AW="$(cd "$(dirname "$0")/.." && pwd)/agent-wt"
+AW="$(cd "$(dirname "$0")/.." && pwd)/ramify"
 T=$(cd "$(mktemp -d)" && pwd -P)
 trap 'rm -rf "$T"' EXIT
-export AGENT_WT_ROOT="$T/wts" NO_COLOR=1 HOME="$T/home"
+export RAMIFY_ROOT="$T/wts" NO_COLOR=1 HOME="$T/home"
 export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.com
 export GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.com
 mkdir -p "$HOME" "$T/bin"
@@ -33,7 +33,7 @@ echo 'SECRET=1' > .env
 echo '.env' > .worktreeinclude
 echo hi > a.txt
 git add .gitignore a.txt && git commit -qm init && git push -q origin main 2>/dev/null
-W="$AGENT_WT_ROOT/demo"
+W="$RAMIFY_ROOT/demo"
 
 echo "create"
 "$AW" new feat/login 2>/dev/null >/dev/null
@@ -46,7 +46,7 @@ p1=$(sed -n 's/^PORT=//p' "$W/feat-login/.worktree.env"); p2=$(sed -n 's/^PORT=/
 check "each worktree gets its own port block" '[ "$p1" != "$p2" ] && [ $((p2 - p1)) -ge 10 ]'
 
 git init -q "$T/empty"
-check "new fails cleanly in a repo without commits" '! (cd "$T/empty" && "$AW" new x 2>/dev/null) && [ ! -e "$AGENT_WT_ROOT/empty/x" ]'
+check "new fails cleanly in a repo without commits" '! (cd "$T/empty" && "$AW" new x 2>/dev/null) && [ ! -e "$RAMIFY_ROOT/empty/x" ]'
 check "new refuses an existing worktree" '! "$AW" new pagos 2>/dev/null'
 
 p=$("$AW" new nolaunch -a codex --no-launch 2>/dev/null)
@@ -130,7 +130,7 @@ check "invalid agent names are rejected" '! "$AW" new evil -a "x;touch $T/PWNED2
 mkdir -p "$T/my repo" && git -C "$T/my repo" init -q -b main && git -C "$T/my repo" commit -q --allow-empty -m i
 mkdir -p "$T/my repo/.worktree" && printf '#!/bin/bash\ntouch "$WT_PATH/setup-ran"\n' > "$T/my repo/.worktree/setup.sh" && chmod +x "$T/my repo/.worktree/setup.sh"
 (cd "$T/my repo" && "$AW" new spaced >/dev/null 2>&1)
-check "paths with spaces: setup scripts still run" '[ -f "$AGENT_WT_ROOT/my repo/spaced/setup-ran" ]'
+check "paths with spaces: setup scripts still run" '[ -f "$RAMIFY_ROOT/my repo/spaced/setup-ran" ]'
 
 echo "claude code hook"
 path=$(printf '{"name":"bold-oak","cwd":"%s"}' "$T/demo" | "$AW" hook create 2>/dev/null | tail -1)
@@ -146,7 +146,7 @@ echo '{"model":"opus","hooks":{"Stop":[]}}' > "$HOME/.claude/settings.json"
 check "claude hooks added, other settings kept" \
   'jq -e ".model == \"opus\" and (.hooks.Stop | type) == \"array\" and (.hooks.WorktreeCreate[0].hooks[0].command | endswith(\"hook create\"))" "$HOME/.claude/settings.json" >/dev/null'
 "$AW" install instructions 2>/dev/null
-check "instructions installed once per agent" '[ "$(grep -c "(agent-wt)" "$HOME/.codex/AGENTS.md")" = 1 ] && [ "$(grep -c "(agent-wt)" "$HOME/.claude/CLAUDE.md")" = 1 ]'
+check "instructions installed once per agent" '[ "$(grep -c "(ramify)" "$HOME/.codex/AGENTS.md")" = 1 ] && [ "$(grep -c "(ramify)" "$HOME/.claude/CLAUDE.md")" = 1 ]'
 check "agents without a config dir are skipped" '[ ! -e "$HOME/.gemini" ]'
 
 echo

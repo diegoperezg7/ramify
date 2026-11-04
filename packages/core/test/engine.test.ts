@@ -6,12 +6,12 @@ import { after, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { Engine, EngineError, shellQuote } from '../src/engine.ts'
 
-const BIN = resolve(import.meta.dirname, '../../../agent-wt')
-const T = realpathSync(mkdtempSync(join(tmpdir(), 'agent-wt-core-')))
+const BIN = resolve(import.meta.dirname, '../../../ramify')
+const T = realpathSync(mkdtempSync(join(tmpdir(), 'ramify-core-')))
 const ROOT = join(T, 'wts')
 const REPO = join(T, 'shop')
 const env = {
-  AGENT_WT_ROOT: ROOT,
+  RAMIFY_ROOT: ROOT,
   GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.com',
   GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.com',
 }

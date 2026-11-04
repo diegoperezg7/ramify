@@ -2,8 +2,8 @@ export type Lang = 'es' | 'en'
 
 const es = {
   live: 'En vivo',
-  offline: 'Sin conexión con agent-wt ui. ¿Sigue abierto en el terminal?',
-  badToken: 'La sesión no es válida. Abre de nuevo el enlace que imprime agent-wt ui.',
+  offline: 'Sin conexión con ramify ui. ¿Sigue abierto en el terminal?',
+  badToken: 'La sesión no es válida. Abre de nuevo el enlace que imprime ramify ui.',
   updated: 'actualizado',
   worktrees: 'Worktrees',
   activeAgents: 'Agentes trabajando',
@@ -141,8 +141,8 @@ const es = {
 
 const en: typeof es = {
   live: 'Live',
-  offline: 'Lost connection to agent-wt ui. Is it still running in the terminal?',
-  badToken: 'This session is not valid. Open the link printed by agent-wt ui again.',
+  offline: 'Lost connection to ramify ui. Is it still running in the terminal?',
+  badToken: 'This session is not valid. Open the link printed by ramify ui again.',
   updated: 'updated',
   worktrees: 'Worktrees',
   activeAgents: 'Agents working',

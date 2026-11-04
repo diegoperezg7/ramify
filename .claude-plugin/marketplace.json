@@ -1,12 +1,12 @@
 {
-  "name": "agent-wt",
-  "description": "agent-wt for Claude Code",
+  "name": "ramify",
+  "description": "Ramify for Claude Code",
   "owner": { "name": "Diego Pérez" },
   "plugins": [
     {
-      "name": "agent-wt",
+      "name": "ramify",
       "source": "./claude-plugin",
-      "description": "Claude Code worktrees through agent-wt, plus /agent-wt:status and /agent-wt:ui"
+      "description": "Claude Code worktrees through ramify, plus /ramify:status and /ramify:ui"
     }
   ]
 }

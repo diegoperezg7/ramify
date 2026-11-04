@@ -1,10 +1,10 @@
 {
   "hooks": {
     "WorktreeCreate": [
-      { "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/bin/agent-wt hook create" }] }
+      { "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/bin/ramify hook create" }] }
     ],
     "WorktreeRemove": [
-      { "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/bin/agent-wt hook remove" }] }
+      { "hooks": [{ "type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/bin/ramify hook remove" }] }
     ]
   }
 }

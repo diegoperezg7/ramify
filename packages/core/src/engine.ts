@@ -11,9 +11,9 @@ export const IDES = ['xcode', 'cursor', 'code', 'zed', 'idea', 'Finder']
 export class EngineError extends Error {}
 
 export interface EngineOptions {
-  /** Path to the agent-wt script. */
+  /** Path to the ramify script. */
   bin: string
-  /** Environment for every child process (PATH, AGENT_WT_ROOT...). */
+  /** Environment for every child process (PATH, RAMIFY_ROOT...). */
   env?: NodeJS.ProcessEnv
 }
 
@@ -41,7 +41,7 @@ export class Engine {
 
   private async must(cmd: string, args: string[], cwd?: string): Promise<string> {
     const r = await this.run(cmd, args, cwd)
-    if (r.code !== 0) throw new EngineError((r.stderr || r.stdout).trim().replace(/^agent-wt: /, '') || `${cmd} failed`)
+    if (r.code !== 0) throw new EngineError((r.stderr || r.stdout).trim().replace(/^ramify: /, '') || `${cmd} failed`)
     return r.stdout
   }
 
@@ -79,9 +79,9 @@ export class Engine {
     return res
   }
 
-  /** Repositories that already have agent-wt worktrees, found through their .worktree.env files. */
+  /** Repositories that already have ramify worktrees, found through their .worktree.env files. */
   discover(): string[] {
-    const root = this.env.AGENT_WT_ROOT || join(homedir(), '.worktrees')
+    const root = this.env.RAMIFY_ROOT || join(homedir(), '.worktrees')
     const found = new Set<string>()
     if (!existsSync(root)) return []
     for (const repo of safeReaddir(root)) {
@@ -221,7 +221,7 @@ export class Engine {
     if ((await this.find(repo, path)).main) throw new EngineError('that is the main checkout')
     const r = await this.run(this.bin, ['rm', path, ...(force ? ['--force'] : [])], repo)
     const msg = (r.stderr || r.stdout).trim()
-    if (r.code !== 0) throw new EngineError(msg.replace(/^agent-wt: /, ''))
+    if (r.code !== 0) throw new EngineError(msg.replace(/^ramify: /, ''))
     return msg
   }
 

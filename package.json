@@ -1,5 +1,5 @@
 {
-  "name": "agent-wt-monorepo",
+  "name": "ramify-monorepo",
   "private": true,
   "workspaces": [
     "packages/core",

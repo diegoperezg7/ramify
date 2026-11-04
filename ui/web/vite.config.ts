@@ -1,7 +1,7 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-// Built into ../dist, which ui/server.py serves. Dev: run `agent-wt ui --port 4999`
+// Built into ../dist, which ui/server.py serves. Dev: run `ramify ui --port 4999`
 // and `npm run dev`; API calls are proxied to it.
 export default defineConfig({
   plugins: [react()],

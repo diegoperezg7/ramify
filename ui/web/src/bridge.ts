@@ -1,9 +1,9 @@
 import type { Bridge, Capabilities, Detail, GithubRepo, RepoInfo, Settings, State } from './types'
 
 // One UI, three hosts:
-//  - desktop app: Electron preload exposes window.agentWt.invoke
+//  - desktop app: Electron preload exposes window.ramify.invoke
 //  - VS Code / Cursor: webview messages through acquireVsCodeApi
-//  - browser (agent-wt ui): HTTP to ui/server.py, single repository
+//  - browser (ramify ui): HTTP to ui/server.py, single repository
 
 export class BridgeError extends Error {
   status: number
@@ -17,7 +17,7 @@ type Invoke = (method: string, args: unknown[]) => Promise<unknown>
 
 declare global {
   interface Window {
-    agentWt?: { invoke: Invoke; on?: (cb: (payload: unknown) => void) => void }
+    ramify?: { invoke: Invoke; on?: (cb: (payload: unknown) => void) => void }
     acquireVsCodeApi?: () => { postMessage(msg: unknown): void }
   }
 }
@@ -70,7 +70,7 @@ function vscodeInvoke(): Invoke {
 function electronInvoke(): Invoke {
   return async (method, args) => {
     try {
-      return await window.agentWt!.invoke(method, args)
+      return await window.ramify!.invoke(method, args)
     } catch (e) {
       // Electron prefixes errors with "Error invoking remote method '...': Error: ".
       throw new BridgeError(String((e as Error).message).replace(/^.*?Error: /, ''))
@@ -81,11 +81,11 @@ function electronInvoke(): Invoke {
 function httpBridge(): Bridge {
   const fromHash = new URLSearchParams(location.hash.slice(1)).get('token')
   if (fromHash) {
-    try { sessionStorage.setItem('agent-wt-token', fromHash) } catch { /* private mode */ }
+    try { sessionStorage.setItem('ramify-token', fromHash) } catch { /* private mode */ }
     history.replaceState(null, '', location.pathname)
   }
   let token = fromHash ?? ''
-  if (!token) { try { token = sessionStorage.getItem('agent-wt-token') ?? '' } catch { /* ignore */ } }
+  if (!token) { try { token = sessionStorage.getItem('ramify-token') ?? '' } catch { /* ignore */ } }
 
   const req = async <T>(path: string, init?: RequestInit): Promise<T> => {
     let res: Response
@@ -124,13 +124,13 @@ function httpBridge(): Bridge {
   }
 }
 
-const electronEvents = (cb: (e: HostEvent) => void) => window.agentWt?.on?.((p) => cb(p as HostEvent))
+const electronEvents = (cb: (e: HostEvent) => void) => window.ramify?.on?.((p) => cb(p as HostEvent))
 const vscodeEvents = (cb: (e: HostEvent) => void) => window.addEventListener('message', (e: MessageEvent) => {
   const d = e.data as { command?: string; id?: number }
   if (d && typeof d.id !== 'number' && d.command) cb({ event: d.command })
 })
 
-export const bridge: Bridge = window.agentWt
+export const bridge: Bridge = window.ramify
   ? rpc(electronInvoke(), electronEvents)
   : window.acquireVsCodeApi
     ? rpc(vscodeInvoke(), vscodeEvents)

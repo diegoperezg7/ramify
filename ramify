@@ -1,12 +1,12 @@
 #!/bin/bash
-# agent-wt: one git worktree per task, ready for any coding agent or IDE.
-# https://github.com/diegoperezg7/agent-wt
+# ramify: one git worktree per task, ready for any coding agent or IDE.
+# https://github.com/diegoperezg7/ramify
 set -euo pipefail
 
 VERSION=0.4.0
-ROOT="${AGENT_WT_ROOT:-$HOME/.worktrees}"
-PORT_MIN="${AGENT_WT_PORT_MIN:-4100}"
-PORT_MAX="${AGENT_WT_PORT_MAX:-4990}"
+ROOT="${RAMIFY_ROOT:-$HOME/.worktrees}"
+PORT_MIN="${RAMIFY_PORT_MIN:-4100}"
+PORT_MAX="${RAMIFY_PORT_MAX:-4990}"
 PORT_BLOCK=10
 # Process names counted as agents in `ls` (node/bun/python count as the worktree's recorded agent).
 AGENT_NAMES="claude codex gemini copilot cursor-agent opencode aider amp goose droid qwen crush"
@@ -19,29 +19,29 @@ else
 fi
 
 log() { printf '%s\n' "$*" >&2; }
-die() { log "${R}agent-wt:${N} $*"; exit 1; }
+die() { log "${R}ramify:${N} $*"; exit 1; }
 
 usage() {
   cat >&2 <<EOF
-${B}agent-wt${N} $VERSION - one git worktree per task, for any coding agent or IDE
+${B}ramify${N} $VERSION - one git worktree per task, for any coding agent or IDE
 
 ${B}Usage${N}
-  agent-wt new  <branch> [-a agent] [-i ide] [-p prompt] [-f base] [--tmux] [--no-setup] [--no-launch] [-- agent args]
-  agent-wt open <name>   [-a agent] [-i ide] [-p prompt] [--tmux] [-- agent args]
-  agent-wt ls [--json]            worktrees, agent, activity, changes, ports
-  agent-wt ui [--port N]          live web dashboard (needs python3)
-  agent-wt app                    open this repository in the desktop app
-  agent-wt graph [-n N]           branch graph of every worktree
-  agent-wt path <name>            print a worktree path
-  agent-wt rm <name> [--force]    remove a worktree (never deletes unmerged commits)
-  agent-wt prune                  remove clean, merged worktrees
-  agent-wt install [claude-hooks|instructions|all]
-  agent-wt hook create|remove     Claude Code WorktreeCreate/WorktreeRemove hook
+  ramify new  <branch> [-a agent] [-i ide] [-p prompt] [-f base] [--tmux] [--no-setup] [--no-launch] [-- agent args]
+  ramify open <name>   [-a agent] [-i ide] [-p prompt] [--tmux] [-- agent args]
+  ramify ls [--json]            worktrees, agent, activity, changes, ports
+  ramify ui [--port N]          live web dashboard (needs python3)
+  ramify app                    open this repository in the desktop app
+  ramify graph [-n N]           branch graph of every worktree
+  ramify path <name>            print a worktree path
+  ramify rm <name> [--force]    remove a worktree (never deletes unmerged commits)
+  ramify prune                  remove clean, merged worktrees
+  ramify install [claude-hooks|instructions|all]
+  ramify hook create|remove     Claude Code WorktreeCreate/WorktreeRemove hook
 
 ${B}Agents${N} (-a)   claude, codex, gemini, copilot, cursor, opencode, aider, amp, or any command
 ${B}IDEs${N}   (-i)   xcode, cursor, code, zed, idea, or any macOS app name
 
-Each worktree lives in \$AGENT_WT_ROOT/<repo>/<name> (default ~/.worktrees) and gets a
+Each worktree lives in \$RAMIFY_ROOT/<repo>/<name> (default ~/.worktrees) and gets a
 .worktree.env with WT_NAME, WT_BRANCH, WT_PATH, WT_MAIN, WT_AGENT, PORT and DERIVED_DATA.
 EOF
 }
@@ -109,7 +109,7 @@ find_wt() {
       path=$cur
     fi
   done < <(git -C "$main" worktree list --porcelain)
-  [ -n "$path" ] || die "no worktree named '$name' (see: agent-wt ls)"
+  [ -n "$path" ] || die "no worktree named '$name' (see: ramify ls)"
   printf '%s\n' "$path"
 }
 
@@ -283,7 +283,7 @@ create() {
   slug=$(slugify "$branch")
   [ -n "$slug" ] || die "invalid branch name: '$branch'"
   wt="$ROOT/$repo/$slug"
-  [ -e "$wt" ] && die "$wt already exists (use: agent-wt open $branch)"
+  [ -e "$wt" ] && die "$wt already exists (use: ramify open $branch)"
   [ -z "$agent" ] || valid_agent "$agent"
   mkdir -p "$ROOT/$repo"
   wt="$(cd "$ROOT/$repo" && pwd -P)/$slug"
@@ -461,7 +461,7 @@ cmd_ui() {
     case "$1" in
       --port) port=$2; shift 2 ;;
       --no-open) open_browser=0; shift ;;
-      *) die "usage: agent-wt ui [--port N] [--no-open]" ;;
+      *) die "usage: ramify ui [--port N] [--no-open]" ;;
     esac
   done
   command -v python3 >/dev/null || die "python3 is required for the dashboard"
@@ -470,9 +470,9 @@ cmd_ui() {
   if [ -f "$SELF_DIR/ui/server.py" ]; then cd "$SELF_DIR/ui"
   elif [ -f "$SELF_DIR/../ui/server.py" ]; then cd "$SELF_DIR/../ui"
   else die "dashboard files not found next to $SELF_DIR"; fi
-  python3 -I server.py --main "$main" --bin "$SELF_DIR/agent-wt" --port "$port" --token "$token" \
+  python3 -I server.py --main "$main" --bin "$SELF_DIR/ramify" --port "$port" --token "$token" \
     | while IFS= read -r url; do
-        log "${B}agent-wt ui${N}  $url  ${D}(Ctrl-C to stop)${N}"
+        log "${B}ramify ui${N}  $url  ${D}(Ctrl-C to stop)${N}"
         if [ "$open_browser" = 1 ]; then
           if [ "$(uname)" = Darwin ]; then open "$url"
           elif command -v xdg-open >/dev/null; then xdg-open "$url" >/dev/null 2>&1; fi
@@ -480,14 +480,14 @@ cmd_ui() {
       done
 }
 
-# Open the desktop app on this repository (or worktree) through its agent-wt:// link.
+# Open the desktop app on this repository (or worktree) through its ramify:// link.
 cmd_app() {
   local dir url
   dir=$(pwd -P)
   main_checkout "$dir" >/dev/null
-  [ "$(uname)" = Darwin ] || die "the desktop app is macOS only; use: agent-wt ui"
-  open -Ra agent-wt 2>/dev/null || die "agent-wt.app is not installed (see apps/desktop in the repository)"
-  url="agent-wt://open?path=$(printf '%s' "$dir" | jq -sRr @uri 2>/dev/null || python3 -I -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1]))' "$dir")"
+  [ "$(uname)" = Darwin ] || die "the desktop app is macOS only; use: ramify ui"
+  open -Ra ramify 2>/dev/null || die "ramify.app is not installed (see apps/desktop in the repository)"
+  url="ramify://open?path=$(printf '%s' "$dir" | jq -sRr @uri 2>/dev/null || python3 -I -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1]))' "$dir")"
   open "$url"
 }
 
@@ -508,22 +508,22 @@ cmd_hook() {
       main=$(main_checkout "$wt")
       # Claude Code already asked for confirmation: discard changes, but keep the branch.
       remove_wt "$main" "$wt" 1 ;;
-    *) die "usage: agent-wt hook create|remove" ;;
+    *) die "usage: ramify hook create|remove" ;;
   esac
 }
 
 install_claude_hooks() {
   local f="$HOME/.claude/settings.json" bin
   command -v jq >/dev/null || die "jq is required"
-  bin=$(cd "$SELF_DIR" && pwd)/agent-wt
+  bin=$(cd "$SELF_DIR" && pwd)/ramify
   mkdir -p "$HOME/.claude"; [ -f "$f" ] || echo '{}' > "$f"
-  cp "$f" "$f.bak-agent-wt"
+  cp "$f" "$f.bak-ramify"
   jq --arg c "$bin hook create" --arg r "$bin hook remove" \
     '.hooks = ((.hooks // {}) + {
        WorktreeCreate: [{hooks: [{type: "command", command: $c}]}],
        WorktreeRemove: [{hooks: [{type: "command", command: $r}]}]})' \
-    "$f.bak-agent-wt" > "$f"
-  log "${G}+${N} Claude Code hooks in $f (backup: $f.bak-agent-wt)"
+    "$f.bak-ramify" > "$f"
+  log "${G}+${N} Claude Code hooks in $f (backup: $f.bak-ramify)"
 }
 
 install_instructions() {
@@ -533,8 +533,8 @@ install_instructions() {
            "$HOME/.config/opencode/AGENTS.md" "$HOME/.copilot/copilot-instructions.md" \
            "$HOME/.config/amp/AGENTS.md"; do
     [ -d "$(dirname "$f")" ] || continue
-    if grep -q '(agent-wt)' "$f" 2>/dev/null; then log "${D}= $f${N}"; continue; fi
-    [ -f "$f" ] && cp "$f" "$f.bak-agent-wt"
+    if grep -qE '\((ramify|agent-wt)\)' "$f" 2>/dev/null; then log "${D}= $f${N}"; continue; fi
+    [ -f "$f" ] && cp "$f" "$f.bak-ramify"
     { [ -s "$f" ] && printf '\n'; cat "$snippet"; } >> "$f"
     log "${G}+${N} $f"
   done
@@ -589,9 +589,9 @@ case "$sub" in
       claude-hooks) install_claude_hooks ;;
       instructions) install_instructions ;;
       all) install_claude_hooks; install_instructions ;;
-      *) die "usage: agent-wt install [claude-hooks|instructions|all]" ;;
+      *) die "usage: ramify install [claude-hooks|instructions|all]" ;;
     esac ;;
-  -v|--version|version) echo "agent-wt $VERSION" ;;
+  -v|--version|version) echo "ramify $VERSION" ;;
   ""|-h|--help|help) usage ;;
   *) usage; exit 1 ;;
 esac

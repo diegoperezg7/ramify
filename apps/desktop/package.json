@@ -1,6 +1,6 @@
 {
-  "name": "agent-wt-desktop",
-  "productName": "agent-wt",
+  "name": "ramify-desktop",
+  "productName": "Ramify",
   "description": "One git worktree per task, for any coding agent",
   "version": "0.4.0",
   "private": true,
@@ -20,8 +20,8 @@
     "typescript": "^7.0.2"
   },
   "build": {
-    "appId": "io.github.diegoperezg7.agentwt",
-    "productName": "agent-wt",
+    "appId": "io.github.diegoperezg7.ramify",
+    "productName": "Ramify",
     "copyright": "Copyright \u00a9 2026 Diego P\u00e9rez",
     "directories": {
       "output": "release",
@@ -34,8 +34,8 @@
     ],
     "extraResources": [
       {
-        "from": "../../agent-wt",
-        "to": "bin/agent-wt"
+        "from": "../../ramify",
+        "to": "bin/ramify"
       },
       {
         "from": "resources/trayTemplate.png",
@@ -64,18 +64,19 @@
       }
     },
     "dmg": {
-      "title": "agent-wt",
+      "title": "Ramify",
       "iconSize": 96
     },
     "electronVersion": "45.2.2",
     "electronDist": "../../node_modules/electron/dist",
     "protocols": [
       {
-        "name": "agent-wt",
+        "name": "Ramify",
         "schemes": [
-          "agent-wt"
+          "ramify"
         ]
       }
-    ]
+    ],
+    "artifactName": "ramify-${version}-${arch}.${ext}"
   }
 }
