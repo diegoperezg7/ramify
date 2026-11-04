@@ -514,8 +514,24 @@ shared_branch_at() {
   printf '%s' "$branch"
 }
 
+# The folder a terminal command commits in, when the command runs `git commit`: the -C folder,
+# else a leading `cd <dir> &&`, else the session folder. Prints nothing when there is no commit.
+commit_dir() {
+  local cmd="$1" cwd="$2" dir
+  printf '%s' "$cmd" | grep -Eq '(^|[;&|(]|[[:space:]])git([[:space:]]+-[Cc][[:space:]]+[^[:space:]]+)*[[:space:]]+commit([[:space:]]|$)' || return 1
+  dir=$(printf '%s' "$cmd" | sed -nE 's/.*git[[:space:]]+-C[[:space:]]+("([^"]*)"|'"'"'([^'"'"']*)'"'"'|([^[:space:]]+)).*/\2\3\4/p' | head -1)
+  [ -n "$dir" ] || dir=$(printf '%s' "$cmd" | sed -nE 's/^[[:space:]]*cd[[:space:]]+("([^"]*)"|'"'"'([^'"'"']*)'"'"'|([^[:space:];&]+))[[:space:]]*(&&|;).*/\2\3\4/p' | head -1)
+  case "$dir" in
+    '') dir="$cwd" ;;
+    '~'|'~/'*) dir="$HOME${dir#\~}" ;;
+    /*|[A-Za-z]:*) ;;
+    *) dir="$cwd/$dir" ;;
+  esac
+  printf '%s' "$dir"
+}
+
 cmd_hook() {
-  local input name cwd wt main branch file slug repo
+  local input name cwd wt main branch file slug repo session base n owner dir cmd
   # Hooks never get in the way when they cannot run: without jq they do nothing.
   if ! command -v jq >/dev/null; then
     case "${1:-}" in session-start|guard) exit 0 ;; esac
@@ -526,16 +542,32 @@ cmd_hook() {
     create)
       name=$(printf '%s' "$input" | jq -r '.name')
       cwd=$(printf '%s' "$input" | jq -r '.cwd')
+      session=$(printf '%s' "$input" | jq -r '.session_id // empty')
       cd "$cwd"
       # feat-login → feat/login; anything else keeps the worktree- prefix.
       case "$name" in
-        feat-*|fix-*|docs-*|refactor-*|test-*|chore-*|perf-*) branch="${name%%-*}/${name#*-}" ;;
-        *) branch="worktree-$name" ;;
+        feat-*|fix-*|docs-*|refactor-*|test-*|chore-*|perf-*) base="${name%%-*}/${name#*-}" ;;
+        *) base="worktree-$name" ;;
       esac
-      # The same name again (a resumed session) reuses its worktree.
-      main=$(main_checkout "$PWD"); repo=$(basename "$main"); slug=$(slugify "$branch")
-      if [ -d "$ROOT/$repo/$slug" ]; then (cd "$ROOT/$repo/$slug" && abspwd); exit 0; fi
+      main=$(main_checkout "$PWD"); repo=$(basename "$main")
+      mkdir -p "$ROOT/$repo/.claims"
+      # The same name again from the same conversation (a resumed session) reuses its worktree. Another
+      # conversation that picks the same name gets the next free one (feat/login-2), never a folder
+      # someone else works in. A worktree without a recorded conversation is reused, as before.
+      n=1; branch=$base
+      while :; do
+        slug=$(slugify "$branch"); dir="$ROOT/$repo/$slug"
+        if [ -d "$dir" ]; then
+          owner=$(env_get "$dir" WT_SESSION)
+          if [ -z "$session" ] || [ -z "$owner" ] || [ "$owner" = "$session" ]; then (cd "$dir" && abspwd); exit 0; fi
+        elif mkdir "$ROOT/$repo/.claims/$slug" 2>/dev/null; then
+          break  # claimed: two conversations starting at once cannot both take this name
+        fi
+        n=$((n + 1)); branch="$base-$n"
+      done
       create "$branch" "" 1 claude
+      rmdir "$ROOT/$repo/.claims/$slug" 2>/dev/null || true
+      [ -z "$session" ] || env_set "$CREATED_WT" WT_SESSION "$session"
       printf '%s\n' "$CREATED_WT" ;;
     remove)
       wt=$(printf '%s' "$input" | jq -r '.worktree_path')
@@ -554,6 +586,17 @@ cmd_hook() {
         + "and ports the project needs, and you continue there. Reading code and answering questions do not need it. "
         + "Edits on " + $b + " are blocked unless the user runs: git config ramify.allowMain true")}}' ;;
     guard)
+      # A commit from the terminal on the shared branch is refused like an edit.
+      cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty')
+      if [ -n "$cmd" ]; then
+        dir=$(commit_dir "$cmd" "$(printf '%s' "$input" | jq -r '.cwd // empty')") || exit 0
+        branch=$(shared_branch_at "$dir") || exit 0
+        jq -n --arg b "$branch" '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason:
+          ("This commit would land on " + $b + ", the shared branch. Call the EnterWorktree tool first with a short conventional "
+          + "name for the task (feat-..., fix-...), make the change there and commit in that worktree. "
+          + "(To allow commits on " + $b + " in this repository the user runs: git config ramify.allowMain true)")}}'
+        exit 0
+      fi
       # Edits on the shared branch are refused with the way out: a worktree of its own.
       file=$(printf '%s' "$input" | jq -r '.tool_input.file_path // .tool_input.notebook_path // empty')
       [ -n "$file" ] || exit 0

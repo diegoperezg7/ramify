@@ -188,8 +188,21 @@ check "conventional names become conventional branches" 'git show-ref --quiet re
 check "two sessions get two folders and two branches" '[ -n "$p1" ] && [ -n "$p2" ] && [ "$p1" != "$p2" ] && [ "$(git -C "$p1" branch --show-current)" = feat/login ] && [ "$(git -C "$p2" branch --show-current)" = fix/cart-total ]'
 p1b=$(printf '{"name":"feat-login","cwd":"%s"}' "$T/demo" | "$AW" hook create 2>/dev/null | tail -1)
 check "the same name again reuses its worktree" '[ "$p1b" = "$p1" ]'
+s1=$(printf '{"name":"feat-pay","cwd":"%s","session_id":"s-one"}' "$T/demo" | "$AW" hook create 2>/dev/null | tail -1)
+s1b=$(printf '{"name":"feat-pay","cwd":"%s","session_id":"s-one"}' "$T/demo" | "$AW" hook create 2>/dev/null | tail -1)
+s2=$(printf '{"name":"feat-pay","cwd":"%s","session_id":"s-two"}' "$T/demo" | "$AW" hook create 2>/dev/null | tail -1)
+check "the same conversation resumes its own worktree" '[ -n "$s1" ] && [ "$s1b" = "$s1" ]'
+check "another conversation with the same name gets a worktree of its own" '[ -n "$s2" ] && [ "$s2" != "$s1" ] && [ "$(git -C "$s2" branch --show-current)" = feat/pay-2 ]'
 g=$(printf '{"cwd":"%s","tool_name":"Edit","tool_input":{"file_path":"%s/a.txt"}}' "$p1" "$p1" | "$AW" hook guard 2>/dev/null)
 check "edits inside its worktree are allowed" '[ -z "$g" ]'
+g=$(printf '{"cwd":"%s","tool_name":"Bash","tool_input":{"command":"git add -A && git commit -m wip"}}' "$T/demo" | "$AW" hook guard 2>/dev/null)
+check "a terminal commit on the shared branch is denied" 'printf "%s" "$g" | jq -e ".hookSpecificOutput.permissionDecision == \"deny\"" >/dev/null'
+g=$(printf '{"cwd":"%s","tool_name":"Bash","tool_input":{"command":"git -C %s commit -m wip"}}' "$T/demo" "$p1" | "$AW" hook guard 2>/dev/null)
+check "a terminal commit in its worktree (git -C) is allowed" '[ -z "$g" ]'
+g=$(printf '{"cwd":"%s","tool_name":"Bash","tool_input":{"command":"cd %s && git commit -m wip"}}' "$T/demo" "$p1" | "$AW" hook guard 2>/dev/null)
+check "a terminal commit after cd into its worktree is allowed" '[ -z "$g" ]'
+g=$(printf '{"cwd":"%s","tool_name":"Bash","tool_input":{"command":"git status && git log -1"}}' "$T/demo" | "$AW" hook guard 2>/dev/null)
+check "other terminal commands on the shared branch are allowed" '[ -z "$g" ]'
 ss=$(printf '{"cwd":"%s"}' "$p1" | "$AW" hook session-start 2>/dev/null)
 check "a session inside a worktree gets no warning" '[ -z "$ss" ]'
 g=$(printf '{"cwd":"/","tool_name":"Write","tool_input":{"file_path":"%s/notes.txt"}}' "$T" | "$AW" hook guard 2>/dev/null)
@@ -197,6 +210,8 @@ check "files outside any repository are allowed" '[ -z "$g" ]'
 git config ramify.allowMain true
 g=$(printf '{"cwd":"%s","tool_name":"Write","tool_input":{"file_path":"%s/x.txt"}}' "$T/demo" "$T/demo" | "$AW" hook guard 2>/dev/null)
 check "git config ramify.allowMain lets this repository edit on main" '[ -z "$g" ]'
+g=$(printf '{"cwd":"%s","tool_name":"Bash","tool_input":{"command":"git commit -m wip"}}' "$T/demo" | "$AW" hook guard 2>/dev/null)
+check "git config ramify.allowMain lets this repository commit on main" '[ -z "$g" ]'
 git config --unset ramify.allowMain
 g=$(printf '{"cwd":"%s","tool_name":"Write","tool_input":{"file_path":"%s/x.txt"}}' "$T/demo" "$T/demo" | RAMIFY_ALLOW_MAIN=1 "$AW" hook guard 2>/dev/null)
 check "RAMIFY_ALLOW_MAIN lets one session edit on main" '[ -z "$g" ]'
