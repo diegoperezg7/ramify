@@ -4,6 +4,7 @@ import { bridge } from '../bridge'
 import { relTime } from '../i18n'
 import { useStore } from '../store'
 import type { GithubRepo } from '../types'
+import { BrandIcon } from './BrandIcon'
 
 export function GithubDialog() {
   const t = useStore((s) => s.t)
@@ -74,7 +75,7 @@ export function GithubDialog() {
                 <span>{r.nameWithOwner.split('/')[1]}</span>
                 {r.isPrivate && <span className="tag"><Lock size={11} />{t('privateRepo')}</span>}
                 {r.isFork && <span className="tag"><GitFork size={11} />{t('fork')}</span>}
-                {r.language && <span className="tag">{r.language}</span>}
+                {r.language && <span className="tag"><BrandIcon name={r.language} size={11} />{r.language}</span>}
               </div>
               {r.description && <p className="gh-desc">{r.description}</p>}
               <p className="gh-meta">{r.nameWithOwner.split('/')[0]} · {t('lastPush')} {relTime(lang, Math.floor(Date.parse(r.pushedAt) / 1000), now)}

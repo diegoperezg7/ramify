@@ -1,4 +1,5 @@
 import { Loader2 } from 'lucide-react'
+import { AgentBadge } from './AgentBadge'
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { agentVar, KNOWN_AGENTS } from '../agents'
 import { useStore } from '../store'
@@ -55,7 +56,7 @@ export function CreateDialog() {
             {KNOWN_AGENTS.map((a) => (
               <button key={a} type="button" className={`agent-option${agent === a ? ' is-on' : ''}`}
                 style={{ ['--c' as string]: agentVar(a) }} onClick={() => setAgent(a)} aria-pressed={agent === a}>
-                <span className="dot" />{a}
+                <AgentBadge agent={a} size={18} />{a}
               </button>
             ))}
             <button type="button" className={`agent-option${agent === '' ? ' is-on' : ''}`} onClick={() => setAgent('')} aria-pressed={agent === ''}>

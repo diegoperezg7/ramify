@@ -16,4 +16,4 @@ export function agentVar(agent: string | undefined | null): string {
   return slot ? `var(--agent-${slot})` : 'var(--agent-other)'
 }
 
-export const KNOWN_AGENTS = ['claude', 'codex', 'gemini', 'copilot', 'cursor', 'opencode', 'aider', 'amp']
+export const KNOWN_AGENTS = ['claude', 'codex', 'gemini', 'copilot', 'cursor', 'opencode', 'amp', 'qwen', 'goose', 'kimi', 'cline', 'kilocode', 'kiro-cli', 'aider']

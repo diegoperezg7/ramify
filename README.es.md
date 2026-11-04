@@ -260,6 +260,9 @@ Todos corren en la CI.
 Issues y pull requests son bienvenidos. Antes de abrir una PR pasa las tres baterías de tests de arriba; si cambias
 `ui/web`, recompílalo con `npm run build:web` y sincroniza el plugin con `scripts/sync-plugin.sh` (CI lo comprueba).
 
+Los logos de las herramientas con las que trabaja Ramify son marcas de sus dueños y solo se muestran para identificarlas. Los iconos vienen de
+[LobeHub Icons](https://github.com/lobehub/lobe-icons) (MIT), [Simple Icons](https://simpleicons.org) (CC0) y [Devicon](https://devicon.dev) (MIT); `node scripts/brand-icons.mjs` los regenera.
+
 ## Licencia
 
 [MIT](LICENSE)

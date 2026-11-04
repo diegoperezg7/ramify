@@ -72,7 +72,8 @@ describe('web UI', () => {
     await page.click('.wt-row:has-text("feat/checkout")')
     await page.waitForSelector('.file:has-text("draft.ts")')
     await page.click('.file:has-text("pay.ts")')
-    assert.match(await (await page.waitForSelector('pre.diff')).textContent() ?? '', /\+export const pay = 1/)
+    // GitHub-style rows: the added line sits in a green row with its new line number.
+    assert.match(await (await page.waitForSelector('.diff .dl-add')).textContent() ?? '', /export const pay = 1/)
     assert.deepEqual(errors, [])
     await page.close()
   })

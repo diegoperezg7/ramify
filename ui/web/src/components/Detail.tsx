@@ -1,16 +1,17 @@
 import { Check, Copy, ExternalLink, FolderOpen, GitMerge, Play, Trash2, X } from 'lucide-react'
+import { BrandIcon } from './BrandIcon'
 import { useState } from 'react'
 import { agentVar } from '../agents'
 import { bridge } from '../bridge'
 import { relTime } from '../i18n'
 import { useStore } from '../store'
 import { Dialog } from './Dialog'
-import { DiffView } from './DiffView'
+import { DiffStat, DiffView } from './DiffView'
 import { AgentBadge } from './AgentBadge'
 import { Activity } from './Activity'
 import { upstreamLabel } from './WorktreeList'
 
-const IDE_LABELS: Record<string, string> = { xcode: 'Xcode', cursor: 'Cursor', code: 'VS Code', zed: 'Zed', idea: 'IntelliJ' }
+const IDE_LABELS: Record<string, string> = { xcode: 'Xcode', cursor: 'Cursor', code: 'VS Code', zed: 'Zed', idea: 'IntelliJ IDEA' }
 
 export function Detail() {
   const state = useStore((s) => s.state)!
@@ -76,7 +77,7 @@ export function Detail() {
           <span className="muted small">{t('openIn')}</span>
           {(caps?.ides ?? []).filter((id) => id !== 'Finder').map((id) => (
             <button key={id} type="button" className="btn btn-ghost" disabled={busy}
-              onClick={() => run(() => bridge.open(repo, w.path, id))}>{IDE_LABELS[id] ?? id}</button>
+              onClick={() => run(() => bridge.open(repo, w.path, id))}><BrandIcon name={IDE_LABELS[id] ?? id} size={14} />{IDE_LABELS[id] ?? id}</button>
           ))}
           {caps?.ides.includes('Finder') && (
             <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => run(() => bridge.open(repo, w.path, 'Finder'))}>
@@ -129,7 +130,8 @@ export function Detail() {
                     <span className={`st st-${f.status === '?' ? 'A' : f.status}`}>{f.status === '?' ? 'A' : f.status}</span>
                     <span className="fname">{f.file}</span>
                     {f.uncommitted && <span className="pending">{t('pending')}</span>}
-                    {(f.add || f.del) && <span className="numstat"><ins>+{f.add}</ins><del>−{f.del}</del></span>}
+                    {(f.add || f.del) && <span className="numstat"><ins>+{f.add}</ins><del>−{f.del}</del>
+                      {f.add !== '-' && <DiffStat add={Number(f.add) || 0} del={Number(f.del) || 0} />}</span>}
                   </button>
                   {file === f.file && <DiffView />}
                 </li>

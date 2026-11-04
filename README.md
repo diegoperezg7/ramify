@@ -265,6 +265,9 @@ All of them run in CI.
 Issues and pull requests are welcome. Run the three test suites above before opening a PR; if you change
 `ui/web`, rebuild it with `npm run build:web` and sync the plugin with `scripts/sync-plugin.sh`, which CI checks.
 
+Brand marks of the tools Ramify works with are trademarks of their owners, shown only to identify them. Icons come from
+[LobeHub Icons](https://github.com/lobehub/lobe-icons) (MIT), [Simple Icons](https://simpleicons.org) (CC0) and [Devicon](https://devicon.dev) (MIT); `node scripts/brand-icons.mjs` regenerates them.
+
 ## License
 
 [MIT](LICENSE)

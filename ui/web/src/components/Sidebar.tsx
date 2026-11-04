@@ -36,7 +36,7 @@ export function Sidebar() {
           </button>
         </div>
         <div className="side-brand">
-          <Logo size={36} />
+          <Logo size={44} />
           <Wordmark className="side-brand-name" />
         </div>
         <div className="sidebar-section">

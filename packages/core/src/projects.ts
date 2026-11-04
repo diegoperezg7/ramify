@@ -6,7 +6,7 @@ import type { GithubRepo } from './types.ts'
 
 // Finding the projects a person works on: running agents, local clones and GitHub.
 
-export const AGENT_PROCESSES = ['claude', 'codex', 'gemini', 'copilot', 'cursor-agent', 'opencode', 'aider', 'amp', 'goose', 'droid', 'qwen', 'crush']
+export const AGENT_PROCESSES = ['claude', 'codex', 'gemini', 'copilot', 'cursor-agent', 'opencode', 'aider', 'amp', 'goose', 'droid', 'qwen', 'crush', 'kimi', 'cline', 'kilocode', 'kiro-cli', 'auggie']
 const INTERPRETERS = /^(node|bun|deno|[Pp]ython[\d.]*)$/
 
 function out(cmd: string, args: string[], env?: NodeJS.ProcessEnv, cwd?: string): Promise<{ code: number; stdout: string; stderr: string }> {

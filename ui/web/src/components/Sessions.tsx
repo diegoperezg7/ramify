@@ -6,6 +6,7 @@ import type { AgentSession } from '../types'
 import { agentVar } from '../agents'
 import { AgentBadge } from './AgentBadge'
 import { Dialog } from './Dialog'
+import { BrandIcon, hasBrand } from './BrandIcon'
 import { GithubIcon } from './GithubIcon'
 
 type Range = 'today' | 'week' | 'all'
@@ -21,7 +22,8 @@ export function duration(ms: number): string {
   return h < 24 ? `${h} h ${String(m % 60).padStart(2, '0')}` : `${Math.floor(h / 24)} d ${h % 24} h`
 }
 
-function ViaIcon({ via }: { via: AgentSession['via'] }) {
+function ViaIcon({ via, host }: { via: AgentSession['via']; host?: string }) {
+  if (hasBrand(host)) return <BrandIcon name={host} size={14} />
   if (via === 'ide') return <Code2 size={13} />
   if (via === 'app') return <AppWindow size={13} />
   return <SquareTerminal size={13} />
@@ -132,7 +134,7 @@ export function Sessions() {
                     {n > 1 && <span className="live-count" title={t('sessionsCount')}>×{n}</span>}
                     <span className="live-time" title={t('colDuration')}>{duration(now - s.start)}</span>
                   </div>
-                  <p className="live-where"><ViaIcon via={s.via} />{s.host}
+                  <p className="live-where"><ViaIcon via={s.via} host={s.host} />{s.host}
                     {s.inferred && <span className="tag" title={t('inferredHint')}>{t('inferred')}</span>}
                   </p>
                   <p className="live-project" title={s.cwd ?? undefined}>
@@ -170,7 +172,7 @@ export function Sessions() {
               {history.slice(0, 400).map((s) => (
                 <div key={s.id} className={`hist-row${s.end === null ? ' is-live' : ''}`} role="row">
                   <span className="hist-agent"><AgentBadge agent={s.agent} size={18} live={s.end === null} />{s.agent}</span>
-                  <span className="hist-where"><ViaIcon via={s.via} />{s.host}{s.inferred && <span className="tag" title={t('inferredHint')}>{t('inferred')}</span>}</span>
+                  <span className="hist-where"><ViaIcon via={s.via} host={s.host} />{s.host}{s.inferred && <span className="tag" title={t('inferredHint')}>{t('inferred')}</span>}</span>
                   <span className="hist-project" title={s.cwd ?? undefined}>
                     {s.repo ? <>{known(s.repo) ? <button type="button" className="link" onClick={() => setRepo(s.repo!)}>{base(s.repo)}</button> : base(s.repo)}
                       {s.branch && <span className="mono muted"> ⎇ {s.branch}</span>}</> : <span className="muted">{s.cwd ? (tilde(s.cwd) === '~' ? '~' : base(s.cwd)) : '—'}</span>}
