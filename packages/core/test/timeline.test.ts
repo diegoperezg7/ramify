@@ -75,3 +75,23 @@ describe('timeline', () => {
     assert.deepEqual(names, ['feat/search', 'fix/cart', 'old/spike'])
   })
 })
+
+describe('timeline: fast-forward merges', () => {
+  it('does not credit a fast-forwarded branch with a later merge of another branch', async () => {
+    commit(0.5, 'pre.txt', 'pre')
+    git(0.4, 'checkout', '-qb', 'ff/quick')
+    commit(0.4, 'quick.txt', 'quick fix')
+    git(0.4, 'checkout', '-q', 'main')
+    git(0.3, 'merge', '--ff-only', '-q', 'ff/quick')
+    git(0.3, 'checkout', '-qb', 'other/work')
+    commit(0.2, 'other.txt', 'other work')
+    git(0.2, 'checkout', '-q', 'main')
+    git(0.1, 'merge', '--no-ff', '-q', '-m', "Merge branch 'other/work'", 'other/work')
+    const engine = new Engine({ bin: BIN, env: base })
+    const by = Object.fromEntries((await engine.timeline(REPO, 0)).branches.map((b) => [b.name, b]))
+    assert.equal(by['ff/quick'].status, 'merged')
+    assert.equal(by['ff/quick'].merge, null)
+    assert.equal(by['other/work'].status, 'merged')
+    assert.ok(by['other/work'].merge)
+  })
+})

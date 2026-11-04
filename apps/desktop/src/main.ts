@@ -1,11 +1,11 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, safeStorage, screen, session, shell, Tray } from 'electron'
-import { execFileSync } from 'node:child_process'
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { execFile, execFileSync } from 'node:child_process'
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
   cloneGithub, createHandlers, defaultProjectsDir, dispatch, Engine, EngineError, githubRepos, idesFor, openInTerminal, originSlug,
-  accessibleRepos, AuthError, currentUser, hardenedGitEnv, isSafeExternal, sanitizeSettings, strings, installedTools, pollForTokens, publishGithub, pullRequestFor, pullRequestWithToken,
+  accessibleRepos, AuthError, currentUser, hardenedGitEnv, isSafeExternal, normPath, riskyGitConfig, sanitizeSettings, strings, installedTools, pollForTokens, publishGithub, pullRequestFor, pullRequestWithToken,
   refreshTokens, requestDeviceCode, scanRepos, scanSessions, SessionLog, sessionsCsv, type Resolved, type Tokens,
 } from '../../../packages/core/src/index.ts'
 import { GITHUB_APP } from './github-app.ts'
@@ -26,7 +26,8 @@ function loginPath(): string | undefined {
 const bin = app.isPackaged ? join(process.resourcesPath, 'bin', 'ramify') : resolve(__dirname, '../../../ramify')
 try { chmodSync(bin, 0o755) } catch { /* read-only bundle: already executable */ }
 const env = hardenedGitEnv({ ...process.env, PATH: loginPath() ?? process.env.PATH })
-const engine = new Engine({ bin, env })
+// The monitor below knows which agent runs in which worktree (by command line, not process name): share it.
+const engine = new Engine({ bin, env, running: () => new Map(live.map((l) => [l.path, l.agents])) })
 const es = () => app.getLocale().toLowerCase().startsWith('es')
 
 // --- persisted config ---------------------------------------------------------
@@ -54,12 +55,19 @@ function readConfig(): Config {
     return { repos: [], settings: { ...defaultSettings } }
   }
 }
-function writeConfig() { writeFileSync(configFile, JSON.stringify(config, null, 2)) }
+/** Written to a temporary file and renamed: a crash mid-write never leaves a broken config behind. */
+function writeConfig() {
+  const tmp = `${configFile}.tmp`
+  writeFileSync(tmp, JSON.stringify(config, null, 2))
+  renameSync(tmp, configFile)
+}
 
 const config = readConfig()
 for (const r of engine.discover()) if (!config.repos.includes(r)) config.repos.push(r)
-config.repos = config.repos.filter((r) => existsSync(r))
 writeConfig()
+
+/** Repositories on disks that are not mounted right now stay in the config; they are only hidden. */
+const presentRepos = () => config.repos.filter((r) => existsSync(r))
 
 function knownRepo(repo: string): string {
   if (!config.repos.includes(repo)) throw new EngineError('unknown repository')
@@ -87,15 +95,20 @@ async function cachedMain(dir: string): Promise<string | null> {
   return main
 }
 
-function worktreesOf(repo: string) {
+const gitOut = (args: string[]) => new Promise<string>((ok, fail) => {
+  execFile('git', args, { env, maxBuffer: 8 * 1024 * 1024 }, (err, stdout) => (err ? fail(err) : ok(String(stdout))))
+})
+
+async function worktreesOf(repo: string) {
   const hit = worktreeCache.get(repo)
   if (hit && Date.now() - hit.at < 15_000) return hit.list
-  const out = execFileSync('git', ['-C', repo, 'worktree', 'list', '--porcelain'], { env }).toString()
+  const out = await gitOut(['-C', repo, 'worktree', 'list', '--porcelain'])
   const list: { path: string; branch: string }[] = []
-  let path = ''
-  for (const line of out.split('\n')) {
-    if (line.startsWith('worktree ')) path = line.slice(9)
-    else if (line.startsWith('branch ')) list.push({ path, branch: line.slice(7).replace('refs/heads/', '') })
+  // Records are separated by a blank line; a detached HEAD (mid-rebase) is still a worktree, with no branch.
+  for (const rec of out.split('\n\n')) {
+    const path = /^worktree (.+)$/m.exec(rec)?.[1]
+    if (!path || /^bare$/m.test(rec)) continue
+    list.push({ path: normPath(path), branch: /^branch (.+)$/m.exec(rec)?.[1]?.replace('refs/heads/', '') ?? '' })
   }
   worktreeCache.set(repo, { at: Date.now(), list })
   return list
@@ -123,8 +136,11 @@ async function resolveCwd(cwd: string | null): Promise<Resolved & { worktree: st
   const main = await cachedMain(cwd)
   if (!main) return none
   let wt: { path: string; branch: string } | undefined
+  // Same spelling on both sides (Windows: C:\\ vs C:/, case): a session's cwd and git's worktree paths.
+  const here = normPath(cwd).toLowerCase()
   try {
-    wt = worktreesOf(main).filter((w) => cwd === w.path || cwd.startsWith(`${w.path}/`)).sort((a, b) => b.path.length - a.path.length)[0]
+    wt = (await worktreesOf(main)).filter((w) => { const p = w.path.toLowerCase(); return here === p || here.startsWith(`${p}/`) })
+      .sort((a, b) => b.path.length - a.path.length)[0]
   } catch { /* not readable */ }
   return { repo: main, branch: wt?.branch ?? null, github: await cachedSlug(main), worktree: wt?.path ?? null }
 }
@@ -218,12 +234,12 @@ async function monitor() {
   const n = live.reduce((sum, l) => sum + l.agents.length, 0)
   if (process.platform === 'darwin') app.dock?.setBadge(n ? String(n) : '')
   updateTray(n)
-  if (config.settings.notifications && Notification.isSupported()) for (const f of finished) notifyFinished(f)
+  if (config.settings.notifications && Notification.isSupported()) for (const f of finished) void notifyFinished(f)
 }
 
-function notifyFinished(f: Live) {
+async function notifyFinished(f: Live) {
   let changes = 0
-  try { changes = execFileSync('git', ['-C', f.path, 'status', '--porcelain'], { env }).toString().split('\n').filter(Boolean).length } catch { /* removed */ }
+  try { changes = (await gitOut(['-C', f.path, 'status', '--porcelain'])).split('\n').filter(Boolean).length } catch { /* removed */ }
   const who = f.agents.join(', ')
   const n = new Notification({
     title: es() ? `${who} ha terminado` : `${who} finished`,
@@ -248,8 +264,13 @@ function trayIcon() {
   return img
 }
 
+let traySignature = ''
 function updateTray(count: number) {
-  if (!config.settings.menuBar) { tray?.destroy(); tray = null; return }
+  if (!config.settings.menuBar) { tray?.destroy(); tray = null; traySignature = ''; return }
+  // Rebuilding the menu every scan costs work on the main thread: only when what it shows changed.
+  const signature = `${count}|${es()}|${live.map((l) => `${l.path}:${l.agents.join(',')}`).join(';')}`
+  if (tray && signature === traySignature) return
+  traySignature = signature
   if (!tray) {
     tray = new Tray(trayIcon())
     tray.setToolTip('Ramify')
@@ -291,6 +312,8 @@ let tokens: Tokens | null = null
 let account: GithubAccount['user'] | undefined
 let authState: { status: GithubAccount['status']; error?: string } = { status: 'signed-out' }
 let authAbort: AbortController | null = null
+/** Bumped on sign-out and cancel: a refresh or a sign-in that finishes afterwards is thrown away. */
+let authGeneration = 0
 
 function loadTokens(): Tokens | null {
   if (!safeStorage.isEncryptionAvailable()) return null
@@ -319,8 +342,10 @@ async function freshToken(): Promise<string | null> {
   if (!GITHUB_APP.clientId) return null
   tokens ??= loadTokens()
   if (!tokens) return null
+  const generation = authGeneration
   try {
     const fresh = await refreshTokens(GITHUB_APP.clientId, tokens)
+    if (generation !== authGeneration) return null // signed out meanwhile
     if (fresh !== tokens) saveTokens(fresh)
     return fresh.accessToken
   } catch (e) {
@@ -350,8 +375,10 @@ async function githubSignIn() {
   const code = await requestDeviceCode(GITHUB_APP.clientId)
   authState = { status: 'waiting' }
   // Only ever open GitHub's own page.
-  if (/^https:\/\/github\.com\//.test(code.verificationUri)) void shell.openExternal(code.verificationUri)
+  if (/^https:\/\/github\.com\//.test(code.verificationUri)) shell.openExternal(code.verificationUri).catch(() => { /* no browser */ })
+  const generation = ++authGeneration
   void pollForTokens(GITHUB_APP.clientId, code, abort.signal).then(async (t) => {
+    if (abort.signal.aborted || generation !== authGeneration) return // cancelled while the last poll was in flight
     saveTokens(t)
     account = await currentUser(t.accessToken).catch(() => undefined)
     authState = { status: 'signed-in' }
@@ -445,8 +472,7 @@ const handlers = {
     runInTerminal: (_name, cwd, command) => openInTerminal(config.settings.terminal, command, cwd),
   }),
   repos: async (): Promise<RepoInfo[]> => {
-    config.repos = config.repos.filter((r) => existsSync(r))
-    return Promise.all(config.repos.map(async (r) => ({
+    return Promise.all(presentRepos().map(async (r) => ({
       ...(await cachedInfo(r)),
       active: [...new Set(live.filter((l) => l.repo === r).flatMap((l) => l.agents))],
       github: await cachedSlug(r),
@@ -504,8 +530,8 @@ const handlers = {
   tools: () => installedTools(env),
   githubAccount: () => githubAccount(),
   githubSignIn: () => githubSignIn(),
-  githubCancel: () => { authAbort?.abort(); authAbort = null; authState = { status: 'signed-out' } },
-  githubSignOut: () => { authAbort?.abort(); saveTokens(null); account = undefined; authState = { status: 'signed-out' }; githubCache = null },
+  githubCancel: () => { authGeneration++; authAbort?.abort(); authAbort = null; authState = { status: 'signed-out' } },
+  githubSignOut: () => { authGeneration++; authAbort?.abort(); saveTokens(null); account = undefined; authState = { status: 'signed-out' }; githubCache = null },
   githubSync: () => githubSync(),
   suggestRepos: () => {
     const used = (p: string) => { try { return statSync(join(p, '.git')).mtimeMs } catch { return 0 } }
@@ -578,6 +604,16 @@ async function openTarget(target: string) {
       detail: `${real}\n\n${es() ? 'Ábrela solo si es tuya y confías en ella.' : 'Open it only if it is yours and you trust it.'}`,
     })
     if (response !== 0) return
+    // Settings that make git run programs: say which before anything reads the repository.
+    const risky = riskyGitConfig(real)
+    if (risky.length) {
+      const { response: go } = await dialog.showMessageBox(win!, {
+        type: 'warning', buttons: [es() ? 'Abrir de todos modos' : 'Open anyway', es() ? 'Cancelar' : 'Cancel'], defaultId: 1, cancelId: 1,
+        message: es() ? 'Este repositorio configura git para ejecutar programas' : 'This repository configures git to run programs',
+        detail: `${risky.join(', ')}\n\n${es() ? 'Si no lo has configurado tú, no lo abras.' : 'If you did not set this up yourself, do not open it.'}`,
+      })
+      if (go !== 0) return
+    }
   }
   try {
     const info = await addPath(path)
@@ -619,10 +655,14 @@ function createWindow() {
   win.webContents.on('did-finish-load', () => { if (pending) { const p = pending; pending = null; setTimeout(() => send(p), 300) } })
   win.webContents.on('will-navigate', (e) => e.preventDefault())
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (isSafeExternal(url)) void shell.openExternal(url)
+    if (isSafeExternal(url)) shell.openExternal(url).catch(() => { /* no handler */ })
     return { action: 'deny' }
   })
-  const saveBounds = () => { if (win && !win.isMinimized() && !win.isFullScreen()) { config.bounds = win.getBounds(); writeConfig() } }
+  let boundsTimer: ReturnType<typeof setTimeout> | undefined
+  const saveBounds = () => {
+    clearTimeout(boundsTimer)
+    boundsTimer = setTimeout(() => { if (win && !win.isMinimized() && !win.isFullScreen()) { config.bounds = win.getBounds(); writeConfig() } }, 500)
+  }
   win.on('resized', saveBounds)
   win.on('moved', saveBounds)
   win.on('closed', () => { win = null })

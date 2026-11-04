@@ -1,87 +1,169 @@
-<p align="center"><img src="docs/logo.png" width="112" alt="Ramify logo"></p>
+<p align="center"><img src="docs/logo.png" width="120" alt="Ramify"></p>
 
 <h1 align="center">Ramify</h1>
 
 <p align="center">
-  <b>One git worktree per task. Any coding agent. Any IDE.</b><br>
-  Run Claude Code, Codex, Gemini, Copilot, Cursor, OpenCode or Aider side by side on the same repository,<br>
-  each on its own branch, with its own ports, dependencies and simulator.
+  <b>Run every AI coding agent at once. Never lose track of a branch again.</b><br>
+  Claude Code, Codex, Gemini, Copilot, Cursor and 35 more, working side by side on the same repository,
+  each on its own branch, with its own ports and dependencies. Ramify sees them all, keeps them apart and
+  shows you what each one changed.
+</p>
+
+<p align="center">
+  <a href="https://github.com/diegoperezg7/ramify/releases/latest"><b>Download for macOS</b></a> ·
+  <a href="https://github.com/diegoperezg7/ramify/releases/latest"><b>Download for Windows</b></a> ·
+  <a href="https://github.com/diegoperezg7/ramify/releases/latest">VS Code / Cursor extension</a> ·
+  <a href="#install">CLI</a>
 </p>
 
 <p align="center">
   <a href="https://github.com/diegoperezg7/ramify/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/diegoperezg7/ramify/actions/workflows/ci.yml/badge.svg"></a>
-  <img alt="bash" src="https://img.shields.io/badge/bash-3.2%2B-4e4e4e">
   <img alt="platforms" src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4e4e4e">
+  <img alt="local first" src="https://img.shields.io/badge/local--first-no%20telemetry-1a7f37">
   <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-7c3aed"></a>
   <a href="README.es.md"><img alt="Español" src="https://img.shields.io/badge/lang-español-4e4e4e"></a>
 </p>
 
-<p align="center">
-  <a href="#quick-start">Quick start</a> ·
-  <a href="#usage">Usage</a> ·
-  <a href="#apps">Desktop app, extension and plugin</a> ·
-  <a href="#inside-a-worktree">Inside a worktree</a> ·
-  <a href="#safety">Safety</a>
-</p>
+<p align="center"><img src="docs/app-dark.png" alt="Ramify: three agents working on three branches of the same repository, with the GitHub-style diff of one of them"></p>
 
-<p align="center"><img src="docs/ls.svg" alt="ramify ls: five agents working on five branches of the same repository"></p>
+## The problem
+
+AI agents are fast, and you want more than one. Put two in the same folder and they overwrite each other's
+files. Give each its own branch and, a week later, nobody knows which branch had the fix you needed, which
+agent wrote it, or whether it was ever merged.
+
+**Ramify fixes both.** Every task gets its own git worktree, ready to run. Every AI session on your
+computer is detected by itself. And every branch is on one screen: what changed, who changed it, where it went.
+
+## What you get
+
+### 1. It sees every AI session, by itself
+
+<img src="docs/app-sessions.png" alt="AI sessions: five agents working now, with their terminal, repository and branch">
+
+Open Claude Code in a terminal, Codex in tmux, Cursor's chat or the ChatGPT app: Ramify notices, tells you
+which repository and branch each one is in and whether it is working or waiting for you. No buttons to press,
+no plugin to install in each tool.
+
+- **40 agent CLIs, 32 editors, 16 terminals and 14 AI apps** recognised, with their official logos.
+- It follows a conversation to the project it is really working in, even when the agent was started in your home folder.
+- A history of every session (where, which repo and branch, how long, its pull request), exported to CSV or JSON.
+
+### 2. One branch per agent, without the mess
+
+When two agents end up on the same branch, or one starts changing `main`, Ramify warns you (in the app and
+as a notification) and gives that agent its own branch in one click.
+
+Each worktree is ready to work in: ignored files such as `.env` copied, dependencies installed, its own block
+of ports and, for iOS, its own simulator. The same for every agent, from the app, the editor or the terminal.
+
+### 3. See exactly what each agent changed
+
+The diff you know from GitHub: line numbers, green for added, red for removed, a summary per file. Open the
+branch in the editors you actually have installed, launch the agent again, merge it, or remove it. Ramify
+refuses to delete anything that is not committed or not merged.
+
+### 4. Every branch on one timeline
+
+<img src="docs/app-timeline.png" alt="Branch timeline: active, stale and merged branches with their forks and merges">
+
+One band per branch, from where it forked to where it was merged, coloured by the agent that worked on it.
+Branches that were merged and deleted are rebuilt from their merge commits, so the story stays complete.
+
+### 5. Set up in a minute
+
+<img src="docs/app-onboarding.png" alt="Onboarding: the agents, editors, terminals and AI apps found on this computer">
+
+Ramify finds what you use on its own, signs in to GitHub with a code (read-only, you pick the repositories)
+and lays your projects out by what matters: where agents are working now, what is on this machine, and the rest of GitHub.
+
+## Works with
+
+<p align="center"><img src="docs/works-with.svg" alt="Works with Claude Code, Codex, Gemini CLI, Copilot, Cursor, Qwen Code, DeepSeek, Kimi, Mistral Vibe, Grok, Amp, OpenCode, Kiro, Junie, Cline, Goose, VS Code, Cursor, Windsurf, Antigravity, Zed, Xcode, IntelliJ, Android Studio, PyCharm, Trae, iTerm, Ghostty, Warp, WezTerm, Windows Terminal, tmux, ChatGPT, Claude and GitHub"></p>
+
+Any other agent works too: Ramify launches whatever command you give it.
+
+## Private by design
+
+- **Local-first, no telemetry.** Nothing about your code, prompts or sessions leaves your computer.
+- **GitHub, read-only.** Sign-in uses a GitHub App with the device flow: read access to repository metadata
+  and pull requests, only on the repositories you choose. No secret ships with the app.
+- **Tokens in the system keychain**, encrypted, refreshed every 8 hours, never written in plain text or logs,
+  never handed to the interface.
+- **Hardened.** A repository's own git settings cannot make Ramify run programs; the desktop window has a strict
+  Content Security Policy, no browser permissions and locked Electron fuses; links open only over https (or to your own machine).
+
+## Before and after
+
+| | Without Ramify | With Ramify |
+|---|---|---|
+| Two agents, one repository | They overwrite each other's files | Each on its own branch and folder |
+| A new branch for an agent | Copy `.env`, install dependencies, pick a free port… | One command or one click |
+| Which agent is doing what | Switch between terminal tabs | One screen, live, detected by itself |
+| An agent working on `main` | You find out later | A warning and a one-click branch |
+| What each agent changed | `git diff` in each folder | GitHub-style diff per branch |
+| Last month's branches | Gone from memory | A timeline, merged ones included |
+
+## Install
+
+**Desktop app** (macOS 12+ on Apple silicon or Intel, Windows 10+): download it from the
+[latest release](https://github.com/diegoperezg7/ramify/releases/latest). It is not signed yet: on macOS right-click it the first time and choose *Open*;
+on Windows choose *More info* → *Run anyway*. Windows needs [Git for Windows](https://git-scm.com/download/win).
+
+**VS Code / Cursor extension**: the `.vsix` in the [latest release](https://github.com/diegoperezg7/ramify/releases/latest), then
+`code --install-extension ramify-*.vsix` (or `cursor --install-extension …`).
+
+**CLI** (macOS and Linux, Windows through Git Bash):
+
+```bash
+git clone https://github.com/diegoperezg7/ramify.git
+cd ramify && ./install.sh          # puts ramify in ~/.local/bin
+```
+
+Requires `git` 2.20+ and `bash` 3.2+. Optional: `python3` for `ramify ui`, `jq` for the Claude Code hooks, `tmux` for `--tmux`.
+
+**Claude Code plugin**: every worktree Claude Code creates (`--worktree`, background sessions, `/batch`,
+subagents) goes through Ramify.
+
+```text
+/plugin marketplace add diegoperezg7/ramify
+/plugin install ramify@ramify
+```
 
 ## Quick start
 
 ```bash
-git clone https://github.com/diegoperezg7/ramify.git && cd ramify && ./install.sh
-
 cd ~/code/your-repo
 ramify new feat/login  -a claude -p "add login with magic links"
 ramify new fix/cart    -a codex  -p "fix the cart total rounding"
 ramify ls              # who is working where, what changed, what is ready to merge
 ```
 
-Each agent gets its own folder, branch, ports and dependencies. When one is done, review the diff,
-merge it as usual and `ramify rm` the worktree. Prefer a window? Download the
-[desktop app or the VS Code / Cursor extension](https://github.com/diegoperezg7/ramify/releases/latest).
+When an agent is done, review its diff in the app, merge it, and `ramify rm` the worktree.
 
-## Features
+## FAQ
 
-- **Any agent**: Claude Code, Codex, Gemini, Copilot, Cursor, OpenCode, Aider, Amp, or any command.
-- **Any IDE**: Xcode, Cursor, VS Code, Zed, IntelliJ, or any app.
-- **Ready to run**: ignored files copied, dependencies installed, a free block of ports, one simulator per worktree on iOS.
-- **See everything**: a branch graph coloured by agent, live detection of which agent is running where, diffs and merge from the UI.
-- **Every AI session on your machine**: the app finds Claude Code, Codex, Gemini… in any terminal or tmux, the AI chat of Cursor and VS Code, and desktop AI apps; keeps a history (where, which repo and branch, how long, its pull request) and exports it to CSV or JSON.
-- **Four front ends, one engine**: CLI, desktop app for macOS and Windows, VS Code / Cursor extension, Claude Code plugin.
-- **Hard to lose work**: removing a worktree refuses when anything is uncommitted or unmerged.
-- **Nothing in your repo**: no config files required, one line in `.git/info/exclude`.
+**Do I have to change how I work?** No. Keep opening agents the way you do now; Ramify notices them.
+Use `ramify new` (or the app's *New worktree*) when you want a fresh branch for a task.
 
-## Why
+**Does it send my code anywhere?** No. Everything runs on your computer. The only network calls are to
+github.com, and only if you sign in (or through the `gh` CLI you already use).
 
-Two agents in one checkout overwrite each other's files. `git worktree` fixes that, but a bare
-worktree is not ready to work in: no `.env`, no `node_modules`, no generated Xcode project, the same
-dev-server port as every other copy, and one shared simulator. Ramify does that setup in one
-command, the same way for every agent, so you can open five terminals and let five agents work.
+**Which agents does it support?** The 40 it recognises are detected and shown with their logos; any other
+command can be launched in a worktree all the same.
 
-## How it works
+**How does it detect the chat inside Cursor or VS Code?** From the editor's own workspace activity. Those
+sessions are marked *inferred*, because an editor being active is not proof of a conversation.
 
-<p align="center"><img src="docs/architecture.svg" alt="Ramify creates a worktree, copies ignored files, reserves ports, runs setup and launches the agent"></p>
+**Windows?** The app, the worktrees and session detection work on Windows. One difference: Windows does not let
+another program read a process's working folder, so terminal agents there are shown without their repository.
 
-1. **Worktree**: `~/.worktrees/<repo>/<name>`, outside the repo, so IDEs, test runners and file
-   watchers in the main checkout never index it. It branches from your current `HEAD` by default.
-2. **Ignored files**: files listed in `.worktreeinclude` (gitignore syntax, the same file Claude
-   Code reads) are copied over, such as `.env` or `Local.xcconfig`.
-3. **Ports**: each worktree gets its own block of 10 ports (`PORT` to `PORT+9`) starting at 4100.
-4. **Setup**: `.worktree/setup.sh` if the project has one, otherwise auto-detected:
-   `xcodegen generate`, `pnpm`/`yarn`/`bun`/`npm ci`, `uv sync`.
-5. **Launch**: the agent in the worktree with `.worktree.env` exported, and/or your IDE.
+**What happens to the branches when I am done?** Nothing you did not ask for. `ramify prune` removes only clean,
+merged worktrees, and `rm` refuses when there is anything uncommitted or unmerged.
 
-## Install
+## Reference
 
-```bash
-git clone https://github.com/diegoperezg7/ramify.git
-cd ramify && ./install.sh          # symlinks ramify into ~/.local/bin
-```
-
-Requires `git` 2.20+ and `bash` 3.2+ (macOS default works). `python3` for the dashboard, `jq` for the Claude Code hooks, `tmux` for `--tmux`.
-
-## Usage
+### Commands
 
 ```bash
 ramify new feat/login -a claude -p "add login with magic links"
@@ -92,94 +174,30 @@ ramify open fix/cart -a gemini                  # reopen an existing worktree wi
 
 ramify ls                                       # every worktree at a glance
 ramify graph                                    # branch graph with the agent on each branch
-ramify ui                                       # live web dashboard
+ramify ui                                       # live web dashboard in the browser
 ramify app                                      # open this repository in the desktop app
 ramify rm fix/cart                              # refuses if anything would be lost
 ramify prune                                    # remove clean worktrees that are already merged
 ```
 
 `-f <ref>` picks the base, `--no-setup` skips setup, and anything after `--` is passed to the agent.
-
-### Agents
-
-| `-a`       | Runs           | `-p` prompt is passed as |
-|------------|----------------|--------------------------|
-| `claude`   | `claude`       | first argument           |
-| `codex`    | `codex`        | first argument           |
-| `gemini`   | `gemini`       | `-i <prompt>`            |
-| `copilot`  | `copilot`      | `-i <prompt>`            |
-| `cursor`   | `cursor-agent` | first argument           |
-| `opencode` | `opencode`     | clipboard (no flag)      |
-| `aider`    | `aider`        | clipboard (no flag)      |
-| `amp`      | `amp`          | clipboard (no flag)      |
-| anything else | that command | clipboard             |
-
-`ls` also shows which agent process is **running** inside each worktree right now.
-
-### IDEs
-
-`-i xcode` opens the project's `.xcworkspace` or `.xcodeproj`. `cursor`, `code`, `zed` and `idea`
-are mapped to their apps, and any other value is opened as a macOS app name (`-i "Android Studio"`)
-or as a command on Linux.
-
-## See every branch
+`-a` takes any agent (`claude`, `codex`, `gemini`, `copilot`, `cursor`, `opencode`, `qwen`, `kimi`, `aider`…)
+or any other command; `-p` is passed the way each agent expects, or copied to the clipboard.
+`-i` opens an editor: `xcode`, `cursor`, `code`, `zed`, `idea`, or any app by name (`-i "Android Studio"`).
 
 <p align="center"><img src="docs/graph.svg" alt="ramify graph: commit graph of every worktree branch, labelled with its agent"></p>
 
-`ramify graph` lists which agent works on which branch and draws the commit graph of all of them,
-so you can see what each agent did, what is pushed and what is ready to merge.
+### How a worktree is prepared
 
-## Apps
+<p align="center"><img src="docs/architecture.svg" alt="Ramify creates a worktree, copies ignored files, reserves ports, runs setup and launches the agent"></p>
 
-The same interface runs in four places. All of them read the repository live, every few seconds.
+1. **Worktree** in `~/.worktrees/<repo>/<name>`, outside the repository, so editors and file watchers in the main checkout never index it.
+2. **Ignored files** listed in `.worktreeinclude` (gitignore syntax, the file Claude Code reads too) are copied, such as `.env`.
+3. **Ports**: a block of 10 (`PORT` to `PORT+9`) starting at 4100.
+4. **Setup**: `.worktree/setup.sh` if the project has one; otherwise `xcodegen generate`, `pnpm`/`yarn`/`bun`/`npm ci` or `uv sync`.
+5. **Launch**: the agent in the worktree with `.worktree.env` exported, and/or your editor.
 
-<p align="center"><img src="docs/app-dark.png" alt="Ramify desktop app: repositories with agents working now, worktrees, branch tree coloured by agent and the inspector with a diff"></p>
-
-| | What you get |
-|---|---|
-| **Desktop app** (macOS, Windows) | Lives in the menu bar with the number of agents working, puts it on the Dock icon and notifies you when an agent finishes (click to review its changes). `ramify app` opens the repository you are in. Every repository in one window. Repositories where an agent is running right now appear by themselves under *Working now*; your GitHub repositories are one click away (add the local clone or clone it). Create a worktree, pick the agent and it opens in Terminal, iTerm or Ghostty. ⌘K command palette, ⌘N new worktree, ↑/↓ to move. |
-| **AI sessions** (desktop app) | Every AI conversation on the machine, detected by itself: agent CLIs in any terminal (with the app they run in: Terminal, iTerm, Ghostty, tmux, Windows Terminal, an IDE), the AI chat of Cursor, VS Code + Copilot and Windsurf (inferred from editor activity, and marked as such) and the ChatGPT and Claude apps. Time spent, repositories, branches and their pull requests; export to CSV or JSON; repositories an agent worked in that are not on GitHub yet can be published from there. |
-| **VS Code / Cursor extension** | The dashboard as an editor tab (`Ramify: Open dashboard`, ⌘⌥W), agents launched in the integrated terminal, a status bar counter of agents working. |
-| **Claude Code plugin** | Every Claude Code worktree (`--worktree`, background sessions, `/batch`, subagents) is created by Ramify, plus `/ramify:status` and `/ramify:ui`. |
-| **Browser** (`ramify ui`) | Single repository dashboard from the terminal: 127.0.0.1 only, one-time token. |
-
-<p align="center">
-  <img src="docs/app-light.png" width="49%" alt="Ramify in light mode">
-  <img src="docs/app-palette.png" width="49%" alt="Ramify command palette">
-</p>
-
-Light and dark mode (or follow the system), English and Spanish, comfortable or compact density, and a layout that
-goes from three columns on a wide screen to a slide-over inspector and a phone-sized single column.
-
-### Install
-
-Prebuilt `.dmg` (Apple silicon and Intel), Windows `.exe` installer and `.vsix` are attached to every [release](https://github.com/diegoperezg7/ramify/releases/latest). To build them yourself:
-
-```bash
-# desktop app
-npm ci && npm run build:desktop        # → apps/desktop/release/ramify-<version>-arm64.dmg
-
-# VS Code / Cursor
-npm ci && npm run build:vscode         # → apps/vscode/ramify.vsix
-cursor --install-extension apps/vscode/ramify.vsix   # or: code --install-extension ...
-```
-
-```text
-# Claude Code plugin (use either the plugin or `ramify install claude-hooks`, not both)
-/plugin marketplace add diegoperezg7/ramify
-/plugin install ramify@ramify
-```
-
-The desktop app is not signed: on macOS, the first time, right-click it and choose *Open*; on Windows, SmartScreen asks once (*More info* → *Run anyway*). On Windows it needs [Git for Windows](https://git-scm.com/download/win), whose bash runs the `ramify` script. GitHub integration uses the
-`gh` CLI you are already signed in to. The browser dashboard needs `python3` and uses the prebuilt `ui/dist`.
-
-### How it is built
-
-`packages/core` is the engine in TypeScript (state, diffs, merge, create, project detection, GitHub). The desktop
-app (Electron) and the extension share it and bundle the `ramify` script, so they work without the CLI installed.
-`ui/web` is one React app that talks to whichever host it runs in: Electron IPC, VS Code webview messages or HTTP.
-
-## Inside a worktree
+### Inside a worktree
 
 Every worktree has a `.worktree.env`, excluded from git, that is exported into the agent:
 
@@ -204,7 +222,7 @@ that is installed: `~/.claude/CLAUDE.md`, `~/.codex/AGENTS.md`, `~/.gemini/GEMIN
 `~/.config/opencode/AGENTS.md`, `~/.copilot/copilot-instructions.md` and `~/.config/amp/AGENTS.md`.
 Nothing is written into your repositories.
 
-## Project setup
+### Project setup
 
 ```
 your-repo/
@@ -221,7 +239,7 @@ See [`examples/`](examples):
   worktree (`SIM_UDID`), deleted on removal.
 - [`web`](examples/web): `npm ci` and a `.env.local` that pins Vite and the API to the worktree's ports.
 
-## Claude Code integration
+### Claude Code integration
 
 ```bash
 ramify install claude-hooks
@@ -233,7 +251,7 @@ workflows and subagents with `isolation: worktree` all create their worktrees th
 with the same layout, ports and setup as every other agent. Claude Code keeps subagent worktrees
 after they finish, so run `ramify prune` now and then.
 
-## Safety
+### Safety
 
 - `rm` refuses when there are uncommitted changes, or commits that are neither merged nor pushed.
 - `rm --force` discards uncommitted changes but **never deletes a branch with unmerged commits**:
@@ -241,7 +259,7 @@ after they finish, so run `ramify prune` now and then.
 - `prune` only removes worktrees that are clean and already merged.
 - The main checkout is never touched, except for one line in `.git/info/exclude` (`/.worktree.env`).
 
-## Configuration
+### Configuration
 
 | Variable          | Default        |
 |-------------------|----------------|
@@ -250,24 +268,24 @@ after they finish, so run `ramify prune` now and then.
 | `RAMIFY_PORT_MAX` | `4990`         |
 | `NO_COLOR`        | unset          |
 
-## Tests
+### Tests
 
 ```bash
 bash tests/run.sh             # CLI, against throwaway repositories with stub agents (macOS and Linux)
-npm run test:core             # engine
+npm run test:core             # engine, session detection, GitHub sign-in, IPC checks, timeline (also on Windows)
 npm run test:e2e -w packages/core   # the real UI in Chromium: browser host, editor host, no clipping 390–1920px
 ```
 
-All of them run in CI.
+All of them run in CI; the core suite and the Windows installer build also run on Windows.
 
-## Contributing
+### Contributing
 
 Issues and pull requests are welcome. Run the three test suites above before opening a PR; if you change
 `ui/web`, rebuild it with `npm run build:web` and sync the plugin with `scripts/sync-plugin.sh`, which CI checks.
 
-Brand marks of the tools Ramify works with are trademarks of their owners, shown only to identify them. Icons come from
-[LobeHub Icons](https://github.com/lobehub/lobe-icons) (MIT), [Simple Icons](https://simpleicons.org) (CC0) and [Devicon](https://devicon.dev) (MIT); `node scripts/brand-icons.mjs` regenerates them.
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). Brand marks of the tools Ramify works with are trademarks of their owners, shown only to identify them.
+Icons come from [LobeHub Icons](https://github.com/lobehub/lobe-icons) (MIT), [Simple Icons](https://simpleicons.org) (CC0)
+and [Devicon](https://devicon.dev) (MIT); `node scripts/brand-icons.mjs` regenerates them.

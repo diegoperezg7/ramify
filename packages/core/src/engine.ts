@@ -49,6 +49,36 @@ export function hardenedGitEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 }
 
 /**
+ * Settings in a folder's own .git/config that make git run programs and that Ramify cannot switch off
+ * for every command (filters run on status, textconv and drivers on diff…). Read as text: nothing runs.
+ * Returns the offending keys, empty when the folder looks safe.
+ */
+export function riskyGitConfig(dir: string): string[] {
+  let gitDir = join(dir, '.git')
+  try {
+    const head = readFileSync(gitDir, 'utf8') // a worktree's .git is a file pointing at its git dir
+    const m = /^gitdir:\s*(.+)$/m.exec(head)
+    if (m) gitDir = resolve(dir, m[1].trim())
+  } catch { /* a folder, or no .git */ }
+  let text = ''
+  for (const f of [join(gitDir, 'config'), join(gitDir, '..', '..', 'config')]) {
+    try { text += `\n${readFileSync(f, 'utf8')}` } catch { /* not there */ }
+  }
+  const found = new Set<string>()
+  let section = ''
+  for (const raw of text.split('\n')) {
+    const line = raw.trim()
+    const sec = /^\[\s*([\w.-]+)/.exec(line)
+    if (sec) { section = sec[1].toLowerCase(); continue }
+    const key = /^([\w-]+)\s*=/.exec(line)?.[1]?.toLowerCase()
+    if (!key) continue
+    if (section === 'filter' || (section === 'diff' && ['textconv', 'command'].includes(key)) || (section === 'merge' && key === 'driver')
+      || (section === 'core' && ['fsmonitor', 'sshcommand', 'pager', 'editor', 'hookspath', 'askpass'].includes(key))) found.add(`${section}.${key}`)
+  }
+  return [...found]
+}
+
+/**
  * One spelling per folder. Windows: long names (not RUNNER~1), forward slashes as git prints them.
  * Elsewhere paths are already canonical.
  */
@@ -89,6 +119,11 @@ export interface EngineOptions {
   bin: string
   /** Environment for every child process (PATH, RAMIFY_ROOT...). */
   env?: NodeJS.ProcessEnv
+  /**
+   * Agents running right now, by worktree path, from a host that watches processes itself (the desktop app).
+   * The script only sees an agent by its process name, which misses agents that run on node or python.
+   */
+  running?: () => Map<string, string[]>
 }
 
 interface RunResult { code: number; stdout: string; stderr: string }
@@ -96,9 +131,11 @@ interface RunResult { code: number; stdout: string; stderr: string }
 export class Engine {
   private bin: string
   private env: NodeJS.ProcessEnv
+  private runningAgents?: () => Map<string, string[]>
 
   constructor(opts: EngineOptions) {
     this.bin = opts.bin
+    this.runningAgents = opts.running
     this.env = hardenedGitEnv({ ...process.env, ...opts.env, NO_COLOR: '1' })
   }
 
@@ -188,7 +225,10 @@ export class Engine {
   // --- reads -----------------------------------------------------------------
 
   async worktrees(repo: string): Promise<Worktree[]> {
-    return JSON.parse(await this.mustBin(['ls', '--json'], repo)) as Worktree[]
+    const list = JSON.parse(await this.mustBin(['ls', '--json'], repo)) as Worktree[]
+    const live = this.runningAgents?.()
+    if (live) for (const w of list) w.running = [...new Set([...w.running, ...(live.get(normPath(w.path)) ?? [])])]
+    return list
   }
 
   private async base(repo: string): Promise<string> {
@@ -388,31 +428,41 @@ export class Engine {
       let merge: TimelineBranch['merge'] = null
       let forkHash = (await this.git(repo, 'merge-base', base, name)).trim()
       if (inBase) {
-        const m = (await this.git(repo, 'rev-list', '--ancestry-path', '--merges', '--reverse', `${name}..${base}`)).split('\n')[0]?.trim()
-        if (m) {
-          merge = { hash: m, time: await this.commitTime(repo, m) }
-          forkHash = (await this.git(repo, 'merge-base', `${m}^1`, name)).trim()
+        // The merge that brought this branch in: its second parent contains the branch and its first does not.
+        // (A later merge of another branch is also on the ancestry path, so the first one found is not enough.)
+        const candidates = (await this.git(repo, 'rev-list', '--ancestry-path', '--merges', '--reverse', '-n', '50', `${name}..${base}`)).split('\n').filter(Boolean)
+        for (const m of candidates) {
+          const inSecond = (await this.run('git', ['-C', repo, 'merge-base', '--is-ancestor', name, `${m}^2`])).code === 0
+          const inFirst = (await this.run('git', ['-C', repo, 'merge-base', '--is-ancestor', name, `${m}^1`])).code === 0
+          if (inSecond && !inFirst) {
+            merge = { hash: m, time: await this.commitTime(repo, m) }
+            forkHash = (await this.git(repo, 'merge-base', `${m}^1`, name)).trim()
+            break
+          }
         }
       }
       if (!forkHash) continue
       const commits = await this.commitsOf(repo, `${forkHash}..${name}`)
-      // In the base with no merge commit and nothing of its own: a fresh branch, not a merged one.
-      const merged = inBase && !!merge && commits.length > 0
+      // In the base without a merge commit: fast-forwarded if the base moved past it, fresh if it is the base's tip.
+      const baseTip = (await this.git(repo, 'rev-parse', base)).trim()
+      const merged = inBase && (merge ? commits.length > 0 : tip !== baseTip)
       const wt = wts.find((w) => w.branch === name)
       const last = commits.at(-1)?.time ?? 0
       branches.push({
         name, agent: wt?.agent || null, exists: true, live: !!wt?.running.length, worktree: wt?.path ?? null,
-        status: merged && commits.length ? 'merged' : last >= week || wt?.running.length || !commits.length ? 'active' : 'stale',
+        status: merged ? 'merged' : last >= week || wt?.running.length || !commits.length ? 'active' : 'stale',
         fork: { hash: forkHash, time: await this.commitTime(repo, forkHash) }, merge, commits,
       })
     }
 
     // Branches merged and deleted: each merge commit on the base names one in its subject.
-    const merges = await this.git(repo, 'log', '--first-parent', '--merges', ...sinceArgs, '--format=%H%x1f%P%x1f%ct%x1f%s%x1e', base, '--')
+    // Capped: a long history with thousands of merged pull requests must not cost thousands of git calls.
+    const merges = await this.git(repo, 'log', '--first-parent', '--merges', '-n', '200', ...sinceArgs, '--format=%H%x1f%P%x1f%ct%x1f%s%x1e', base, '--')
+    const known = new Set(branches.flatMap((b) => b.commits.map((c) => c.hash)))
     for (const rec of merges.split('\x1e').map((l) => l.trim()).filter(Boolean)) {
       const [hash, parents, ct, subject] = rec.split('\x1f')
       const [p1, p2] = parents.split(' ')
-      if (!p2 || seenTips.has(p2) || branches.some((b) => b.commits.some((c) => c.hash === p2))) continue
+      if (!p2 || seenTips.has(p2) || known.has(p2)) continue
       const name = mergedBranchName(subject) ?? p2.slice(0, 7)
       const forkHash = (await this.git(repo, 'merge-base', p1, p2)).trim()
       branches.push({

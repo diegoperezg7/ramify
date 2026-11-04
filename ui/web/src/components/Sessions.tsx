@@ -183,7 +183,7 @@ export function Sessions() {
                     {s.repo ? <><FolderGit2 size={13} /><b>{base(s.repo)}</b>{s.branch && <span className="mono">⎇ {s.branch}</span>}</>
                       : s.cwd ? <span className="muted">{tilde(s.cwd)} · {t('noRepoFolder')}</span> : null}
                   </p>
-                  <Links s={s} known={known(s.repo)} onOpen={() => s.repo && setRepo(s.repo)} onPublish={() => setPublishing(s.repo)} t={t} />
+                  <Links s={s} known={known(s.repo)} onOpen={() => s.repo && setRepo(s.repo)} t={t} />
                 </article>
               ))}
             </div>
@@ -243,14 +243,14 @@ export function Sessions() {
   )
 }
 
-function Links({ s, known, onOpen, onPublish, t }: { s: AgentSession; known: boolean; onOpen: () => void; onPublish: () => void; t: ReturnType<typeof useStore.getState>['t'] }) {
+function Links({ s, known, onOpen, t }: { s: AgentSession; known: boolean; onOpen: () => void; t: ReturnType<typeof useStore.getState>['t'] }) {
   if (!s.repo) return null
   return (
     <div className="live-links">
       {known && <button type="button" className="btn btn-ghost" onClick={onOpen}><FolderGit2 size={14} />{t('openRepo')}</button>}
       {s.github
         ? <a className="btn btn-ghost" href={`https://github.com/${s.github}${s.branch ? `/tree/${s.branch}` : ''}`} target="_blank" rel="noreferrer"><GithubIcon size={14} />{s.github}<ExternalLink size={12} /></a>
-        : <button type="button" className="btn btn-ghost" onClick={onPublish}><Upload size={14} />{t('publish')}</button>}
+        : null}
       {s.pr && <a className="btn btn-ghost" href={s.pr.url} target="_blank" rel="noreferrer"><GitPullRequest size={14} />{t('pr')} #{s.pr.number} · {s.pr.state.toLowerCase()}</a>}
     </div>
   )

@@ -92,7 +92,7 @@ export function CommandPalette() {
           )
         })}
       </div>
-      <div className="palette-foot"><GitBranch size={12} />Ramify</div>
+      <div className="palette-foot"><GitBranch size={12} /><span className="wordmark">ramify</span></div>
     </dialog>
   )
 }

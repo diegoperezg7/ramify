@@ -39,6 +39,7 @@ interface Store {
   t: (key: Key, vars?: Record<string, string | number>) => string
   init: () => Promise<void>
   poll: () => Promise<void>
+  pollState: () => Promise<void>
   setRepo: (path: string) => void
   addRepo: () => Promise<void>
   removeRepo: (path: string) => Promise<void>
@@ -73,6 +74,7 @@ function save(key: string, value: string) {
 }
 
 let pollSeq = 0
+let polling = false
 const defaultLang: Lang = navigator.language.toLowerCase().startsWith('es') ? 'es' : 'en'
 let toastId = 0
 
@@ -118,8 +120,16 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   poll: async () => {
+    const { caps } = get()
+    if (get().view === 'sessions') { void get().refreshSessions(); if (caps?.multiRepo) void get().refreshRepos(); return }
+    // One poll at a time: a slow repository must not pile up processes every 2.5 s.
+    if (polling) return
+    polling = true
+    try { await get().pollState() } finally { polling = false }
+  },
+
+  pollState: async () => {
     const { caps, repo } = get()
-    if (get().view === 'sessions') void get().refreshSessions()
     if (caps?.multiRepo && !repo) { await get().refreshRepos(); return }
     const seq = ++pollSeq
     try {
@@ -189,7 +199,7 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   removeRepo: async (path) => {
-    await bridge.removeRepo(path)
+    try { await bridge.removeRepo(path) } catch (e) { get().toast('error', (e as Error).message); return }
     const repos = get().repos.filter((r) => r.path !== path)
     set({ repos })
     if (get().repo === path) get().setRepo(repos[0]?.path ?? '')

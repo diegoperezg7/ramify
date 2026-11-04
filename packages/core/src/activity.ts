@@ -301,8 +301,20 @@ export function aiAppMain(proc: Proc, procs: Map<number, Proc>, win = WIN): stri
 // An agent started in ~ that then works in ~/code/shop has its process cwd in ~. The agents' own
 // session files say where each conversation is: read them (locally, read-only) to find the project.
 
-/** Last "cwd" recorded in a JSONL transcript (reads only its tail). */
+const cwdCache = new Map<string, { stamp: string; cwd: string | null }>()
+
+/** Last "cwd" recorded in a JSONL transcript (reads only its tail, and only when the file changed). */
 export function lastCwd(file: string, bytes = 256 * 1024): string | null {
+  let stamp = ''
+  try { const st = statSync(file); stamp = `${st.mtimeMs}:${st.size}` } catch { return null }
+  const hit = cwdCache.get(file)
+  if (hit?.stamp === stamp) return hit.cwd
+  const cwd = readLastCwd(file, bytes)
+  cwdCache.set(file, { stamp, cwd })
+  return cwd
+}
+
+function readLastCwd(file: string, bytes: number): string | null {
   let fd: number | null = null
   try {
     fd = openSync(file, 'r')
@@ -326,6 +338,7 @@ export function lastCwd(file: string, bytes = 256 * 1024): string | null {
 }
 
 const transcriptCache = new Map<string, string>()
+const missingSince = new Map<string, number>()
 /** Claude Code: ~/.claude/sessions/<pid>.json → session id and status → its transcript's latest cwd. */
 export function claudeContext(pid: number, home = homedir()): { cwd: string | null; state?: SessionState } | null {
   let info: { sessionId?: string; status?: string; cwd?: string }
@@ -334,7 +347,9 @@ export function claudeContext(pid: number, home = homedir()): { cwd: string | nu
   let cwd: string | null = null
   if (info.sessionId) {
     let file = transcriptCache.get(info.sessionId)
-    if (!file || !existsSync(file)) {
+    const missing = missingSince.get(info.sessionId)
+    // A brand-new session has no transcript yet: look again at most every 30 s, not on every scan.
+    if ((!file || !existsSync(file)) && !(missing && Date.now() - missing < 30_000)) {
       const root = join(home, '.claude', 'projects')
       try {
         for (const d of readdirSync(root)) {
@@ -342,6 +357,8 @@ export function claudeContext(pid: number, home = homedir()): { cwd: string | nu
           if (existsSync(f)) { file = f; transcriptCache.set(info.sessionId, f); break }
         }
       } catch { /* no projects */ }
+      if (file && existsSync(file)) missingSince.delete(info.sessionId)
+      else missingSince.set(info.sessionId, Date.now())
     }
     if (file) cwd = lastCwd(file)
   }

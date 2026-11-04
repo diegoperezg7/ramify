@@ -154,3 +154,15 @@ describe('untrusted repositories', () => {
     assert.ok(!existsSync(marker('diff')), 'external diff ran')
   })
 })
+
+describe('folders from links', () => {
+  it('names the git settings that would run programs, reading the config as text', async () => {
+    const { riskyGitConfig } = await import('../src/engine.ts')
+    const dir = P(T, 'risky')
+    sh(T, 'init', '-q', '-b', 'main', dir)
+    assert.deepEqual(riskyGitConfig(dir), [])
+    sh(dir, 'config', 'filter.evil.clean', 'touch pwned')
+    sh(dir, 'config', 'diff.x.textconv', 'cat')
+    assert.deepEqual(riskyGitConfig(dir).sort(), ['diff.textconv', 'filter.clean'])
+  })
+})

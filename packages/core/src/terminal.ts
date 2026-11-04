@@ -17,10 +17,12 @@ function appleScriptString(s: string): string {
 /** Windows: Windows Terminal when installed, otherwise a Git Bash console. The command runs in Git Bash. */
 async function openOnWindows(command: string, cwd: string): Promise<void> {
   const bash = gitBash()
-  const args = ['--login', '-i', '-c', `${command}; exec bash --login -i`]
+  const script = `${command}; exec bash --login -i`
+  const args = ['--login', '-i', '-c', script]
   const wt = process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, 'Microsoft', 'WindowsApps', 'wt.exe') : ''
   const child = wt && existsSync(wt)
-    ? spawn(wt, ['-d', cwd, bash, ...args], { detached: true, stdio: 'ignore' })
+    // wt.exe splits its own command line on ';' (new tab), even inside an argument: escape them.
+    ? spawn(wt, ['-d', cwd, bash, '--login', '-i', '-c', script.replace(/;/g, '\\;')], { detached: true, stdio: 'ignore' })
     : spawn('cmd.exe', ['/c', 'start', '"Ramify"', bash, ...args], { cwd, detached: true, stdio: 'ignore', windowsVerbatimArguments: false })
   await new Promise<void>((resolve, reject) => { child.once('error', reject); child.once('spawn', () => resolve()) })
   child.unref()

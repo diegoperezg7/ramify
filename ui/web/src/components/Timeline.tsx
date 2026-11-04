@@ -45,7 +45,18 @@ export function Timeline() {
     let alive = true
     setData(null)
     setError(null)
-    const load = () => bridge.timeline(repo, range).then((d) => { if (alive) setData(d) }).catch((e: Error) => { if (alive) setError(e.message) })
+    // One load at a time: on a long history a load can take longer than the refresh interval.
+    let busy = false
+    const load = async () => {
+      if (busy) return
+      busy = true
+      try {
+        const d = await bridge.timeline(repo, range)
+        if (alive) { setData(d); setError(null) }
+      } catch (e) {
+        if (alive) setError((e as Error).message)
+      } finally { busy = false }
+    }
     void load()
     const id = setInterval(() => { if (!document.hidden) void load() }, 15_000)
     return () => { alive = false; clearInterval(id) }
@@ -109,7 +120,7 @@ export function Timeline() {
           <ul className="tl-labels" style={{ paddingTop: AXIS }}>
             <li className="tl-label is-base" style={{ height: ROW }}><GitBranch size={14} /><b className="mono">{data.base}</b><span className="muted small">{t('tlBase')}</span></li>
             {layout.branches.map((b) => (
-              <li key={b.name} className={`tl-label is-${b.status}`} style={{ height: ROW }}>
+              <li key={`${b.name}:${b.merge?.hash ?? 'tip'}`} className={`tl-label is-${b.status}`} style={{ height: ROW }}>
                 <button type="button" className="tl-label-btn" disabled={!b.worktree}
                   onClick={() => { if (b.worktree) { setView('repo'); select(b.worktree) } }}
                   title={`${b.name}\n${statusLabel(b)} · ${t('tlCommits', { n: b.commits.length })}`}>
@@ -147,7 +158,7 @@ export function Timeline() {
                 const forkVisible = b.fork.time >= layout.from
                 const r = 7
                 return (
-                  <g key={b.name} className={`tl-branch is-${b.status}`} style={{ ['--c' as string]: color }}>
+                  <g key={`${b.name}:${b.merge?.hash ?? 'tip'}`} className={`tl-branch is-${b.status}`} style={{ ['--c' as string]: color }}>
                     <title>{`${b.name} · ${statusLabel(b)} · ${t('tlCommits', { n: b.commits.length })}`}</title>
                     {forkVisible && <path className="tl-link" d={`M${xf},${yBase} V${y - r} Q${xf},${y} ${xf + r},${y} H${Math.max(xf + r, xs)}`} />}
                     <line className="tl-bar" x1={forkVisible ? xf + r : layout.x(layout.from)} x2={Math.max(xe, xs + 2)} y1={y} y2={y} />

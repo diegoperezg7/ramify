@@ -2,14 +2,14 @@
   "name": "ramify-desktop",
   "productName": "Ramify",
   "description": "One git worktree per task, for any coding agent",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "author": "Diego Pérez",
   "main": "dist/main.cjs",
   "scripts": {
     "build": "node build.mjs",
     "start": "node build.mjs && electron .",
-    "dist": "node build.mjs && CSC_IDENTITY_AUTO_DISCOVERY=${CSC_IDENTITY_AUTO_DISCOVERY:-false} electron-builder --mac --publish never",
+    "dist": "node build.mjs && node dist.mjs",
     "typecheck": "tsc -p .",
     "dist:win": "node build.mjs && electron-builder --win --publish never"
   },
