@@ -280,6 +280,8 @@ export interface Bridge {
   openPr(repo: string, path: string): Promise<{ message: string }>
   /** Commits per day (unix day start → count) across all branches, for the last `days` days. */
   commitDays(repo: string, days: number): Promise<Record<number, number>>
+  /** Commits of one local day (its midnight, unix seconds), newest first. */
+  dayCommits(repo: string, day: number): Promise<TimelineCommit[]>
   /** Every local branch and every branch merged into the base in the last `days` days (0: all history). */
   timeline(repo: string, days: number): Promise<Timeline>
   repos(): Promise<RepoInfo[]>

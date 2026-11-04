@@ -53,3 +53,66 @@ export function parseDiff(diff: string): DiffRow[] {
   }
   return rows
 }
+
+// --- control center: time with AI --------------------------------------------------------------
+
+type Timed = { agent: string; repo: string | null; via: string; start: number; end: number | null }
+
+/** Total length of a set of time spans, overlapping parts counted once (ms). */
+export function unionMs(spans: (readonly [number, number])[]): number {
+  const sorted = spans.filter(([a, b]) => b > a).sort((x, y) => x[0] - y[0])
+  let total = 0, s = 0, e = 0
+  for (const [a, b] of sorted) {
+    if (a > e) { total += e - s; s = a; e = b } else e = Math.max(e, b)
+  }
+  return total + e - s
+}
+
+/** Local midnights (ms) of the last `n` days, oldest first, by calendar date (so daylight-saving days fit). */
+export function lastDays(n: number, now: number): number[] {
+  const d = new Date(now)
+  return Array.from({ length: n }, (_, i) => new Date(d.getFullYear(), d.getMonth(), d.getDate() - (n - 1 - i)).getTime())
+}
+
+/** Work sessions only: an AI app left open is not time spent with an agent. */
+const work = <T extends Timed>(sessions: T[]) => sessions.filter((s) => s.via !== 'app')
+
+/** Per day, the time each agent worked (its parallel sessions counted once), clipped to the day. */
+export function agentTimeByDay(sessions: Timed[], days: number[], now: number): { day: number; byAgent: Record<string, number> }[] {
+  const list = work(sessions)
+  return days.map((day, i) => {
+    const d = new Date(day)
+    const next = i + 1 < days.length ? days[i + 1] : new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime()
+    const spans = new Map<string, [number, number][]>()
+    for (const s of list) {
+      const a = Math.max(s.start, day), b = Math.min(s.end ?? now, next)
+      if (b > a) spans.set(s.agent, [...(spans.get(s.agent) ?? []), [a, b]])
+    }
+    return { day, byAgent: Object.fromEntries([...spans].map(([agent, sp]) => [agent, unionMs(sp)])) }
+  })
+}
+
+/** Time per key (project or agent) since `from`, overlapping sessions of the same key counted once, largest first. */
+export function timeBy(sessions: Timed[], key: (s: Timed) => string | null, from: number, now: number): { key: string; ms: number }[] {
+  const spans = new Map<string, [number, number][]>()
+  for (const s of work(sessions)) {
+    const k = key(s)
+    const a = Math.max(s.start, from), b = s.end ?? now
+    if (k && b > a) spans.set(k, [...(spans.get(k) ?? []), [a, b]])
+  }
+  return [...spans].map(([k, sp]) => ({ key: k, ms: unionMs(sp) })).filter((x) => x.ms > 0).sort((a, b) => b.ms - a.ms)
+}
+
+/** The last time each project had an agent, with the agents seen there since `from`; most recent first. */
+export function lastActivity(sessions: Timed[], from: number, now: number): { repo: string; last: number; agents: string[]; ms: number }[] {
+  const by = new Map<string, { last: number; agents: Set<string>; spans: [number, number][] }>()
+  for (const s of work(sessions)) {
+    if (!s.repo) continue
+    const end = s.end ?? now
+    const e = by.get(s.repo) ?? { last: 0, agents: new Set<string>(), spans: [] }
+    e.last = Math.max(e.last, end)
+    if (end >= from) { e.agents.add(s.agent); e.spans.push([Math.max(s.start, from), end]) }
+    by.set(s.repo, e)
+  }
+  return [...by].map(([repo, e]) => ({ repo, last: e.last, agents: [...e.agents], ms: unionMs(e.spans) })).sort((a, b) => b.last - a.last)
+}

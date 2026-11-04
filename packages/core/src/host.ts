@@ -59,6 +59,10 @@ export function createHandlers(o: HostOptions): Handlers {
       if (typeof days !== 'number' || !Number.isInteger(days) || days < 1 || days > 400) throw new Error('bad arguments')
       return engine.commitDays(await repo(r), days)
     },
+    dayCommits: async (r: string, day: number) => {
+      if (typeof day !== 'number' || !Number.isInteger(day) || day < 0) throw new Error('bad arguments')
+      return engine.dayCommits(await repo(r), day)
+    },
     timeline: async (r: string, days: number) => {
       if (typeof days !== 'number' || !Number.isInteger(days) || days < 0 || days > 3650) throw new Error('bad arguments')
       return engine.timeline(await repo(r), days)
