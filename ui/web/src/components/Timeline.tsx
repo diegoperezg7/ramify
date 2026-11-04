@@ -1,10 +1,11 @@
-import { GitBranch, GitMerge, Loader2 } from 'lucide-react'
+import { GitBranch, GitMerge } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { agentVar } from '../agents'
 import { bridge } from '../bridge'
 import { useStore } from '../store'
 import type { Timeline as TimelineData, TimelineBranch } from '../types'
 import { AgentBadge } from './AgentBadge'
+import { TimelineSkeleton } from './Skeletons'
 
 const RANGES = [7, 30, 90, 0] as const
 type Range = (typeof RANGES)[number]
@@ -128,7 +129,7 @@ export function Timeline() {
       </div>
 
       {error && <p className="ob-note is-error">{error}</p>}
-      {!data && !error && <p className="muted small"><Loader2 size={14} className="spin" /> …</p>}
+      {!data && !error && <TimelineSkeleton />}
       {data && layout && data.branches.length === 0 && <p className="muted">{t('tlEmpty')}</p>}
 
       {data && layout && data.branches.length > 0 && (

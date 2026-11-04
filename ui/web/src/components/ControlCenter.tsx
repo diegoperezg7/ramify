@@ -18,6 +18,7 @@ export function ControlCenter() {
   const t = useStore((s) => s.t)
   const lang = useStore((s) => s.lang)
   const repos = useStore((s) => s.repos)
+  const reposLoaded = useStore((s) => s.reposLoaded)
   const sessions = useStore((s) => s.sessions)
   const setModal = useStore((s) => s.setModal)
   const setRepo = useStore((s) => s.setRepo)
@@ -25,30 +26,48 @@ export function ControlCenter() {
   const select = useStore((s) => s.select)
   const toast = useStore((s) => s.toast)
   const [boards, setBoards] = useState<Board[] | null>(null)
-  const [days, setDays] = useState<Record<number, number>>({})
+  const [days, setDays] = useState<Record<number, number> | null>(null)
   const [shell, setShell] = useState<{ installed: boolean } | null>(null)
-  const [busy, setBusy] = useState<string | null>(null)
+  // Several actions can run at once (one per branch): each keeps its own spinner.
+  const [busy, setBusy] = useState<ReadonlySet<string>>(new Set())
   const [confirm, setConfirm] = useState<{ action: Action; board: Board; b: BranchHealth } | null>(null)
   const prsAt = useRef(new Map<string, { at: number; prs: PullRequest[] }>())
+  const gen = useRef(0)
 
   // Repositories with something being built: worktrees, or agents working right now.
+  // The store hands a new array on every 2.5 s poll; the effects below depend on these string keys
+  // instead, so they only restart when the list really changes (and the 15 s interval gets to run).
   const building = useMemo(() => repos.filter((r) => r.worktrees > 0 || r.active?.length), [repos])
+  const buildingKey = building.map((r) => `${r.path}|${r.github ?? ''}`).join('\n')
+  const reposKey = repos.map((r) => r.path).join('\n')
+  const buildingRef = useRef(building)
+  buildingRef.current = building
 
   const load = useCallback(async () => {
+    // Until the repository list arrives, an empty list is "loading", not "nothing being built".
+    if (!reposLoaded) return
+    // Only the newest load may write: an older one still in flight (an interval tick that started
+    // before an action) must not put back the state, or the pull requests, from before the action.
+    const mine = ++gen.current
     const out: Board[] = []
-    for (const r of building) {
+    const fetched = new Map<string, PullRequest[]>()
+    for (const r of buildingRef.current) {
       try {
         const health = await bridge.health(r.path)
-        let cached = prsAt.current.get(r.path)
+        const cached = prsAt.current.get(r.path)
+        let prs = cached?.prs ?? []
         if (!cached || Date.now() - cached.at > 60_000) {
-          cached = { at: Date.now(), prs: r.github ? await bridge.pullRequests(r.path).catch(() => []) : [] }
-          prsAt.current.set(r.path, cached)
+          prs = r.github ? await bridge.pullRequests(r.path).catch(() => []) : []
+          fetched.set(r.path, prs)
         }
-        if (health.branches.length) out.push({ repo: r.path, name: r.name, github: r.github ?? null, health, prs: cached.prs })
+        if (health.branches.length) out.push({ repo: r.path, name: r.name, github: r.github ?? null, health, prs })
       } catch { /* unreadable repository: skip it */ }
     }
+    if (mine !== gen.current) return
+    // Stamped when the answer is in, not when it was asked for.
+    for (const [path, prs] of fetched) prsAt.current.set(path, { at: Date.now(), prs })
     setBoards(out)
-  }, [building])
+  }, [buildingKey, reposLoaded])
 
   useEffect(() => {
     let alive = true
@@ -61,26 +80,31 @@ export function ControlCenter() {
 
   useEffect(() => {
     void bridge.shellIntegration().then(setShell).catch(() => setShell(null))
+    if (!reposLoaded) return
+    let alive = true
     void (async () => {
       const merged: Record<number, number> = {}
-      for (const r of repos) {
-        try { for (const [d, n] of Object.entries(await bridge.commitDays(r.path, 182))) merged[Number(d)] = (merged[Number(d)] ?? 0) + n } catch { /* skip */ }
+      for (const path of reposKey ? reposKey.split('\n') : []) {
+        try { for (const [d, n] of Object.entries(await bridge.commitDays(path, 182))) merged[Number(d)] = (merged[Number(d)] ?? 0) + n } catch { /* skip */ }
       }
-      setDays(merged)
+      if (alive) setDays(merged)
     })()
-  }, [repos])
+    return () => { alive = false }
+  }, [reposKey, reposLoaded])
 
   const sessionsOf = (repo: string, branch: string) =>
     (sessions ?? []).filter((s) => s.end === null && !s.inferred && s.repo === repo && s.branch === branch)
   const stateOf = (list: AgentSession[]) => (list.some((s) => s.state === 'waiting') ? 'waiting' : list.some((s) => s.state === 'working' || !s.state) ? 'working' : list.length ? 'idle' : null)
 
   const run = async (key: string, fn: () => Promise<{ message: string }>) => {
-    setBusy(key)
-    try { const { message } = await fn(); toast('ok', message); prsAt.current.clear(); await load() } catch (e) { toast('error', (e as Error).message) } finally { setBusy(null) }
+    setBusy((s) => new Set(s).add(key))
+    try { const { message } = await fn(); toast('ok', message); prsAt.current.clear(); await load() } catch (e) { toast('error', (e as Error).message) } finally {
+      setBusy((s) => { const next = new Set(s); next.delete(key); return next })
+    }
   }
 
   const act = (action: Action, board: Board, b: BranchHealth, pr?: PullRequest) => {
-    const key = `${board.repo}#${b.branch}`
+    const key = b.path
     if (action === 'open') { setRepo(board.repo); select(b.path); return }
     if (action === 'view-pr' && pr) { window.open(pr.url, '_blank'); return }
     if (action === 'launch') { void run(key, () => bridge.launch(board.repo, b.path, b.agent || b.running[0] || 'claude')); return }
@@ -106,6 +130,9 @@ export function ControlCenter() {
         </div>
       </header>
 
+      {!boards && (
+        <p className="sess-summary" aria-hidden="true"><span><i className="skel" style={{ width: 150 }} /></span><span><i className="skel" style={{ width: 170 }} /></span><span><i className="skel" style={{ width: 130 }} /></span></p>
+      )}
       {boards && (
         <p className="sess-summary">
           <span><b>{totals.branches}</b> {t('ccBranches')}</span>
@@ -124,7 +151,7 @@ export function ControlCenter() {
 
       <Heatmap days={days} onOpen={() => setView('sessions')} />
 
-      {boards === null && <p className="muted small"><Loader2 size={14} className="spin" /> {t('loadingRepo')}</p>}
+      {boards === null && <BoardsSkeleton label={t('loadingRepo')} />}
       {boards?.length === 0 && (
         <div className="cc-empty">
           <p>{t('ccEmpty')}</p>
@@ -143,19 +170,20 @@ export function ControlCenter() {
           </header>
           <ul>
             {board.health.branches.map((b) => {
-              const pr = board.prs.find((p) => p.branch === b.branch)
+              // An old closed or merged pull request of the same branch name must not hide the open one.
+              const pr = board.prs.find((p) => p.branch === b.branch && p.state === 'OPEN') ?? board.prs.find((p) => p.branch === b.branch)
               const live = sessionsOf(board.repo, b.branch)
               const state = stateOf(live)
               const agent = b.agent || live[0]?.agent || b.running[0] || ''
               const next = nextAction(b, pr, !!board.github)
               const size = b.added + b.deleted
-              const key = `${board.repo}#${b.branch}`
+              const key = b.path
               return (
                 <li key={b.path} className={`cc-row cc-clickable${b.main ? ' is-main' : ''}`} onClick={(e) => { if (!fromControl(e)) act('open', board, b) }}>
                   {agent ? <AgentBadge agent={agent} size={24} live={state === 'working'} /> : <span className="cc-noagent" />}
                   <span className="row-main">
                     <span className="row-top">
-                      <button type="button" className="cc-branch" onClick={() => act('open', board, b)}>{b.main ? t('ccMainCheckout', { base: board.health.base }) : b.branch}</button>
+                      <button type="button" className="cc-branch" onClick={() => act('open', board, b)}>{b.main ? t('ccMainCheckout', { base: board.health.base }) : b.branch || '(detached)'}</button>
                       {state && <span className={`state-chip is-${state}`}>{t(state === 'working' ? 'stateWorking' : state === 'waiting' ? 'stateWaiting' : 'stateIdle')}</span>}
                       {b.merged && <span className="chip chip-ok"><Check size={11} />{t('ccMerged')}</span>}
                     </span>
@@ -180,9 +208,9 @@ export function ControlCenter() {
                     </span>
                   </span>
                   <span className="cc-actions">
-                    <button type="button" className={`btn ${next === 'move' || next === 'pr' || next === 'update' ? 'btn-primary' : 'btn-ghost'} btn-sm`} disabled={busy === key}
+                    <button type="button" className={`btn ${next === 'move' || next === 'pr' || next === 'update' ? 'btn-primary' : 'btn-ghost'} btn-sm`} disabled={busy.has(key)}
                       onClick={() => act(next, board, b, pr)}>
-                      {busy === key ? <Loader2 size={13} className="spin" /> : <ActionIcon action={next} />}{actionLabel(t, next, agent)}
+                      {busy.has(key) ? <Loader2 size={13} className="spin" /> : <ActionIcon action={next} />}{actionLabel(t, next, agent)}
                     </button>
                     <RowMenu b={b} pr={pr} onGithub={!!board.github} onPick={(a) => act(a, board, b, pr)} />
                   </span>
@@ -202,7 +230,7 @@ export function ControlCenter() {
           onConfirm={() => {
             const { action, board, b } = confirm
             setConfirm(null)
-            const key = `${board.repo}#${b.branch}`
+            const key = b.path
             if (action === 'move') void run(key, () => bridge.moveToBranch(board.repo, b.running[0] || b.agent || 'claude'))
             if (action === 'pr') void run(key, () => bridge.openPr(board.repo, b.path))
             if (action === 'merge') void run(key, () => bridge.merge(board.repo, b.path))
@@ -212,6 +240,31 @@ export function ControlCenter() {
         </Dialog>
       )}
     </main>
+  )
+}
+
+/** While the boards load: two cards shaped like the real ones, so nothing jumps when they arrive. */
+function BoardsSkeleton({ label }: { label: string }) {
+  return (
+    <div role="status" aria-label={label} aria-busy="true">
+      {[3, 2].map((rows, i) => (
+        <section key={i} className="repo-card cc-board cc-skel" aria-hidden="true">
+          <header><i className="skel" style={{ width: 15, height: 15 }} /><i className="skel" style={{ width: 90 }} /><i className="skel" style={{ width: 50 }} /></header>
+          <ul>
+            {Array.from({ length: rows }, (_, r) => (
+              <li key={r} className="cc-row">
+                <i className="skel" style={{ width: 24, height: 24, borderRadius: 7 }} />
+                <span className="row-main">
+                  <i className="skel" style={{ width: 120 + ((r * 37) % 60), height: 13 }} />
+                  <span className="cc-facts"><i className="skel" style={{ width: 64 }} /><i className="skel" style={{ width: 52 }} /><i className="skel" style={{ width: 150 }} /></span>
+                </span>
+                <i className="skel" style={{ width: 110, height: 30, borderRadius: 8 }} />
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+    </div>
   )
 }
 
@@ -251,7 +304,7 @@ function RowMenu({ b, pr, onGithub, onPick }: { b: BranchHealth; pr?: PullReques
     document.addEventListener('mousedown', close)
     return () => document.removeEventListener('mousedown', close)
   }, [open])
-  const items: Action[] = b.main ? ['move', 'open'] : ['open', 'launch', 'update', ...(onGithub && !pr ? ['pr' as const] : []), ...(pr?.state === 'OPEN' ? ['view-pr' as const] : []), 'merge', 'remove']
+  const items: Action[] = b.main ? ['move', 'open'] : ['open', 'launch', 'update', ...(onGithub && pr?.state !== 'OPEN' ? ['pr' as const] : []), ...(pr?.state === 'OPEN' ? ['view-pr' as const] : []), 'merge', 'remove']
   const agent = b.agent || b.running[0] || ''
   return (
     <div className="popover-anchor" ref={ref}>

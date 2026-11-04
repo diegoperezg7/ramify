@@ -228,6 +228,9 @@ export class Engine {
     const list = JSON.parse(await this.mustBin(['ls', '--json'], repo)) as Worktree[]
     const live = this.runningAgents?.()
     if (live) for (const w of list) w.running = [...new Set([...w.running, ...(live.get(normPath(w.path)) ?? [])])]
+    // A worktree made without `-a` has no agent of its own: show the one working in it right now,
+    // or an agent seen at work there reads as "no agent".
+    for (const w of list) if (!w.main && !w.agent && w.running.length) w.agent = w.running[0]
     return list
   }
 

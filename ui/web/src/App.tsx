@@ -1,4 +1,4 @@
-import { AlertTriangle, CheckCircle2, Loader2, Plus, XCircle } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, Plus, XCircle } from 'lucide-react'
 import { Logo, Wordmark } from './components/Logo'
 import { useEffect, useRef, useState } from 'react'
 import { Detail } from './components/Detail'
@@ -10,6 +10,7 @@ import { StatusBar } from './components/Stats'
 import { CommandPalette } from './components/CommandPalette'
 import { TopBar } from './components/TopBar'
 import { Sessions } from './components/Sessions'
+import { RepoSkeleton } from './components/Skeletons'
 import { Onboarding } from './components/Onboarding'
 import { Timeline } from './components/Timeline'
 import { ControlCenter } from './components/ControlCenter'
@@ -144,7 +145,7 @@ export function App() {
         )}
         {view === 'timeline' && caps?.timeline && !noRepos && <Timeline />}
         {view === 'repo' && !state && !noRepos && conn === 'ok' && (
-          <div className="loading-repo" role="status"><Loader2 size={18} className="spin" />{t('loadingRepo')}</div>
+          <RepoSkeleton />
         )}
         {view === 'repo' && state && !noRepos && (
           <>

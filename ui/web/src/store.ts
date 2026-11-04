@@ -14,6 +14,8 @@ interface Toast { id: number; kind: 'ok' | 'error'; text: string }
 interface Store {
   caps: Capabilities | null
   repos: RepoInfo[]
+  /** The repository list has been read at least once: an empty list means none, not "not loaded yet". */
+  reposLoaded: boolean
   repo: string
   state: State | null
   conn: Conn
@@ -81,6 +83,7 @@ let toastId = 0
 export const useStore = create<Store>((set, get) => ({
   caps: null,
   repos: [],
+  reposLoaded: false,
   repo: '',
   state: null,
   conn: 'ok',
@@ -113,9 +116,10 @@ export const useStore = create<Store>((set, get) => ({
     // First run of the desktop app: a short introduction built from what is installed here.
     if (caps?.sessions && get().settings && !get().settings!.onboarded) set({ modal: 'onboarding' })
     if (caps?.multiRepo) {
-      const repos = await bridge.repos()
+      // A failed first read must not stop the start-up: the next poll reads the list again.
+      const repos = await bridge.repos().catch(() => null)
       const saved = load('ramify-repo', '')
-      set({ repos, repo: repos.find((r) => r.path === saved)?.path ?? repos[0]?.path ?? '' })
+      if (repos) set({ repos, reposLoaded: true, repo: repos.find((r) => r.path === saved)?.path ?? repos[0]?.path ?? '' })
     }
     await get().poll()
   },
@@ -150,9 +154,9 @@ export const useStore = create<Store>((set, get) => ({
   refreshRepos: async () => {
     try {
       const repos = await bridge.repos()
-      set({ repos })
+      set({ repos, reposLoaded: true })
       if (!get().repo && repos[0]) get().setRepo(repos[0].path)
-    } catch { /* keep the last list */ }
+    } catch { set({ reposLoaded: true }) /* keep the last list */ }
   },
 
   addRepoPath: async (path) => {

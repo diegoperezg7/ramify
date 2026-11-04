@@ -8,7 +8,8 @@ const WEEKS = 26
 const dayStart = (d: Date) => Math.floor(new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() / 1000)
 
 /** The contribution grid: one square per day for the last 26 weeks, columns are weeks. */
-export function Heatmap({ days, onOpen }: { days: Record<number, number>; onOpen?: () => void }) {
+/** `days` is null while the commit counts load: the grid shows as a skeleton instead of an empty six months. */
+export function Heatmap({ days, onOpen }: { days: Record<number, number> | null; onOpen?: () => void }) {
   const t = useStore((s) => s.t)
   const lang = useStore((s) => s.lang)
   const grid = useMemo(() => {
@@ -20,7 +21,7 @@ export function Heatmap({ days, onOpen }: { days: Record<number, number>; onOpen
     const cells: { day: number; n: number }[] = []
     for (let i = WEEKS * 7 - 1; i >= 0; i--) {
       const d = dayStart(new Date(today.getFullYear(), today.getMonth(), today.getDate() + toSunday - i))
-      cells.push({ day: d, n: d > end ? -1 : days[d] ?? 0 })
+      cells.push({ day: d, n: d > end ? -1 : days?.[d] ?? 0 })
     }
     const level = levels(cells.map((c) => c.n))
     const total = cells.reduce((s, c) => s + Math.max(0, c.n), 0)
@@ -35,10 +36,14 @@ export function Heatmap({ days, onOpen }: { days: Record<number, number>; onOpen
     <figure className={`heatmap${onOpen ? ' cc-clickable' : ''}`} aria-label={t('heatTitle')}
       {...(onOpen && { role: 'button', tabIndex: 0, onClick: onOpen, onKeyDown: (e: KeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpen() } } })}>
       <figcaption>
-        <b>{t('heatTotal', { n: grid.total })}</b>
-        <span className="muted">{t('heatActive', { n: grid.active, w: WEEKS })}</span>
+        {days ? (
+          <>
+            <b>{t('heatTotal', { n: grid.total })}</b>
+            <span className="muted">{t('heatActive', { n: grid.active, w: WEEKS })}</span>
+          </>
+        ) : <><i className="skel" style={{ width: 220, height: 14 }} /><i className="skel" style={{ width: 120, height: 14 }} /></>}
       </figcaption>
-      <div className="heat-grid" role="img" aria-label={t('heatTotal', { n: grid.total })}>
+      <div className={`heat-grid${days ? '' : ' is-loading'}`} role="img" aria-label={days ? t('heatTotal', { n: grid.total }) : t('loadingRepo')} aria-busy={!days}>
         {weeks.map((week, w) => {
           const first = new Date(week[0].day * 1000)
           const showMonth = w === 0 || first.getDate() <= 7
@@ -47,7 +52,7 @@ export function Heatmap({ days, onOpen }: { days: Record<number, number>; onOpen
               <span className="heat-month">{showMonth ? month.format(first) : ''}</span>
               {week.map((c) => (
                 <i key={c.day} className={c.n < 0 ? 'is-future' : `l${grid.level(c.n)}`}
-                  title={c.n < 0 ? undefined : `${c.n === 1 ? t('heatCellOne') : t('heatCell', { n: c.n })} · ${fmt.format(c.day * 1000)}`} />
+                  title={c.n < 0 || !days ? undefined : `${c.n === 1 ? t('heatCellOne') : t('heatCell', { n: c.n })} · ${fmt.format(c.day * 1000)}`} />
               ))}
             </div>
           )

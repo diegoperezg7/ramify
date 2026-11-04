@@ -10,6 +10,7 @@ import { DiffStat, DiffView } from './DiffView'
 import { AgentBadge } from './AgentBadge'
 import { Activity } from './Activity'
 import { upstreamLabel } from './WorktreeList'
+import { Bar, ListSkeleton } from './Skeletons'
 
 export const IDE_LABELS: Record<string, string> = { xcode: 'Xcode', cursor: 'Cursor', code: 'VS Code', zed: 'Zed', idea: 'IntelliJ IDEA' }
 
@@ -112,16 +113,17 @@ export function Detail() {
 
       <div className="tabs" role="tablist">
         <button type="button" role="tab" aria-selected={tab === 'files'} onClick={() => setTab('files')}>
-          {t('files')} <span className="count">{detail?.files.length ?? '·'}</span>
+          {t('files')} <span className="count">{detail ? detail.files.length : <Bar w={10} h={9} />}</span>
         </button>
         {!w.main && (
           <button type="button" role="tab" aria-selected={tab === 'commits'} onClick={() => setTab('commits')}>
-            {t('commits')} <span className="count">{detail?.commits.length ?? '·'}</span>
+            {t('commits')} <span className="count">{detail ? detail.commits.length : <Bar w={10} h={9} />}</span>
           </button>
         )}
       </div>
 
       <div className="tab-body">
+        {!detail && <ListSkeleton rows={5} />}
         {tab === 'files' && detail && (
           detail.files.length === 0 ? <p className="muted small">{t('noFiles')}</p> : (
             <ul className="files">
