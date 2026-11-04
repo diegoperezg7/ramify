@@ -1,11 +1,11 @@
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, safeStorage, screen, shell, Tray } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, safeStorage, screen, session, shell, Tray } from 'electron'
 import { execFileSync } from 'node:child_process'
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
   cloneGithub, createHandlers, defaultProjectsDir, dispatch, Engine, EngineError, githubRepos, IDES, openInTerminal, originSlug,
-  accessibleRepos, AuthError, currentUser, installedTools, pollForTokens, publishGithub, pullRequestFor, pullRequestWithToken,
+  accessibleRepos, AuthError, currentUser, hardenedGitEnv, isSafeExternal, sanitizeSettings, strings, installedTools, pollForTokens, publishGithub, pullRequestFor, pullRequestWithToken,
   refreshTokens, requestDeviceCode, scanRepos, scanSessions, SessionLog, sessionsCsv, type Resolved, type Tokens,
 } from '../../../packages/core/src/index.ts'
 import { GITHUB_APP } from './github-app.ts'
@@ -25,7 +25,7 @@ function loginPath(): string | undefined {
 
 const bin = app.isPackaged ? join(process.resourcesPath, 'bin', 'ramify') : resolve(__dirname, '../../../ramify')
 try { chmodSync(bin, 0o755) } catch { /* read-only bundle: already executable */ }
-const env = { ...process.env, PATH: loginPath() ?? process.env.PATH }
+const env = hardenedGitEnv({ ...process.env, PATH: loginPath() ?? process.env.PATH })
 const engine = new Engine({ bin, env })
 const es = () => app.getLocale().toLowerCase().startsWith('es')
 
@@ -43,7 +43,7 @@ if (!existsSync(configFile) && existsSync(legacyConfig)) {
 }
 const defaultSettings: Settings = {
   terminal: 'Terminal', defaultAgent: 'claude', projectsDir: defaultProjectsDir(), autoDetect: true,
-  notifications: true, openAtLogin: false, menuBar: true,
+  notifications: true, openAtLogin: false, menuBar: true, historyDays: 90,
 }
 
 function readConfig(): Config {
@@ -113,7 +113,7 @@ let sessionsWritten = 0
 function saveSessions(force: boolean) {
   // Changes are written at once; "still running" heartbeats at most once a minute.
   if (!force && Date.now() - sessionsWritten < 60_000) return
-  sessionLog.prune()
+  sessionLog.prune(5000, config.settings.historyDays ?? 90)
   try { writeFileSync(sessionsFile, JSON.stringify(sessionLog.sessions)); sessionsWritten = Date.now() } catch { /* next scan retries */ }
 }
 
@@ -291,11 +291,22 @@ function saveTokens(t: Tokens | null) {
   tokens = t
   if (!t) { rmSync(tokenFile, { force: true }); return }
   // Without a keychain the token lives in memory for this session only: never written in plain text.
-  if (safeStorage.isEncryptionAvailable()) writeFileSync(tokenFile, safeStorage.encryptString(JSON.stringify(t)), { mode: 0o600 })
+  if (safeStorage.isEncryptionAvailable()) {
+    writeFileSync(tokenFile, safeStorage.encryptString(JSON.stringify(t)), { mode: 0o600 })
+    chmodSync(tokenFile, 0o600) // mode only applies when the file is created
+  }
 }
 
-/** A valid access token, refreshed when needed; null when signed out. */
-async function githubToken(): Promise<string | null> {
+/**
+ * A valid access token, refreshed when needed; null when signed out. Callers that arrive while a refresh
+ * is in flight share it: GitHub rotates the refresh token, so a second refresh would be refused and sign the user out.
+ */
+let tokenInFlight: Promise<string | null> | null = null
+function githubToken(): Promise<string | null> {
+  tokenInFlight ??= freshToken().finally(() => { tokenInFlight = null })
+  return tokenInFlight
+}
+async function freshToken(): Promise<string | null> {
   if (!GITHUB_APP.clientId) return null
   tokens ??= loadTokens()
   if (!tokens) return null
@@ -438,10 +449,11 @@ const handlers = {
     if (res.canceled || !res.filePaths[0]) return null
     return addPath(res.filePaths[0])
   },
-  addRepoPath: (path: string) => addPath(path),
-  removeRepo: (path: string) => { config.repos = config.repos.filter((r) => r !== path); writeConfig() },
+  addRepoPath: (path: string) => { strings(path); return addPath(path) },
+  removeRepo: (path: string) => { strings(path); config.repos = config.repos.filter((r) => r !== path); writeConfig() },
   github: (refresh?: boolean) => listGithub(!!refresh),
   cloneRepo: async (nameWithOwner: string): Promise<RepoInfo> => {
+    strings(nameWithOwner)
     const path = await cloneGithub(nameWithOwner, config.settings.projectsDir, env)
     addRepoToConfig(path)
     githubCache = null
@@ -455,7 +467,9 @@ const handlers = {
     const slugs = new Map(await Promise.all(repos.map(async (r) => [r, await cachedSlug(r)] as const)))
     return list.map((s) => (s.repo && slugs.has(s.repo) ? { ...s, github: slugs.get(s.repo) ?? null } : s))
   },
+  clearSessions: () => { sessionLog.clear(); saveSessions(true) },
   exportSessions: async (format: 'csv' | 'json') => {
+    if (format !== 'csv' && format !== 'json') throw new EngineError('bad arguments')
     const ext = format === 'json' ? 'json' : 'csv'
     const opts = { defaultPath: join(app.getPath('downloads'), `ramify-sessions-${new Date().toISOString().slice(0, 10)}.${ext}`), filters: [{ name: ext.toUpperCase(), extensions: [ext] }] }
     const res = win ? await dialog.showSaveDialog(win, opts) : await dialog.showSaveDialog(opts)
@@ -465,6 +479,7 @@ const handlers = {
     return { message: res.filePath }
   },
   publishRepo: async (path: string, name: string, isPrivate: boolean) => {
+    strings(path, name)
     // Only repositories the app knows: listed ones or ones an AI session worked in.
     if (!config.repos.includes(path) && !sessionLog.sessions.some((s) => s.repo === path)) throw new EngineError('unknown repository')
     const github = await publishGithub(path, name, !!isPrivate, env)
@@ -499,7 +514,7 @@ const handlers = {
   },
   settings: () => config.settings,
   saveSettings: (s: Settings) => {
-    config.settings = { ...config.settings, ...s }
+    config.settings = sanitizeSettings(s, config.settings)
     writeConfig()
     githubCache = null
     applyLoginItem()
@@ -540,13 +555,17 @@ async function openTarget(target: string) {
     try { path = new URL(target).searchParams.get('path') ?? '' } catch { path = '' }
   }
   if (!path || !existsSync(path)) { focus(); return }
-  // Links can come from any web page: ask before adding a repository the app does not know yet.
-  const main = await engine.mainCheckout(path)
-  if (main && !config.repos.includes(main)) {
+  // Links can come from any web page. A folder outside the repositories the app knows is not touched at all,
+  // not even by git, until the user says so: a planted .git/config could otherwise run code.
+  const real = (() => { try { return realpathSync(path) } catch { return path } })()
+  const worktreeRoot = env.RAMIFY_ROOT || join(app.getPath('home'), '.worktrees')
+  const known = config.repos.some((r) => real === r || real.startsWith(`${r}/`)) || real.startsWith(`${worktreeRoot}/`)
+  if (!known) {
     focus()
     const { response } = await dialog.showMessageBox(win!, {
-      type: 'question', buttons: [es() ? 'Añadir' : 'Add', es() ? 'Cancelar' : 'Cancel'], defaultId: 0, cancelId: 1,
-      message: es() ? '¿Añadir este repositorio a Ramify?' : 'Add this repository to Ramify?', detail: main,
+      type: 'question', buttons: [es() ? 'Abrir' : 'Open', es() ? 'Cancelar' : 'Cancel'], defaultId: 1, cancelId: 1,
+      message: es() ? 'Un enlace quiere abrir esta carpeta en Ramify' : 'A link wants to open this folder in Ramify',
+      detail: `${real}\n\n${es() ? 'Ábrela solo si es tuya y confías en ella.' : 'Open it only if it is yours and you trust it.'}`,
     })
     if (response !== 0) return
   }
@@ -590,7 +609,7 @@ function createWindow() {
   win.webContents.on('did-finish-load', () => { if (pending) { const p = pending; pending = null; setTimeout(() => send(p), 300) } })
   win.webContents.on('will-navigate', (e) => e.preventDefault())
   win.webContents.setWindowOpenHandler(({ url }) => {
-    if (/^https?:\/\//.test(url)) void shell.openExternal(url)
+    if (isSafeExternal(url)) void shell.openExternal(url)
     return { action: 'deny' }
   })
   const saveBounds = () => { if (win && !win.isMinimized() && !win.isFullScreen()) { config.bounds = win.getBounds(); writeConfig() } }
@@ -618,6 +637,11 @@ if (!app.requestSingleInstanceLock()) {
   // Windows needs the app id for notifications to show under the app's name.
   if (process.platform === 'win32') app.setAppUserModelId('io.github.diegoperezg7.ramify')
   app.whenReady().then(() => {
+    // The page needs no browser permission (camera, microphone, location, notifications…) except writing
+    // to the clipboard for the Copy buttons. Notifications come from the main process.
+    const allowed = new Set(['clipboard-sanitized-write'])
+    session.defaultSession.setPermissionRequestHandler((_wc, permission, done) => done(allowed.has(permission)))
+    session.defaultSession.setPermissionCheckHandler((_wc, permission) => allowed.has(permission))
     Menu.setApplicationMenu(process.platform === 'darwin'
       ? Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' }])
       : null)

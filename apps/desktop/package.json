@@ -9,7 +9,7 @@
   "scripts": {
     "build": "node build.mjs",
     "start": "node build.mjs && electron .",
-    "dist": "node build.mjs && electron-builder --mac --publish never",
+    "dist": "node build.mjs && CSC_IDENTITY_AUTO_DISCOVERY=${CSC_IDENTITY_AUTO_DISCOVERY:-false} electron-builder --mac --publish never",
     "typecheck": "tsc -p .",
     "dist:win": "node build.mjs && electron-builder --win --publish never"
   },
@@ -63,11 +63,13 @@
           ]
         }
       ],
-      "identity": null,
       "darkModeSupport": true,
       "extendInfo": {
         "LSUIElement": false
-      }
+      },
+      "hardenedRuntime": true,
+      "entitlements": "resources/entitlements.mac.plist",
+      "entitlementsInherit": "resources/entitlements.mac.plist"
     },
     "dmg": {
       "title": "Ramify",
@@ -101,6 +103,15 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "shortcutName": "Ramify"
+    },
+    "electronFuses": {
+      "runAsNode": false,
+      "enableCookieEncryption": true,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true,
+      "grantFileProtocolExtraPrivileges": false
     }
   }
 }

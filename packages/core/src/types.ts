@@ -102,6 +102,8 @@ export interface Settings {
   onboarded?: boolean
   /** Agents or apps (by name) the user does not want tracked. */
   ignored?: string[]
+  /** Days of AI-session history to keep (0 = keep everything). */
+  historyDays?: number
 }
 
 export interface GithubAccount {
@@ -220,6 +222,8 @@ export interface Bridge {
   /** Repositories found in the projects folder that are not in the app yet, most recently used first. */
   suggestRepos(): Promise<{ path: string; name: string }[]>
   addRepos(paths: string[]): Promise<void>
+  /** Forget the finished sessions. */
+  clearSessions(): Promise<void>
   /** Save the whole history to a file the user picks. */
   exportSessions(format: 'csv' | 'json'): Promise<{ message: string }>
   /** Create a GitHub repository for a local repository without a remote, and push it. */

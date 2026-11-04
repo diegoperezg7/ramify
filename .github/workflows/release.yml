@@ -27,6 +27,14 @@ jobs:
       - run: node node_modules/electron/install.js
       - run: npm run build:web
       - run: npm run ${{ matrix.script }} -w apps/desktop
+        env:
+          # Signing and notarization happen only when these secrets exist; without them the build is unsigned.
+          CSC_IDENTITY_AUTO_DISCOVERY: ${{ secrets.MAC_CERT_P12 != '' }}
+          CSC_LINK: ${{ runner.os == 'macOS' && secrets.MAC_CERT_P12 || secrets.WIN_CERT_PFX }}
+          CSC_KEY_PASSWORD: ${{ runner.os == 'macOS' && secrets.MAC_CERT_PASSWORD || secrets.WIN_CERT_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       - name: VS Code extension
         if: runner.os == 'macOS'
         run: npm run package -w apps/vscode && cp apps/vscode/ramify.vsix "apps/desktop/release/ramify-${GITHUB_REF_NAME#v}.vsix"

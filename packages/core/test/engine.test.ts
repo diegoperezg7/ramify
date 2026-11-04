@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { after, before, describe, it } from 'node:test'
@@ -131,5 +131,26 @@ describe('engine edge cases', () => {
   it('rejects agent names that are not plain words', async () => {
     await assert.rejects(engine.create(REPO, { branch: 'evil', agent: 'x;rm -rf /' }), EngineError)
     assert.throws(() => engine.launchCommand('/tmp', '$(id)'), EngineError)
+  })
+})
+
+describe('untrusted repositories', () => {
+  it('never runs commands from a repository config (fsmonitor, hooks, external diff)', async () => {
+    const { hardenedGitEnv } = await import('../src/engine.ts')
+    const dir = P(T, 'evil')
+    sh(T, 'init', '-q', '-b', 'main', dir)
+    writeFileSync(join(dir, 'f'), 'a\n')
+    sh(dir, 'add', '.')
+    sh(dir, 'commit', '-qm', 'i')
+    const marker = (n: string) => join(T, `pwned-${n}`)
+    sh(dir, 'config', 'core.fsmonitor', `touch '${marker('fsmonitor')}'; false`)
+    sh(dir, 'config', 'diff.external', `sh -c "touch '${marker('diff')}'"`)
+    writeFileSync(join(dir, 'f'), 'b\n')
+    const evil = new Engine({ bin: BIN, env })
+    assert.ok(await evil.mainCheckout(dir))
+    execFileSync('git', ['-C', dir, 'status', '--porcelain'], { env: hardenedGitEnv({ ...process.env, ...env }) })
+    await evil.diff(dir, dir, 'f').catch(() => {})
+    assert.ok(!existsSync(marker('fsmonitor')), 'fsmonitor ran')
+    assert.ok(!existsSync(marker('diff')), 'external diff ran')
   })
 })

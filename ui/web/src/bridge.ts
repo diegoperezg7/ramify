@@ -54,6 +54,7 @@ function rpc(invoke: Invoke, subscribe: (cb: (e: HostEvent) => void) => void): B
     suggestRepos: () => call<{ path: string; name: string }[]>('suggestRepos'),
     addRepos: (paths) => call<void>('addRepos', paths),
     exportSessions: (format) => call<{ message: string }>('exportSessions', format),
+    clearSessions: () => call<void>('clearSessions'),
     publishRepo: (path, name, isPrivate) => call<{ message: string; github: string }>('publishRepo', path, name, isPrivate),
     onEvent: subscribe,
   }
@@ -141,6 +142,7 @@ function httpBridge(): Bridge {
     suggestRepos: async () => [],
     addRepos: unsupported,
     exportSessions: unsupported,
+    clearSessions: unsupported,
     publishRepo: unsupported,
     onEvent: () => {},
   }

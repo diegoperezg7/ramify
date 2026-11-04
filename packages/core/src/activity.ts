@@ -411,12 +411,22 @@ export class SessionLog {
     return { started, ended }
   }
 
+  /** Forget every finished session (the ones still running stay). */
+  clear() {
+    this.sessions = this.sessions.filter((s) => s.end === null)
+  }
+
   /** Newest first, capped. */
   list(limit = 5000): AgentSession[] {
     return [...this.sessions].sort((a, b) => b.start - a.start).slice(0, limit)
   }
 
-  prune(keep = 5000) {
+  /** Forget finished sessions older than `days` (0 keeps them) and beyond the newest `keep`. */
+  prune(keep = 5000, days = 0, now = Date.now()) {
+    if (days > 0) {
+      const cutoff = now - days * 86400_000
+      this.sessions = this.sessions.filter((s) => s.end === null || s.end >= cutoff)
+    }
     if (this.sessions.length <= keep) return
     const drop = new Set(this.list(this.sessions.length).slice(keep).filter((s) => s.end !== null))
     this.sessions = this.sessions.filter((s) => !drop.has(s))

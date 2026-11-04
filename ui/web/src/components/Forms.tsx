@@ -133,6 +133,17 @@ export function SettingsDialog() {
           <input value={draft.projectsDir} onChange={(e) => setDraft({ ...draft, projectsDir: e.target.value })} spellCheck={false} />
           <small className="muted">{t('projectsDirHint')}</small>
         </label>
+        {caps?.sessions && (
+          <label>
+            <span>{t('historyKeep')}</span>
+            <select value={draft.historyDays ?? 90} onChange={(e) => setDraft({ ...draft, historyDays: Number(e.target.value) })}>
+              <option value={30}>{t('days', { n: 30 })}</option>
+              <option value={90}>{t('days', { n: 90 })}</option>
+              <option value={365}>{t('days', { n: 365 })}</option>
+              <option value={0}>{t('forever')}</option>
+            </select>
+          </label>
+        )}
         <fieldset className="toggles">
           <label className="check">
             <input type="checkbox" checked={draft.autoDetect} onChange={(e) => setDraft({ ...draft, autoDetect: e.target.checked })} />

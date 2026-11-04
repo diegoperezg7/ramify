@@ -14,6 +14,24 @@ export class EngineError extends Error {}
 const WIN = process.platform === 'win32'
 
 /**
+ * Git settings that let a repository's own config run programs: off for every git Ramify runs on its own.
+ * A folder can come from an agent's working directory or a ramify:// link, so its .git/config is not trusted.
+ * core.fsmonitor runs a command on status/diff and hooks run on merge/checkout. External diff drivers and
+ * textconv are turned off per call (--no-ext-diff --no-textconv). Passed through the environment (GIT_CONFIG_COUNT, git 2.31+), so the ramify script and its children get it too.
+ */
+export function hardenedGitEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const out = { ...env }
+  let n = Number(out.GIT_CONFIG_COUNT) || 0
+  for (const [k, v] of [['core.fsmonitor', 'false'], ['core.hooksPath', WIN ? 'NUL' : '/dev/null']] as const) {
+    out[`GIT_CONFIG_KEY_${n}`] = k
+    out[`GIT_CONFIG_VALUE_${n}`] = v
+    n++
+  }
+  out.GIT_CONFIG_COUNT = String(n)
+  return out
+}
+
+/**
  * One spelling per folder. Windows: long names (not RUNNER~1), forward slashes as git prints them.
  * Elsewhere paths are already canonical.
  */
@@ -64,7 +82,7 @@ export class Engine {
 
   constructor(opts: EngineOptions) {
     this.bin = opts.bin
-    this.env = { ...process.env, ...opts.env, NO_COLOR: '1' }
+    this.env = hardenedGitEnv({ ...process.env, ...opts.env, NO_COLOR: '1' })
   }
 
   // --- process helpers -------------------------------------------------------
@@ -212,7 +230,7 @@ export class Engine {
     }
     // -z everywhere: paths with spaces, accents or renames come through verbatim.
     const files = new Map<string, FileChange>()
-    const numstat = (await this.git(path, 'diff', '-z', '--numstat', mb)).split('\0')
+    const numstat = (await this.git(path, 'diff', '--no-ext-diff', '--no-textconv', '-z', '--numstat', mb)).split('\0')
     for (let i = 0; i < numstat.length; i++) {
       const rec = numstat[i]
       if (!rec) continue
@@ -221,7 +239,7 @@ export class Engine {
       if (name === '') { i += 2; file = numstat[i] } // rename: "add\tdel\t" then old\0new\0
       if (file) files.set(file, { file, status: 'M', add, del, uncommitted: false })
     }
-    const nameStatus = (await this.git(path, 'diff', '-z', '--name-status', mb)).split('\0')
+    const nameStatus = (await this.git(path, 'diff', '--no-ext-diff', '--no-textconv', '-z', '--name-status', mb)).split('\0')
     for (let i = 0; i < nameStatus.length; i++) {
       const st = nameStatus[i]
       if (!st) continue
@@ -252,8 +270,8 @@ export class Engine {
     const mb = await this.mergeBase(repo, path, wt)
     const untracked = (await this.git(path, 'ls-files', '--others', '--exclude-standard', '--', file)).trim()
     const out = untracked
-      ? (await this.run('git', ['-C', path, 'diff', '--no-index', '--', '/dev/null', file])).stdout
-      : await this.git(path, 'diff', mb, '--', file)
+      ? (await this.run('git', ['-C', path, 'diff', '--no-ext-diff', '--no-textconv', '--no-index', '--', '/dev/null', file])).stdout
+      : await this.git(path, 'diff', '--no-ext-diff', '--no-textconv', mb, '--', file)
     return out.slice(0, MAX_DIFF)
   }
 

@@ -1,4 +1,4 @@
-import { AppWindow, Code2, Download, ExternalLink, FolderGit2, GitBranch, GitPullRequest, Loader2, SquareTerminal, Upload } from 'lucide-react'
+import { AppWindow, Code2, Download, Trash2, ExternalLink, FolderGit2, GitBranch, GitPullRequest, Loader2, SquareTerminal, Upload } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { bridge } from '../bridge'
 import { useStore } from '../store'
@@ -38,6 +38,8 @@ export function Sessions() {
   const t = useStore((s) => s.t)
   const [range, setRange] = useState<Range>('week')
   const [publishing, setPublishing] = useState<string | null>(null)
+  const [clearing, setClearing] = useState(false)
+  const refreshSessions = useStore((s) => s.refreshSessions)
   const now = Date.now()
 
   const live = useMemo(() => (sessions ?? []).filter((s) => s.end === null), [sessions])
@@ -122,6 +124,7 @@ export function Sessions() {
         <div className="sessions-actions">
           <button type="button" className="btn btn-ghost" onClick={() => exportAs('csv')}><Download size={14} />{t('exportCsv')}</button>
           <button type="button" className="btn btn-ghost" onClick={() => exportAs('json')}><Download size={14} />{t('exportJson')}</button>
+          <button type="button" className="btn btn-ghost btn-danger" onClick={() => setClearing(true)}><Trash2 size={14} />{t('clearHistory')}</button>
         </div>
       </header>
 
@@ -230,6 +233,12 @@ export function Sessions() {
         </>
       )}
       {publishing && <PublishDialog repo={publishing} onClose={() => setPublishing(null)} />}
+      {clearing && (
+        <Dialog title={t('clearHistory')} confirmLabel={t('clearHistory')} danger onCancel={() => setClearing(false)}
+          onConfirm={async () => { setClearing(false); await bridge.clearSessions(); await refreshSessions() }}>
+          <p>{t('clearHistoryText')}</p>
+        </Dialog>
+      )}
     </main>
   )
 }
