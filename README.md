@@ -23,7 +23,7 @@
   <a href="README.es.md"><img alt="Español" src="https://img.shields.io/badge/lang-español-4e4e4e"></a>
 </p>
 
-<p align="center"><img src="docs/ramify-demo.gif" alt="Ramify in 40 seconds: five AI agents working at once, each on its own branch; their hours per day, one day hour by hour, the commit grid opened on a day, the changes of one agent, the branch timeline and a merge in one click"><br><sub><a href="docs/ramify-demo.mp4">Watch it as a video (40 s)</a></sub></p>
+<p align="center"><img src="docs/ramify-demo.gif" alt="Ramify at work: five AI agents working at once, each on its own branch; a new agent started with one click opens in its own folder"><br><sub><b><a href="docs/ramify-demo.mp4">▶ Watch the full demo (48 s)</a></b>: new agent, its terminal, agent hours, any day in detail, one agent's changes and a merge in one click</sub></p>
 
 ## In plain words
 

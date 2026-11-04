@@ -17,7 +17,7 @@
 
 <p align="center"><a href="README.md">English</a></p>
 
-<p align="center"><img src="docs/ramify-demo.gif" alt="Ramify en 40 segundos: cinco agentes de IA trabajando a la vez, cada uno en su rama; sus horas por día, un día hora a hora, el mapa de commits abierto en un día, los cambios de un agente, la línea de tiempo de ramas y un merge con un clic"><br><sub><a href="docs/ramify-demo.mp4">Verlo en vídeo (40 s)</a></sub></p>
+<p align="center"><img src="docs/ramify-demo.gif" alt="Ramify trabajando: cinco agentes de IA a la vez, cada uno en su rama; un agente nuevo, creado con un clic, se abre en su propia carpeta"><br><sub><b><a href="docs/ramify-demo.mp4">▶ Ver la demo completa (48 s)</a></b>: agente nuevo, su terminal, horas de los agentes, cualquier día al detalle, los cambios de un agente y un merge con un clic</sub></p>
 
 ## En pocas palabras
 
