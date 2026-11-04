@@ -370,6 +370,14 @@ html, body, #root { height: 100%; }
 .diff { margin: 4px 0 8px; padding: 0; max-height: 50vh; overflow: auto; border: 1px solid var(--border); border-radius: 8px; font-size: 12px; line-height: 1.55; background: var(--bg); }
 .diff.is-loading { height: 60px; background: linear-gradient(90deg, var(--surface) 0%, var(--surface-hover) 50%, var(--surface) 100%); background-size: 200% 100%; animation: shimmer 1.2s infinite; }
 @keyframes shimmer { to { background-position: -200% 0; } }
+/* Skeleton placeholders: the shape of what is loading, never an empty or zero value. */
+.skel { display: inline-block; height: 12px; border-radius: 6px; vertical-align: middle; flex: none; background: linear-gradient(90deg, var(--surface-hover) 0%, color-mix(in srgb, var(--border-strong) 55%, var(--surface-hover)) 50%, var(--surface-hover) 100%); background-size: 200% 100%; animation: shimmer 1.4s ease-in-out infinite; }
+.cc-skel { margin-bottom: 0; }
+.cc-skel + .cc-skel { margin-top: 18px; }
+.cc-skel .row-main { display: flex; flex-direction: column; gap: 7px; }
+.heat-grid.is-loading { animation: skel-pulse 1.4s ease-in-out infinite; }
+@keyframes skel-pulse { 50% { opacity: 0.45; } }
+@media (prefers-reduced-motion: reduce) { .skel, .heat-grid.is-loading { animation: none; } }
 .commits li { display: grid; grid-template-columns: 16px 1fr; column-gap: 8px; padding: 7px 8px; position: relative; }
 .commits .node { width: 10px; height: 10px; margin-top: 5px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 2px var(--surface); }
 .commits li:not(:last-child)::after { content: ''; position: absolute; left: 12px; top: 22px; bottom: -6px; width: 2px; background: color-mix(in srgb, var(--c) 45%, transparent); }

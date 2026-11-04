@@ -14,6 +14,8 @@ interface Toast { id: number; kind: 'ok' | 'error'; text: string }
 interface Store {
   caps: Capabilities | null
   repos: RepoInfo[]
+  /** The repository list has been read at least once: an empty list means none, not "not loaded yet". */
+  reposLoaded: boolean
   repo: string
   state: State | null
   conn: Conn
@@ -81,6 +83,7 @@ let toastId = 0
 export const useStore = create<Store>((set, get) => ({
   caps: null,
   repos: [],
+  reposLoaded: false,
   repo: '',
   state: null,
   conn: 'ok',
@@ -150,9 +153,9 @@ export const useStore = create<Store>((set, get) => ({
   refreshRepos: async () => {
     try {
       const repos = await bridge.repos()
-      set({ repos })
+      set({ repos, reposLoaded: true })
       if (!get().repo && repos[0]) get().setRepo(repos[0].path)
-    } catch { /* keep the last list */ }
+    } catch { set({ reposLoaded: true }) /* keep the last list */ }
   },
 
   addRepoPath: async (path) => {

@@ -18,6 +18,7 @@ export function ControlCenter() {
   const t = useStore((s) => s.t)
   const lang = useStore((s) => s.lang)
   const repos = useStore((s) => s.repos)
+  const reposLoaded = useStore((s) => s.reposLoaded)
   const sessions = useStore((s) => s.sessions)
   const setModal = useStore((s) => s.setModal)
   const setRepo = useStore((s) => s.setRepo)
@@ -25,7 +26,7 @@ export function ControlCenter() {
   const select = useStore((s) => s.select)
   const toast = useStore((s) => s.toast)
   const [boards, setBoards] = useState<Board[] | null>(null)
-  const [days, setDays] = useState<Record<number, number>>({})
+  const [days, setDays] = useState<Record<number, number> | null>(null)
   const [shell, setShell] = useState<{ installed: boolean } | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [confirm, setConfirm] = useState<{ action: Action; board: Board; b: BranchHealth } | null>(null)
@@ -35,6 +36,8 @@ export function ControlCenter() {
   const building = useMemo(() => repos.filter((r) => r.worktrees > 0 || r.active?.length), [repos])
 
   const load = useCallback(async () => {
+    // Until the repository list arrives, an empty list is "loading", not "nothing being built".
+    if (!reposLoaded) return
     const out: Board[] = []
     for (const r of building) {
       try {
@@ -48,7 +51,7 @@ export function ControlCenter() {
       } catch { /* unreadable repository: skip it */ }
     }
     setBoards(out)
-  }, [building])
+  }, [building, reposLoaded])
 
   useEffect(() => {
     let alive = true
@@ -61,6 +64,7 @@ export function ControlCenter() {
 
   useEffect(() => {
     void bridge.shellIntegration().then(setShell).catch(() => setShell(null))
+    if (!reposLoaded) return
     void (async () => {
       const merged: Record<number, number> = {}
       for (const r of repos) {
@@ -68,7 +72,7 @@ export function ControlCenter() {
       }
       setDays(merged)
     })()
-  }, [repos])
+  }, [repos, reposLoaded])
 
   const sessionsOf = (repo: string, branch: string) =>
     (sessions ?? []).filter((s) => s.end === null && !s.inferred && s.repo === repo && s.branch === branch)
@@ -106,6 +110,9 @@ export function ControlCenter() {
         </div>
       </header>
 
+      {!boards && (
+        <p className="sess-summary" aria-hidden="true"><span><i className="skel" style={{ width: 150 }} /></span><span><i className="skel" style={{ width: 170 }} /></span><span><i className="skel" style={{ width: 130 }} /></span></p>
+      )}
       {boards && (
         <p className="sess-summary">
           <span><b>{totals.branches}</b> {t('ccBranches')}</span>
@@ -124,7 +131,7 @@ export function ControlCenter() {
 
       <Heatmap days={days} onOpen={() => setView('sessions')} />
 
-      {boards === null && <p className="muted small"><Loader2 size={14} className="spin" /> {t('loadingRepo')}</p>}
+      {boards === null && <BoardsSkeleton label={t('loadingRepo')} />}
       {boards?.length === 0 && (
         <div className="cc-empty">
           <p>{t('ccEmpty')}</p>
@@ -212,6 +219,31 @@ export function ControlCenter() {
         </Dialog>
       )}
     </main>
+  )
+}
+
+/** While the boards load: two cards shaped like the real ones, so nothing jumps when they arrive. */
+function BoardsSkeleton({ label }: { label: string }) {
+  return (
+    <div role="status" aria-label={label} aria-busy="true">
+      {[3, 2].map((rows, i) => (
+        <section key={i} className="repo-card cc-board cc-skel" aria-hidden="true">
+          <header><i className="skel" style={{ width: 15, height: 15 }} /><i className="skel" style={{ width: 90 }} /><i className="skel" style={{ width: 50 }} /></header>
+          <ul>
+            {Array.from({ length: rows }, (_, r) => (
+              <li key={r} className="cc-row">
+                <i className="skel" style={{ width: 24, height: 24, borderRadius: 7 }} />
+                <span className="row-main">
+                  <i className="skel" style={{ width: 120 + ((r * 37) % 60), height: 13 }} />
+                  <span className="cc-facts"><i className="skel" style={{ width: 64 }} /><i className="skel" style={{ width: 52 }} /><i className="skel" style={{ width: 150 }} /></span>
+                </span>
+                <i className="skel" style={{ width: 110, height: 30, borderRadius: 8 }} />
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+    </div>
   )
 }
 
