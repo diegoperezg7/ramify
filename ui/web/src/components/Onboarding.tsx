@@ -9,14 +9,14 @@ import { AgentBadge } from './AgentBadge'
 import { BrandIcon, hasBrand } from './BrandIcon'
 import { GithubIcon } from './GithubIcon'
 import { Logo, Wordmark } from './Logo'
+import { SetupList } from './Setup'
 import { Bar } from './Skeletons'
 
-type Step = 'welcome' | 'tools' | 'github' | 'sync' | 'done'
-const STEPS: Step[] = ['welcome', 'tools', 'github', 'sync', 'done']
+type Step = 'welcome' | 'tools' | 'setup' | 'github' | 'sync' | 'done'
 
 /**
- * First run, five short steps: welcome, what is installed (detected, nothing to pick), GitHub sign-in
- * (device flow), repository sync (grouped, not a flat list) and a summary.
+ * First run, short steps: welcome, what is installed (detected, nothing to pick), one-click setup of this
+ * computer (desktop app), GitHub sign-in (device flow), repository sync (grouped, not a flat list) and a summary.
  */
 export function Onboarding() {
   const t = useStore((s) => s.t)
@@ -33,6 +33,8 @@ export function Onboarding() {
   // The sync step preselects repositories once; coming back to it keeps what the user ticked.
   const seeded = useRef(false)
   const [saving, setSaving] = useState(false)
+  const caps = useStore((s) => s.caps)
+  const STEPS: Step[] = ['welcome', 'tools', ...(caps?.setup ? ['setup' as const] : []), 'github', 'sync', 'done']
   const index = STEPS.indexOf(step)
 
   useEffect(() => {
@@ -71,6 +73,13 @@ export function Onboarding() {
       )}
 
       {step === 'tools' && <ToolsStep tools={tools} live={live} />}
+      {step === 'setup' && (
+        <section className="ob-step" key="setup">
+          <h2>{t('setupTitle')}</h2>
+          <p className="muted">{t('setupText')}</p>
+          <SetupList mode="onboarding" />
+        </section>
+      )}
       {step === 'github' && <GithubStep onDone={() => setStep('sync')} />}
       {step === 'sync' && <SyncStep picked={picked} setPicked={setPicked} seeded={seeded} />}
 

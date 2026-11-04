@@ -1,16 +1,17 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, safeStorage, screen, session, shell, Tray } from 'electron'
 import { execFile, execFileSync } from 'node:child_process'
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
   cloneGithub, createHandlers, defaultProjectsDir, dispatch, Engine, EngineError, githubRepos, idesFor, openInTerminal, originSlug,
   accessibleRepos, AuthError, currentUser, hardenedGitEnv, isSafeExternal, normPath, pullRequestsWithToken, riskyGitConfig, sanitizeSettings, strings, installedTools, pollForTokens, publishGithub, pullRequestFor, pullRequestWithToken,
   refreshTokens, requestDeviceCode, scanRepos, scanSessions, SessionLog, sessionsCsv, type Resolved, type Tokens,
+  gitBash, setupApply, setupStatus, setupUndo, type SetupContext,
 } from '../../../packages/core/src/index.ts'
 import { GITHUB_APP } from './github-app.ts'
-import type { AgentSession, GithubAccount, GithubRepo, GithubSync, PullRequest, RepoInfo, Settings } from '../../../packages/core/src/types.ts'
+import type { AgentSession, GithubAccount, GithubRepo, GithubSync, PullRequest, RepoInfo, Settings, SetupItemId } from '../../../packages/core/src/types.ts'
 
 // Apps started from Finder get a minimal PATH: borrow the login shell's so agents,
 // xcodegen, npm and friends are found exactly as in the terminal.
@@ -395,11 +396,44 @@ function installedIdes(): string[] {
 
 // --- terminal integration --------------------------------------------------------
 
-function shellStatus(): { installed: boolean; rc: string } {
-  const rc = join(app.getPath('home'), process.env.SHELL?.endsWith('bash') ? '.bashrc' : '.zshrc')
-  let text = ''
-  try { text = readFileSync(rc, 'utf8') } catch { /* no rc yet */ }
-  return { installed: text.includes('# >>> ramify: one branch per agent >>>'), rc }
+// --- one-click setup of this computer (core/setup.ts) ------------------------------
+
+/** On Windows, `claude` may be claude.exe or an npm claude.cmd: a .cmd only runs through cmd.exe, with its arguments quoted. */
+function winCommand(cmd: string, args: string[]): [string, string[]] {
+  if (process.platform !== 'win32' || /[\\/]/.test(cmd) || cmd === 'powershell' || cmd === 'pwsh') return [cmd, args]
+  try {
+    const found = execFileSync('where', [cmd], { env, timeout: 5000 }).toString().split(/\r?\n/).map((l) => l.trim()).filter(Boolean)
+    const exe = found.find((f) => /\.exe$/i.test(f))
+    if (exe) return [exe, args]
+    const script = found.find((f) => /\.(cmd|bat)$/i.test(f))
+    if (script) return ['cmd.exe', ['/d', '/s', '/c', `"${[script, ...args].map((a) => `"${a.replace(/"/g, '""')}"`).join(' ')}"`]]
+  } catch { /* not installed: execFile reports it */ }
+  return [cmd, args]
+}
+
+const setupCtx = (): SetupContext => ({
+  platform: process.platform,
+  // The same home the commands below see (HOME / USERPROFILE), not Electron's own lookup.
+  home: homedir(),
+  bin,
+  // Packaged: the plugin ships in the app, so Claude Code reads it from there and it updates with the app.
+  marketplace: app.isPackaged ? join(process.resourcesPath, 'claude-marketplace') : resolve(__dirname, '../../..'),
+  path: env.PATH ?? '',
+  shell: process.env.SHELL ?? '',
+  gitBash: gitBash(env),
+  localAppData: process.env.LOCALAPPDATA,
+  run: (cmd, args, extra) => new Promise((ok) => {
+    const [file, argv] = winCommand(cmd, args)
+    const child = execFile(file, argv, { env: { ...env, ...extra }, timeout: 120_000, windowsVerbatimArguments: file === 'cmd.exe' }, (e, stdout, stderr) =>
+      ok({ code: e ? (typeof e.code === 'number' ? e.code : 1) : 0, stdout: String(stdout), stderr: String(stderr || (e && !stdout ? e.message : '')) }))
+    // Nothing to type in: without a terminal, `claude` would otherwise wait for input until the timeout.
+    child.stdin?.end()
+  }),
+})
+
+async function shellStatus(): Promise<{ installed: boolean; rc: string }> {
+  const shell = (await setupStatus(setupCtx())).find((s) => s.id === 'shell')
+  return { installed: shell?.status === 'done', rc: '' }
 }
 
 // --- GitHub ---------------------------------------------------------------------
@@ -569,7 +603,7 @@ const handlers = {
   ...createHandlers({
     engine,
     // Only the editors installed on this machine, the chosen default first.
-    capabilities: () => ({ host: 'desktop', platform: process.platform, multiRepo: true, create: true, settings: true, github: true, sessions: true, timeline: true, control: true, ides: installedIdes() }),
+    capabilities: () => ({ host: 'desktop', platform: process.platform, multiRepo: true, create: true, settings: true, github: true, sessions: true, timeline: true, control: true, setup: true, ides: installedIdes() }),
     repo: knownRepo,
     runInTerminal: (_name, cwd, command) => openInTerminal(config.settings.terminal, command, cwd),
   }),
@@ -608,10 +642,16 @@ const handlers = {
   clearSessions: () => { sessionLog.clear(); saveSessions(true) },
   pullRequests: (r: string) => { strings(r); return repoPullRequests(knownRepo(r)) },
   shellIntegration: () => shellStatus(),
+  // Through core/setup.ts: on Windows the script runs in Git Bash and PowerShell gets the same integration.
   setShellIntegration: async (on: boolean) => {
-    await new Promise<void>((ok, fail) => execFile(bin, [on ? 'install' : 'uninstall', 'shell'], { env }, (e) => (e ? fail(e) : ok())))
-    return shellStatus()
+    const after = on ? await setupApply(setupCtx(), ['shell']) : await setupUndo(setupCtx(), 'shell')
+    const shell = after.find((s) => s.id === 'shell')
+    if (shell?.error) throw new EngineError(shell.error)
+    return { installed: shell?.status === 'done', rc: '' }
   },
+  setupStatus: () => setupStatus(setupCtx()),
+  setupApply: (items?: SetupItemId[]) => setupApply(setupCtx(), items),
+  setupUndo: (item: SetupItemId) => { strings(item); return setupUndo(setupCtx(), item) },
   moveToBranch: async (r: string, agent: string) => {
     strings(r, agent)
     if (!/^[\w.-]+$/.test(agent)) throw new EngineError('invalid agent name')

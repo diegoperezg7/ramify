@@ -1,4 +1,4 @@
-import type { AgentSession, Bridge, Capabilities, GithubAccount, GithubSync, Health, InstalledTools, PullRequest, Timeline, TimelineCommit, Detail, GithubRepo, RepoInfo, Settings, State } from './types'
+import type { AgentSession, Bridge, Capabilities, GithubAccount, GithubSync, Health, InstalledTools, PullRequest, Timeline, TimelineCommit, Detail, GithubRepo, RepoInfo, Settings, SetupState, State } from './types'
 
 // One UI, three hosts:
 //  - desktop app: Electron preload exposes window.ramify.invoke
@@ -44,6 +44,9 @@ function rpc(invoke: Invoke, subscribe: (cb: (e: HostEvent) => void) => void): B
     commitDays: (repo, days) => call<Record<number, number>>('commitDays', repo, days),
     dayCommits: (repo, day) => call<TimelineCommit[]>('dayCommits', repo, day),
     shellIntegration: () => call<{ installed: boolean; rc: string }>('shellIntegration'),
+    setupStatus: () => call<SetupState[]>('setupStatus'),
+    setupApply: (items) => call<SetupState[]>('setupApply', items),
+    setupUndo: (item) => call<SetupState[]>('setupUndo', item),
     setShellIntegration: (on) => call<{ installed: boolean; rc: string }>('setShellIntegration', on),
     moveToBranch: (repo, agent) => call<{ message: string; path: string }>('moveToBranch', repo, agent),
     repos: () => call<RepoInfo[]>('repos'),
@@ -142,6 +145,9 @@ function httpBridge(): Bridge {
     commitDays: unsupported,
     dayCommits: unsupported,
     shellIntegration: unsupported,
+    setupStatus: unsupported,
+    setupApply: unsupported,
+    setupUndo: unsupported,
     setShellIntegration: unsupported,
     moveToBranch: unsupported,
     repos: async () => [],

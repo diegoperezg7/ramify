@@ -242,6 +242,16 @@ export interface AgentSession {
 }
 
 /** What the current host can do. The browser build (ramify ui) is single-repo. */
+/** One part of the one-click setup of this computer (see core/setup.ts). */
+export type SetupItemId = 'claude' | 'agents' | 'shell' | 'cli'
+export interface SetupState {
+  id: SetupItemId
+  /** unavailable: the tool it configures is not installed here (Claude Code, other agents, Git Bash). */
+  status: 'done' | 'todo' | 'unavailable'
+  /** Why the last attempt failed. */
+  error?: string
+}
+
 export interface Capabilities {
   host: 'browser' | 'desktop' | 'vscode'
   /** Operating system of the host (process.platform), when it matters to the UI. */
@@ -256,6 +266,8 @@ export interface Capabilities {
   timeline?: boolean
   /** Control center (branch health, pull requests, contribution grid). */
   control?: boolean
+  /** One-click setup of this computer (agents, terminal, ramify command). */
+  setup?: boolean
   ides: string[]
 }
 
@@ -308,6 +320,10 @@ export interface Bridge {
   addRepos(paths: string[]): Promise<void>
   /** Is the terminal integration on (an agent opened in a main checkout gets its own branch)? */
   shellIntegration(): Promise<{ installed: boolean; rc: string }>
+  setupStatus(): Promise<SetupState[]>
+  /** Set up these items (every one that applies when none is given). */
+  setupApply(items?: SetupItemId[]): Promise<SetupState[]>
+  setupUndo(item: SetupItemId): Promise<SetupState[]>
   setShellIntegration(on: boolean): Promise<{ installed: boolean; rc: string }>
   /** Move the main checkout's uncommitted work to a new branch for `agent` and open the agent there. */
   moveToBranch(repo: string, agent: string): Promise<{ message: string; path: string }>

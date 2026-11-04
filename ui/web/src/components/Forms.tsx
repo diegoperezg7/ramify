@@ -7,6 +7,7 @@ import { taskSlug } from '../logic'
 import { IDE_LABELS } from './Detail'
 import { useStore } from '../store'
 import type { Settings } from '../types'
+import { SetupList } from './Setup'
 
 function Modal({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
   const ref = useRef<HTMLDialogElement>(null)
@@ -223,6 +224,12 @@ export function SettingsDialog() {
             {t('openAtLogin')}
           </label>
         </fieldset>
+        {caps?.setup && (
+          <fieldset>
+            <legend>{t('setupSection')}</legend>
+            <SetupList mode="settings" />
+          </fieldset>
+        )}
         <div className="dialog-actions">
           {caps?.sessions && <button type="button" className="btn btn-ghost" onClick={() => setModal('onboarding')}>{t('obReplay')}</button>}
           <span className="sb-spacer" />
