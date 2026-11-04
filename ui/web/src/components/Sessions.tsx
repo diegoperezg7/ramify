@@ -58,14 +58,13 @@ export function Sessions() {
     // Real conversations first, then inferred ones; busiest first.
     return [...m.values()].sort((a, b) => Number(a.s.inferred) - Number(b.s.inferred) || Number(!!b.s.repo) - Number(!!a.s.repo) || a.s.start - b.s.start)
   }, [live])
-  const history = useMemo(() => {
-    const from = range === 'today' ? new Date(new Date().setHours(0, 0, 0, 0)).getTime() : range === 'week' ? now - 7 * 86400_000 : 0
-    return (sessions ?? []).filter((s) => (s.end ?? now) >= from)
-  }, [sessions, range, now])
+  const from = range === 'today' ? new Date(new Date().setHours(0, 0, 0, 0)).getTime() : range === 'week' ? now - 7 * 86400_000 : 0
+  const history = useMemo(() => (sessions ?? []).filter((s) => (s.end ?? now) >= from), [sessions, from, now])
 
   const stats = useMemo(() => {
     // Wall-clock time with at least one AI session open (parallel sessions count once). Open apps are not work.
-    const spans = history.filter((s) => s.via !== 'app').map((s) => [s.start, s.end ?? now] as const).sort((a, b) => a[0] - b[0])
+    // Only the part inside the chosen range counts: a session that started yesterday adds today's hours to "Today".
+    const spans = history.filter((s) => s.via !== 'app').map((s) => [Math.max(s.start, from), s.end ?? now] as const).sort((a, b) => a[0] - b[0])
     let time = 0, curS = 0, curE = 0
     for (const [a, b] of spans) {
       if (a > curE) { time += curE - curS; curS = a; curE = b } else curE = Math.max(curE, b)
@@ -76,7 +75,7 @@ export function Sessions() {
     for (const s of history) byAgent.set(s.agent, (byAgent.get(s.agent) ?? 0) + 1)
     const top = [...byAgent.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? '—'
     return { time, projects, top }
-  }, [history, now])
+  }, [history, from, now])
 
   // Agents that will step on each other: two on one branch of one folder, or one straight on the main branch.
   const warnings = useMemo(() => {
@@ -297,6 +296,7 @@ export function Sessions() {
                   </span>
                 </div>
               ))}
+              {history.length > 400 && <p className="muted small hist-empty">{t('historyCapped', { n: 400, total: history.length })}</p>}
               {history.length === 0 && <p className="muted small hist-empty">{t('sessionsNone')}</p>}
             </div>
           </section>
@@ -316,7 +316,10 @@ export function Sessions() {
       )}
       {clearing && (
         <Dialog title={t('clearHistory')} confirmLabel={t('clearHistory')} danger onCancel={() => setClearing(false)}
-          onConfirm={async () => { setClearing(false); await bridge.clearSessions(); await refreshSessions() }}>
+          onConfirm={async () => {
+            setClearing(false)
+            try { await bridge.clearSessions(); await refreshSessions() } catch (e) { toast('error', (e as Error).message) }
+          }}>
           <p>{t('clearHistoryText')}</p>
         </Dialog>
       )}

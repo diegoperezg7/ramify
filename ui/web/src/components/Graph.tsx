@@ -22,7 +22,7 @@ export function Graph() {
 
   const g = useMemo(() => layout(state.commits), [state.commits])
   const byBranch = useMemo(() => new Map(state.worktrees.map((w) => [w.branch, w])), [state.worktrees])
-  const selectedBranch = state.worktrees.find((w) => w.path === selected)?.branch ?? null
+  const selectedBranch = state.worktrees.find((w) => w.path === selected)?.branch || null // '' (detached) highlights nothing
 
   // Everything is "new" on the first render (the tree draws itself in); afterwards only
   // commits and lines that appear between refreshes animate in.

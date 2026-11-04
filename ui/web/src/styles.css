@@ -873,7 +873,8 @@ kbd {
   }
 }
 .diff-rows { display: grid; min-width: 100%; width: max-content; }
-.dl { display: grid; grid-template-columns: 46px 46px 22px minmax(0, max-content); font-size: 12px; line-height: 20px; }
+.dl { display: grid; grid-template-columns: max(46px, calc(var(--ln-digits, 3ch) + 16px)) max(46px, calc(var(--ln-digits, 3ch) + 16px)) 22px minmax(0, max-content); font-size: 12px; line-height: 20px; }
+.diff-empty { padding: 10px 12px; }
 .dl .ln { padding: 0 8px; text-align: right; color: var(--gh-ln); user-select: none; font-variant-numeric: tabular-nums; }
 .dl .sg { text-align: center; user-select: none; }
 .dl .code { white-space: pre; padding-right: 16px; }

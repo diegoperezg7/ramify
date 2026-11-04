@@ -32,8 +32,8 @@ export function Activity() {
           <h3 className="activity-title"><i className="pulse" />{t('activeNow')}</h3>
           {working.map((w) => (
             <button key={w.path} type="button" className="activity-item is-live" onClick={() => select(w.path)}>
-              <AgentBadge agent={w.agent} size={22} live />
-              <span className="activity-text"><b>{w.agent || w.running[0]}</b> {t('workingOn')} <code>{w.branch}</code></span>
+              <AgentBadge agent={w.agent || w.running[0]} size={22} live />
+              <span className="activity-text"><b>{w.agent || w.running[0]}</b> {t('workingOn')} <code>{w.branch || '(detached)'}</code></span>
               {w.changes > 0 && <span className="chip chip-warn">{w.changes} {t(w.changes === 1 ? 'change' : 'changes')}</span>}
             </button>
           ))}

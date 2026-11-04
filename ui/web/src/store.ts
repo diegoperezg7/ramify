@@ -23,7 +23,8 @@ interface Store {
   selected: string | null
   detail: Detail | null
   file: string | null
-  diff: string
+  /** The open file's diff: null while it loads, '' when git has no text to show. */
+  diff: string | null
   settings: Settings | null
   modal: Modal
   lang: Lang
@@ -40,7 +41,8 @@ interface Store {
 
   t: (key: Key, vars?: Record<string, string | number>) => string
   init: () => Promise<void>
-  poll: () => Promise<void>
+  /** Refresh the current view. `now`: a refresh the user asked for, never skipped by an interval poll in flight. */
+  poll: (now?: boolean) => Promise<void>
   pollState: () => Promise<void>
   setRepo: (path: string) => void
   addRepo: () => Promise<void>
@@ -67,8 +69,12 @@ interface Store {
   run: (action: () => Promise<{ message: string }>) => Promise<boolean>
 }
 
-function load<T extends string>(key: string, fallback: T): T {
-  try { return (localStorage.getItem(key) as T) || fallback } catch { return fallback }
+/** A stored preference, or the fallback when it is missing, unreadable or not one of `allowed`. */
+function load<T extends string>(key: string, fallback: T, allowed?: readonly T[]): T {
+  try {
+    const v = localStorage.getItem(key) as T | null
+    return v && (!allowed || allowed.includes(v)) ? v : fallback
+  } catch { return fallback }
 }
 
 function save(key: string, value: string) {
@@ -91,12 +97,12 @@ export const useStore = create<Store>((set, get) => ({
   selected: null,
   detail: null,
   file: null,
-  diff: '',
+  diff: null,
   settings: null,
   modal: null,
-  lang: load<Lang>('ramify-lang', defaultLang),
-  theme: load<Theme>('ramify-theme', 'system'),
-  density: load<Density>('ramify-density', 'comfortable'),
+  lang: load<Lang>('ramify-lang', defaultLang, ['es', 'en']),
+  theme: load<Theme>('ramify-theme', 'system', ['system', 'light', 'dark']),
+  density: load<Density>('ramify-density', 'comfortable', ['comfortable', 'compact']),
   rail: load<string>('ramify-rail', '') === '1',
   menuOpen: false,
   toasts: [],
@@ -111,7 +117,7 @@ export const useStore = create<Store>((set, get) => ({
     const caps = await bridge.capabilities().catch(() => null)
     set({ caps })
     if (caps?.settings) set({ settings: await bridge.settings().catch(() => null) })
-    const savedView = load<View>('ramify-view', 'repo')
+    const savedView = load<View>('ramify-view', 'repo', ['repo', 'sessions', 'timeline', 'control'])
     if ((caps?.sessions && savedView === 'sessions') || (caps?.control && savedView === 'control')) get().setView(savedView)
     // First run of the desktop app: a short introduction built from what is installed here.
     if (caps?.sessions && get().settings && !get().settings!.onboarded) set({ modal: 'onboarding' })
@@ -124,10 +130,12 @@ export const useStore = create<Store>((set, get) => ({
     await get().poll()
   },
 
-  poll: async () => {
+  poll: async (now) => {
     const { caps } = get()
     if (get().view === 'sessions' || get().view === 'control') { void get().refreshSessions(); if (caps?.multiRepo) void get().refreshRepos(); return }
-    // One poll at a time: a slow repository must not pile up processes every 2.5 s.
+    // An interval poll waits for the one in flight: a slow repository must not pile up processes every 2.5 s.
+    // A refresh the user asked for (new repo, new worktree, an action) goes now: pollSeq drops the older answer.
+    if (now) { await get().pollState(); return }
     if (polling) return
     polling = true
     try { await get().pollState() } finally { polling = false }
@@ -147,6 +155,7 @@ export const useStore = create<Store>((set, get) => ({
       if (stillThere) void get().refreshDetail()
       if (caps?.multiRepo) void get().refreshRepos()
     } catch (e) {
+      if (get().repo !== repo || seq !== pollSeq) return
       set({ conn: e instanceof BridgeError && e.status === 401 ? 'unauthorized' : 'offline' })
     }
   },
@@ -188,8 +197,8 @@ export const useStore = create<Store>((set, get) => ({
 
   setRepo: (path) => {
     save('ramify-repo', path)
-    set({ repo: path, state: null, selected: null, detail: null, file: null, diff: '', menuOpen: false, view: get().view === 'timeline' ? 'timeline' : 'repo' })
-    void get().poll()
+    set({ repo: path, state: null, selected: null, detail: null, file: null, diff: null, menuOpen: false, view: get().view === 'timeline' ? 'timeline' : 'repo' })
+    void get().poll(true)
   },
 
   addRepo: async () => {
@@ -211,7 +220,7 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   select: (path) => {
-    set({ selected: path, detail: null, file: null, diff: '' })
+    set({ selected: path, detail: null, file: null, diff: null })
     if (path) void get().refreshDetail()
   },
 
@@ -232,12 +241,14 @@ export const useStore = create<Store>((set, get) => ({
 
   openFile: async (file) => {
     const { selected: path, repo } = get()
-    set({ file, diff: '' })
+    set({ file, diff: null })
     if (!path || !file) return
     try {
       const { diff } = await bridge.diff(repo, path, file)
       if (get().file === file && get().selected === path) set({ diff })
     } catch (e) {
+      // Stop the loading state: the toast says what went wrong.
+      if (get().file === file && get().selected === path) set({ diff: '' })
       get().toast('error', (e as Error).message)
     }
   },
@@ -251,7 +262,7 @@ export const useStore = create<Store>((set, get) => ({
       // From the repository view, show the new worktree; from the control center, stay there.
       if (get().view === 'repo' || get().view === 'timeline') {
         if (target !== get().repo) get().setRepo(target)
-        await get().poll()
+        await get().poll(true)
         get().select(path)
       } else void get().refreshRepos()
       return true
@@ -281,13 +292,15 @@ export const useStore = create<Store>((set, get) => ({
     if (view === 'sessions' || view === 'control') void get().refreshSessions()
   },
   newWorktreeFor: async (repo, prefill) => {
-    if (!get().repos.some((r) => r.path === repo)) await bridge.addRepoPath(repo).catch(() => {})
+    if (!get().repos.some((r) => r.path === repo)) {
+      try { await bridge.addRepoPath(repo) } catch (e) { get().toast('error', (e as Error).message); return }
+    }
     await get().refreshRepos()
     get().setRepo(repo)
     set({ createPrefill: prefill, modal: 'create' })
   },
   refreshSessions: async () => {
-    try { set({ sessions: await bridge.sessions() }) } catch { /* keep the last list */ }
+    try { set({ sessions: await bridge.sessions(), conn: 'ok', lastSync: Date.now() }) } catch { set({ conn: 'offline' }) /* keep the last list */ }
   },
 
   toast: (kind, text) => {
@@ -301,7 +314,7 @@ export const useStore = create<Store>((set, get) => ({
     try {
       const { message } = await action()
       get().toast('ok', message || get().t('done'))
-      await get().poll()
+      await get().poll(true)
       return true
     } catch (e) {
       get().toast('error', (e as Error).message)

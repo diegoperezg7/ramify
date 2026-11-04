@@ -23,12 +23,15 @@ export function Onboarding() {
   const settings = useStore((s) => s.settings)
   const saveSettings = useStore((s) => s.saveSettings)
   const refreshRepos = useStore((s) => s.refreshRepos)
+  const toast = useStore((s) => s.toast)
   const setModal = useStore((s) => s.setModal)
   const ref = useRef<HTMLDialogElement>(null)
   const [step, setStep] = useState<Step>('welcome')
   const [tools, setTools] = useState<InstalledTools | null>(null)
   const [live, setLive] = useState(0)
   const [picked, setPicked] = useState<Set<string>>(new Set())
+  // The sync step preselects repositories once; coming back to it keeps what the user ticked.
+  const seeded = useRef(false)
   const [saving, setSaving] = useState(false)
   const index = STEPS.indexOf(step)
 
@@ -47,8 +50,10 @@ export function Onboarding() {
       if (picked.size) await bridge.addRepos([...picked])
       await saveSettings({ ...settings, onboarded: true })
       await refreshRepos()
-    } finally {
       setModal(null)
+    } catch (e) {
+      toast('error', (e as Error).message)
+      setSaving(false)
     }
   }
 
@@ -67,7 +72,7 @@ export function Onboarding() {
 
       {step === 'tools' && <ToolsStep tools={tools} live={live} />}
       {step === 'github' && <GithubStep onDone={() => setStep('sync')} />}
-      {step === 'sync' && <SyncStep picked={picked} setPicked={setPicked} />}
+      {step === 'sync' && <SyncStep picked={picked} setPicked={setPicked} seeded={seeded} />}
 
       {step === 'done' && (
         <section className="ob-step" key="done">
@@ -130,6 +135,8 @@ function GithubStep({ onDone }: { onDone: () => void }) {
   const [code, setCode] = useState<{ userCode: string; verificationUri: string } | null>(null)
   const [copied, setCopied] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const pending = useRef(false)
+  const doneTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   const refresh = useCallback(async () => {
     const a = await bridge.githubAccount().catch(() => null)
@@ -138,13 +145,19 @@ function GithubStep({ onDone }: { onDone: () => void }) {
   }, [])
 
   useEffect(() => { void refresh() }, [refresh])
+  // Leaving the step (Later, Back, Esc) stops a sign-in still waiting for approval on github.com.
+  useEffect(() => () => {
+    clearTimeout(doneTimer.current)
+    if (pending.current) void bridge.githubCancel().catch(() => {})
+  }, [])
+  useEffect(() => { pending.current = code !== null }, [code])
 
   // While waiting for the user to approve on github.com, ask the app (not GitHub) every 2 s.
   useEffect(() => {
     if (!code) return
     const id = setInterval(async () => {
       const a = await refresh()
-      if (a?.status === 'signed-in') { setCode(null); setTimeout(onDone, 900) }
+      if (a?.status === 'signed-in') { setCode(null); doneTimer.current = setTimeout(onDone, 900) }
       if (a?.status === 'error') { setCode(null); setError(a.error ?? 'error') }
     }, 2000)
     return () => clearInterval(id)
@@ -154,7 +167,9 @@ function GithubStep({ onDone }: { onDone: () => void }) {
     setError(null)
     try { setCode(await bridge.githubSignIn()) } catch (e) { setError((e as Error).message) }
   }
-  const cancel = async () => { await bridge.githubCancel(); setCode(null); void refresh() }
+  const cancel = async () => {
+    try { await bridge.githubCancel() } catch { /* the host stops it on its own when the code expires */ } finally { setCode(null); void refresh() }
+  }
 
   return (
     <section className="ob-step ob-github" key="github">
@@ -205,7 +220,7 @@ function GithubStep({ onDone }: { onDone: () => void }) {
   )
 }
 
-function SyncStep({ picked, setPicked }: { picked: Set<string>; setPicked: (s: Set<string>) => void }) {
+function SyncStep({ picked, setPicked, seeded }: { picked: Set<string>; setPicked: (s: Set<string>) => void; seeded: { current: boolean } }) {
   const t = useStore((s) => s.t)
   const lang = useStore((s) => s.lang)
   const [sync, setSync] = useState<GithubSync | null>(null)
@@ -213,6 +228,8 @@ function SyncStep({ picked, setPicked }: { picked: Set<string>; setPicked: (s: S
   const [signedIn, setSignedIn] = useState<boolean | null>(null)
   const [installUrl, setInstallUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
+  const mounted = useRef(true)
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false } }, [])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -221,15 +238,16 @@ function SyncStep({ picked, setPicked }: { picked: Set<string>; setPicked: (s: S
     const ok = acct?.status === 'signed-in'
     setSignedIn(ok)
     const [s, l] = await Promise.all([ok ? bridge.githubSync().catch(() => null) : Promise.resolve(null), bridge.suggestRepos().catch(() => [])])
+    if (!mounted.current) return
     setSync(s)
     setLocal(l)
     // Preselect what matters: repositories with agents now and those already on this Mac.
     const pre = new Set<string>()
     for (const r of s?.repos ?? []) if (r.local && (r.live.length || !r.added)) pre.add(r.local)
     for (const r of l.slice(0, 6)) pre.add(r.path)
-    setPicked(pre)
+    if (!seeded.current) { setPicked(pre); seeded.current = true }
     setLoading(false)
-  }, [setPicked])
+  }, [setPicked, seeded])
 
   useEffect(() => { void load() }, [load])
 
