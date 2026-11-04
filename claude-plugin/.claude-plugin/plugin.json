@@ -1,9 +1,15 @@
 {
   "name": "ramify",
   "version": "0.6.0",
-  "description": "Every Claude Code worktree (--worktree, background sessions, /batch, subagents) is created by ramify: same layout as your other agents, own ports, copied .env files and project setup.",
-  "author": { "name": "Diego Pérez" },
+  "description": "Every Claude Code session works on a branch and folder of its own: before changing files on the shared branch it enters a ramify worktree (own ports, copied .env files, project setup), so parallel agents never share a branch. Plus skills to start, move, review and finish tasks.",
+  "author": {
+    "name": "Diego Pérez"
+  },
   "homepage": "https://github.com/diegoperezg7/ramify",
   "license": "MIT",
-  "keywords": ["git", "worktree", "agents"]
+  "keywords": [
+    "git",
+    "worktree",
+    "agents"
+  ]
 }

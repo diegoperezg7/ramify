@@ -5,6 +5,10 @@ description: Rules for working inside an ramify git worktree. Use whenever the p
 
 # Working in an ramify worktree
 
+In a repository's main checkout on its default branch, do not edit files: call the EnterWorktree tool first with a short
+conventional name for the task (`feat-login`, `fix-cart-total`). ramify creates the branch (`feat/login`) and its folder,
+and you continue there. Edits on the shared branch are blocked unless the user ran `git config ramify.allowMain true`.
+
 If `.worktree.env` exists at the project root, this is an isolated git worktree, one per task, and other agents are working on other branches of the same repository at the same time.
 
 - Work only on the branch in `WT_BRANCH`. Never check out another branch or main: it is checked out in another worktree and git will refuse.

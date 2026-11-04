@@ -175,6 +175,32 @@ git checkout -q main
 (cd "$T" && RAMIFY_INTERACTIVE=1 "$AW" run claude "go" 2>/dev/null)
 check "outside a repository it runs in place" 'grep -q "^claude|$T|" "$T/last-agent"'
 
+echo "claude code: a worktree of its own before changing files"
+cd "$T/demo" || exit 1
+git checkout -q main
+ss=$(printf '{"cwd":"%s"}' "$T/demo" | "$AW" hook session-start 2>/dev/null)
+check "session start on the shared branch points to EnterWorktree" 'printf "%s" "$ss" | jq -e ".hookSpecificOutput.additionalContext | contains(\"EnterWorktree\")" >/dev/null'
+g=$(printf '{"cwd":"%s","tool_name":"Write","tool_input":{"file_path":"%s/new.txt"}}' "$T/demo" "$T/demo" | "$AW" hook guard 2>/dev/null)
+check "an edit on the shared branch is denied with the way out" 'printf "%s" "$g" | jq -e ".hookSpecificOutput.permissionDecision == \"deny\" and (.hookSpecificOutput.permissionDecisionReason | contains(\"EnterWorktree\"))" >/dev/null'
+p1=$(printf '{"name":"feat-login","cwd":"%s"}' "$T/demo" | "$AW" hook create 2>/dev/null | tail -1)
+p2=$(printf '{"name":"fix-cart-total","cwd":"%s"}' "$T/demo" | "$AW" hook create 2>/dev/null | tail -1)
+check "conventional names become conventional branches" 'git show-ref --quiet refs/heads/feat/login && git show-ref --quiet refs/heads/fix/cart-total'
+check "two sessions get two folders and two branches" '[ -n "$p1" ] && [ -n "$p2" ] && [ "$p1" != "$p2" ] && [ "$(git -C "$p1" branch --show-current)" = feat/login ] && [ "$(git -C "$p2" branch --show-current)" = fix/cart-total ]'
+p1b=$(printf '{"name":"feat-login","cwd":"%s"}' "$T/demo" | "$AW" hook create 2>/dev/null | tail -1)
+check "the same name again reuses its worktree" '[ "$p1b" = "$p1" ]'
+g=$(printf '{"cwd":"%s","tool_name":"Edit","tool_input":{"file_path":"%s/a.txt"}}' "$p1" "$p1" | "$AW" hook guard 2>/dev/null)
+check "edits inside its worktree are allowed" '[ -z "$g" ]'
+ss=$(printf '{"cwd":"%s"}' "$p1" | "$AW" hook session-start 2>/dev/null)
+check "a session inside a worktree gets no warning" '[ -z "$ss" ]'
+g=$(printf '{"cwd":"/","tool_name":"Write","tool_input":{"file_path":"%s/notes.txt"}}' "$T" | "$AW" hook guard 2>/dev/null)
+check "files outside any repository are allowed" '[ -z "$g" ]'
+git config ramify.allowMain true
+g=$(printf '{"cwd":"%s","tool_name":"Write","tool_input":{"file_path":"%s/x.txt"}}' "$T/demo" "$T/demo" | "$AW" hook guard 2>/dev/null)
+check "git config ramify.allowMain lets this repository edit on main" '[ -z "$g" ]'
+git config --unset ramify.allowMain
+g=$(printf '{"cwd":"%s","tool_name":"Write","tool_input":{"file_path":"%s/x.txt"}}' "$T/demo" "$T/demo" | RAMIFY_ALLOW_MAIN=1 "$AW" hook guard 2>/dev/null)
+check "RAMIFY_ALLOW_MAIN lets one session edit on main" '[ -z "$g" ]'
+
 echo "move work off main"
 cd "$T/demo" || exit 1
 echo "half done" > wip.txt; echo changed >> a.txt

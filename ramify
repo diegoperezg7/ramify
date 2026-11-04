@@ -42,7 +42,7 @@ ${B}Usage${N}
   ramify uninstall shell        stop giving agents their own branch from the terminal
   ramify run <agent> [args]     open an agent; from a main checkout it gets its own branch first
   ramify move <branch> [-a agent]  move the main checkout's uncommitted work to a branch of its own
-  ramify hook create|remove     Claude Code WorktreeCreate/WorktreeRemove hook
+  ramify hook create|remove|session-start|guard   Claude Code hooks
 
 ${B}Agents${N} (-a)   claude, codex, gemini, copilot, cursor, opencode, aider, amp, or any command
 ${B}IDEs${N}   (-i)   xcode, cursor, code, zed, idea, or any macOS app name
@@ -499,16 +499,43 @@ cmd_app() {
   open "$url"
 }
 
+# On the default branch of a main checkout, unless the repository allows it (git config ramify.allowMain true)
+# or the session does (RAMIFY_ALLOW_MAIN=1). Prints the branch when it is the shared one.
+shared_branch_at() {
+  local dir="$1" top main branch
+  [ -n "${RAMIFY_ALLOW_MAIN:-}" ] && return 1
+  while [ ! -d "$dir" ] && [ "$dir" != / ]; do dir=$(dirname "$dir"); done
+  top=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null) || return 1
+  main=$(main_checkout "$dir" 2>/dev/null) || return 1
+  [ "$(cd "$top" && abspwd)" = "$main" ] || return 1
+  [ "$(git -C "$main" config --bool ramify.allowMain 2>/dev/null)" = true ] && return 1
+  branch=$(git -C "$main" branch --show-current)
+  [ -n "$branch" ] && [ "$branch" = "$(default_branch "$main")" ] || return 1
+  printf '%s' "$branch"
+}
+
 cmd_hook() {
-  local input name cwd wt main
-  command -v jq >/dev/null || die "jq is required for hook mode"
+  local input name cwd wt main branch file slug repo
+  # Hooks never get in the way when they cannot run: without jq they do nothing.
+  if ! command -v jq >/dev/null; then
+    case "${1:-}" in session-start|guard) exit 0 ;; esac
+    die "jq is required for hook mode"
+  fi
   input=$(cat)
   case "${1:-}" in
     create)
       name=$(printf '%s' "$input" | jq -r '.name')
       cwd=$(printf '%s' "$input" | jq -r '.cwd')
       cd "$cwd"
-      create "worktree-$name" "" 1 claude
+      # feat-login → feat/login; anything else keeps the worktree- prefix.
+      case "$name" in
+        feat-*|fix-*|docs-*|refactor-*|test-*|chore-*|perf-*) branch="${name%%-*}/${name#*-}" ;;
+        *) branch="worktree-$name" ;;
+      esac
+      # The same name again (a resumed session) reuses its worktree.
+      main=$(main_checkout "$PWD"); repo=$(basename "$main"); slug=$(slugify "$branch")
+      if [ -d "$ROOT/$repo/$slug" ]; then (cd "$ROOT/$repo/$slug" && abspwd); exit 0; fi
+      create "$branch" "" 1 claude
       printf '%s\n' "$CREATED_WT" ;;
     remove)
       wt=$(printf '%s' "$input" | jq -r '.worktree_path')
@@ -516,7 +543,27 @@ cmd_hook() {
       main=$(main_checkout "$wt")
       # Claude Code already asked for confirmation: discard changes, but keep the branch.
       remove_wt "$main" "$wt" 1 ;;
-    *) die "usage: ramify hook create|remove" ;;
+    session-start)
+      # A session that opens on the shared branch learns to take a worktree of its own before changing files.
+      cwd=$(printf '%s' "$input" | jq -r '.cwd // empty')
+      branch=$(shared_branch_at "${cwd:-$PWD}") || exit 0
+      jq -n --arg b "$branch" '{hookSpecificOutput: {hookEventName: "SessionStart", additionalContext:
+        ("This session starts in the main checkout on " + $b + ", the shared branch other agents and the user work from. "
+        + "Before you change any file, call the EnterWorktree tool with a short conventional name for the task, such as "
+        + "feat-login or fix-cart-total: ramify creates a branch and a folder of its own, with the ignored files, dependencies "
+        + "and ports the project needs, and you continue there. Reading code and answering questions do not need it. "
+        + "Edits on " + $b + " are blocked unless the user runs: git config ramify.allowMain true")}}' ;;
+    guard)
+      # Edits on the shared branch are refused with the way out: a worktree of its own.
+      file=$(printf '%s' "$input" | jq -r '.tool_input.file_path // .tool_input.notebook_path // empty')
+      [ -n "$file" ] || exit 0
+      case "$file" in /*|[A-Za-z]:*) ;; *) file="$(printf '%s' "$input" | jq -r '.cwd')/$file" ;; esac
+      branch=$(shared_branch_at "$(dirname "$file")") || exit 0
+      jq -n --arg b "$branch" '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason:
+        ("This file is on " + $b + ", the shared branch. Call the EnterWorktree tool first with a short conventional name for "
+        + "the task (feat-..., fix-...): you get a branch and folder of your own, then make the change there. "
+        + "(To allow edits on " + $b + " in this repository the user runs: git config ramify.allowMain true)")}}' ;;
+    *) die "usage: ramify hook create|remove|session-start|guard" ;;
   esac
 }
 
