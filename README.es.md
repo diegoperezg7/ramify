@@ -18,7 +18,7 @@
 
 <p align="center"><a href="README.md">English</a></p>
 
-<p align="center"><img src="docs/app-dark.png" alt="Ramify: tres agentes trabajando en tres ramas del mismo repositorio, con el diff estilo GitHub de uno de ellos"></p>
+<p align="center"><img src="docs/ramify-demo.gif" alt="Ramify en 30 segundos: seis agentes trabajando a la vez, cada uno en su rama; el centro de control, el diff estilo GitHub de cada agente y la línea de tiempo de ramas"><br><sub><a href="docs/ramify-demo.mp4">Verlo en vídeo</a></sub></p>
 
 ## El problema
 
@@ -33,7 +33,7 @@ de IA del ordenador se detecta sola. Y todas las ramas están en una pantalla: q
 
 ### 1. Ve cada sesión de IA, sola
 
-<img src="docs/app-sessions.png" alt="Sesiones de IA: cinco agentes trabajando ahora, con su terminal, repositorio y rama">
+<img src="docs/app-sessions.png" alt="Sesiones de IA: seis agentes trabajando ahora, cada uno con su terminal, repositorio y rama, y un aviso por el que trabaja en main">
 
 Abre Claude Code en una terminal, Codex en tmux, el chat de Cursor o la app de ChatGPT: Ramify lo nota y te dice
 en qué repo y rama está cada uno y si está trabajando o esperándote. Sin botones que pulsar ni plugins que
@@ -63,6 +63,8 @@ El diff de GitHub que ya conoces: números de línea, verde lo añadido, rojo lo
 rama en los editores que tienes instalados, vuelve a lanzar el agente, mergéala o quítala. Ramify se niega a borrar
 nada que no esté commiteado o mergeado.
 
+<img src="docs/app-dark.png" alt="Cuatro agentes en cuatro ramas del mismo repositorio, con el diff estilo GitHub de la que está haciendo Codex">
+
 ### 4. Un centro de control de las ramas en construcción
 
 Cada rama con su agente y lo que está haciendo, sus commits, lo que falta por guardar, cuánto va por detrás de `main`, el
@@ -70,6 +72,8 @@ tamaño del cambio (con aviso a partir de ~400 líneas), su pull request y un av
 Un clic para lo siguiente que necesita: traer `main`, abrir una PR en borrador, mergear o quitarla cuando ya está
 mergeada. Un mapa de calor muestra los commits de los últimos seis meses. Automatismos opcionales, cada uno con su
 interruptor: avisos, PR en borrador cuando un agente termina en una rama subida y limpieza de worktrees mergeados.
+
+<img src="docs/app-control.png" alt="Centro de control: cada rama en construcción con su agente, commits, cambios sin guardar y tamaño, y el mapa de commits">
 
 ### 5. Todas las ramas en una línea de tiempo
 

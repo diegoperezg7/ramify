@@ -24,7 +24,7 @@
   <a href="README.es.md"><img alt="Español" src="https://img.shields.io/badge/lang-español-4e4e4e"></a>
 </p>
 
-<p align="center"><img src="docs/app-dark.png" alt="Ramify: three agents working on three branches of the same repository, with the GitHub-style diff of one of them"></p>
+<p align="center"><img src="docs/ramify-demo.gif" alt="Ramify in 30 seconds: six agents working at once, each on its own branch; the control center, the GitHub-style diff of each agent and the branch timeline"><br><sub><a href="docs/ramify-demo.mp4">Watch it as a video</a></sub></p>
 
 ## The problem
 
@@ -39,7 +39,7 @@ computer is detected by itself. And every branch is on one screen: what changed,
 
 ### 1. It sees every AI session, by itself
 
-<img src="docs/app-sessions.png" alt="AI sessions: five agents working now, with their terminal, repository and branch">
+<img src="docs/app-sessions.png" alt="AI sessions: six agents working now, each with its terminal, repository and branch, and a warning for the one working on main">
 
 Open Claude Code in a terminal, Codex in tmux, Cursor's chat or the ChatGPT app: Ramify notices, tells you
 which repository and branch each one is in and whether it is working or waiting for you. No buttons to press,
@@ -69,6 +69,8 @@ The diff you know from GitHub: line numbers, green for added, red for removed, a
 branch in the editors you actually have installed, launch the agent again, merge it, or remove it. Ramify
 refuses to delete anything that is not committed or not merged.
 
+<img src="docs/app-dark.png" alt="Four agents on four branches of the same repository, with the GitHub-style diff of the one Codex is working on">
+
 ### 4. A control center for every branch being built
 
 Each branch with its agent and what it is doing, commits, uncommitted work, how far behind `main` it is, the size of the
@@ -76,6 +78,8 @@ change (with a warning past ~400 lines), its pull request, and a warning when tw
 click for what it needs next: bring in `main`, open a draft pull request, merge, or remove it once merged. A
 contribution grid shows the last six months of commits. Optional automation, each with its own switch: warnings, a
 draft pull request when an agent finishes on a pushed branch, and clean-up of merged worktrees.
+
+<img src="docs/app-control.png" alt="Control center: every branch being built with its agent, commits, uncommitted work and size, and the contribution grid">
 
 ### 5. Every branch on one timeline
 
