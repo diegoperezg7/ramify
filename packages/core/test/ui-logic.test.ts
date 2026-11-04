@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { agentTimeByDay, dayLanes, friendlyMerge, lastActivity, lastDays, levels, nextAction, parseDiff, peakParallel, splitMinor, taskSlug, timeBy, unionMs } from '../../../ui/web/src/logic.ts'
+import { agentTimeByDay, dayLanes, friendlyMerge, lastActivity, MergeError, mergeProblem, lastDays, levels, nextAction, parseDiff, peakParallel, splitMinor, taskSlug, timeBy, unionMs } from '../../../ui/web/src/logic.ts'
 import type { BranchHealth, PullRequest } from '../src/types.ts'
 
 const branch = (o: Partial<BranchHealth>): BranchHealth => ({
@@ -129,11 +129,22 @@ describe('control center: one day hour by hour', () => {
 })
 
 describe('merge notification', () => {
-  it('says it in one line instead of git output', async () => {
-    assert.deepEqual(await friendlyMerge(async () => ' a.ts | 3 ++-\n 1 file changed', 'ok', 'conflict'), { message: 'ok' })
+  const ctx = { branch: 'feat/x', base: 'main', path: '/wts/feat-x' }
+  it('says it in one line instead of git output, and another when generated files were rebuilt', async () => {
+    assert.deepEqual(await friendlyMerge(async () => ({ message: ' a.ts | 3 ++-\n 1 file changed' }), ctx, 'ok', 'rebuilt'), { message: 'ok' })
+    assert.deepEqual(await friendlyMerge(async () => ({ message: 'merged feat/x; regenerated: ui/dist/index.html' }), ctx, 'ok', 'rebuilt'), { message: 'rebuilt' })
   })
-  it('turns a conflict into a short sentence and keeps other errors as they are', async () => {
-    await assert.rejects(friendlyMerge(async () => { throw new Error('merge conflict, nothing was changed:\nCONFLICT (content)') }, 'ok', 'conflict'), /^Error: conflict$/)
-    await assert.rejects(friendlyMerge(async () => { throw new Error('the worktree has uncommitted changes') }, 'ok', 'conflict'), /uncommitted/)
+  it('turns a failed merge into the reason and the files, for a dialog', async () => {
+    const conflict = 'merge conflict, nothing was changed:\nconflict: src/a.ts\nconflict: README.md\nCONFLICT (content): Merge conflict in src/a.ts'
+    await assert.rejects(friendlyMerge(async () => { throw new Error(conflict) }, ctx, 'ok', 'rebuilt'),
+      (e: unknown) => e instanceof MergeError && e.problem.kind === 'conflict' && e.problem.files.join() === 'src/a.ts,README.md' && e.problem.path === '/wts/feat-x')
+  })
+  it('reads every reason, also from older hosts and through Electron\'s error prefix', () => {
+    assert.deepEqual(mergeProblem("Error invoking remote method 'ramify': EngineError: merge conflict, nothing was changed:\nCONFLICT (content): Merge conflict in a.ts", ctx).files, ['a.ts'])
+    assert.equal(mergeProblem('the main checkout has uncommitted changes', ctx).kind, 'dirty-main')
+    assert.equal(mergeProblem('the worktree has uncommitted changes', ctx).kind, 'dirty-branch')
+    const g = mergeProblem('generated files could not be rebuilt, nothing was changed:\nsh: npm: command not found', ctx)
+    assert.equal(g.kind, 'generated'); assert.equal(g.detail, 'sh: npm: command not found')
+    assert.deepEqual([mergeProblem('nothing to merge', ctx).kind, mergeProblem('nothing to merge', ctx).detail], ['other', 'nothing to merge'])
   })
 })

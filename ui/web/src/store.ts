@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { bridge, BridgeError } from './bridge'
 import { dict, format, type Key, type Lang } from './i18n'
 import type { AgentSession, Capabilities, CreateRequest, Detail, RepoInfo, Settings, State } from './types'
+import { MergeError, type MergeProblem } from './logic'
 
 export type Theme = 'system' | 'light' | 'dark'
 export type Density = 'comfortable' | 'compact'
@@ -34,6 +35,9 @@ interface Store {
   menuOpen: boolean
   toasts: Toast[]
   busy: boolean
+  /** A merge that did not happen, shown as a dialog that says why and what to do. */
+  mergeProblem: MergeProblem | null
+  setMergeProblem: (p: MergeProblem | null) => void
   view: View
   sessions: AgentSession[] | null
   /** Values the "new worktree" form opens with (from a shared-branch warning). */
@@ -107,6 +111,8 @@ export const useStore = create<Store>((set, get) => ({
   menuOpen: false,
   toasts: [],
   busy: false,
+  mergeProblem: null,
+  setMergeProblem: (mergeProblem) => set({ mergeProblem }),
   view: 'repo',
   sessions: null,
   createPrefill: null,
@@ -317,7 +323,8 @@ export const useStore = create<Store>((set, get) => ({
       await get().poll(true)
       return true
     } catch (e) {
-      get().toast('error', (e as Error).message)
+      if (e instanceof MergeError) set({ mergeProblem: e.problem })
+      else get().toast('error', (e as Error).message)
       return false
     } finally {
       set({ busy: false })

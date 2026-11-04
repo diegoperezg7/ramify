@@ -160,9 +160,45 @@ export function splitMinor(totals: [string, number][], share = 0.04): { main: st
  * Merge a branch, and say it in one short line: git's own output (every file and +/- count) is too much
  * for a notification. A conflict says so, the details stay in git (nothing was changed).
  */
-export async function friendlyMerge(merge: () => Promise<unknown>, ok: string, conflict: string): Promise<{ message: string }> {
-  try { await merge() } catch (e) {
-    throw /merge conflict/i.test((e as Error).message) ? new Error(conflict) : e
-  }
-  return { message: ok }
+/** Why a merge did not happen, read from the host's error, for a dialog that says why and what to do next. */
+export interface MergeProblem {
+  kind: 'conflict' | 'generated' | 'dirty-main' | 'dirty-branch' | 'other'
+  /** Files in conflict (conflict), or the rebuild script's last lines (generated) / the raw message (other). */
+  files: string[]
+  detail: string
+  branch: string
+  base: string
+  /** The branch's worktree: where the conflict gets resolved. */
+  path: string
+}
+
+export function mergeProblem(message: string, ctx: { branch: string; base: string; path: string }): MergeProblem {
+  const m = message.replace(/^Error invoking remote method '[^']*': (?:\w*Error: )?/, '')
+  const files = [...m.matchAll(/^conflict: (.+)$/gm)].map((x) => x[1].trim())
+  // Older hosts: only git's own words.
+  if (!files.length) for (const x of m.matchAll(/^CONFLICT \([^)]*\): (?:Merge conflict in )?(\S+)/gm)) files.push(x[1])
+  const kind: MergeProblem['kind'] = /generated files could not be rebuilt/i.test(m) ? 'generated'
+    : /merge conflict/i.test(m) ? 'conflict'
+    : /main checkout has uncommitted/i.test(m) ? 'dirty-main'
+    : /worktree has uncommitted/i.test(m) ? 'dirty-branch'
+    : 'other'
+  const detail = kind === 'generated' ? m.split('\n').slice(1).join('\n').trim() : kind === 'other' ? m : ''
+  return { kind, files: [...new Set(files)], detail, ...ctx }
+}
+
+/** A merge that did not happen: the UI shows it as a dialog (why, what to do), not as a toast. */
+export class MergeError extends Error {
+  problem: MergeProblem
+  constructor(problem: MergeProblem) { super(problem.detail || problem.kind); this.problem = problem }
+}
+
+/**
+ * Merge with a short message on success (a different one when generated files were rebuilt along the way)
+ * and a MergeError, with its reason, on failure.
+ */
+export async function friendlyMerge(merge: () => Promise<unknown>, ctx: { branch: string; base: string; path: string }, ok: string, okRebuilt: string): Promise<{ message: string }> {
+  let out: unknown
+  try { out = await merge() } catch (e) { throw new MergeError(mergeProblem((e as Error).message, ctx)) }
+  const said = typeof out === 'string' ? out : (out as { message?: string } | undefined)?.message ?? ''
+  return { message: /regenerated: /.test(said) ? okRebuilt : ok }
 }

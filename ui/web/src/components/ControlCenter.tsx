@@ -8,7 +8,7 @@ import { Dialog } from './Dialog'
 import { GithubIcon } from './GithubIcon'
 import { ActivityCharts, DayPanel, NowPanel } from './Dashboard'
 import { HEAT_DAYS, Heatmap } from './Heatmap'
-import { friendlyMerge, nextAction, type Action } from '../logic'
+import { friendlyMerge, MergeError, nextAction, type Action } from '../logic'
 
 /** Pull requests of ~400 changed lines or more are hard to review: say so. */
 const BIG = 400
@@ -25,6 +25,7 @@ export function ControlCenter() {
   const setRepo = useStore((s) => s.setRepo)
   const select = useStore((s) => s.select)
   const toast = useStore((s) => s.toast)
+  const setMergeProblem = useStore((s) => s.setMergeProblem)
   const [boards, setBoards] = useState<Board[] | null>(null)
   const [days, setDays] = useState<Record<number, number> | null>(null)
   const [picked, setPicked] = useState<number | null>(null)
@@ -102,7 +103,7 @@ export function ControlCenter() {
 
   const run = async (key: string, fn: () => Promise<{ message: string }>) => {
     setBusy((s) => new Set(s).add(key))
-    try { const { message } = await fn(); toast('ok', message); prsAt.current.clear(); await load() } catch (e) { toast('error', (e as Error).message) } finally {
+    try { const { message } = await fn(); toast('ok', message); prsAt.current.clear(); await load() } catch (e) { if (e instanceof MergeError) setMergeProblem(e.problem); else toast('error', (e as Error).message) } finally {
       setBusy((s) => { const next = new Set(s); next.delete(key); return next })
     }
   }
@@ -247,7 +248,7 @@ export function ControlCenter() {
             const key = b.path
             if (action === 'move') void run(key, () => bridge.moveToBranch(board.repo, b.running[0] || b.agent || 'claude'))
             if (action === 'pr') void run(key, () => bridge.openPr(board.repo, b.path))
-            if (action === 'merge') void run(key, () => friendlyMerge(() => bridge.merge(board.repo, b.path), t('mergedOk', { branch: b.branch, base: board.health.base }), t('mergeConflict', { branch: b.branch, base: board.health.base })))
+            if (action === 'merge') void run(key, () => friendlyMerge(() => bridge.merge(board.repo, b.path), { branch: b.branch, base: board.health.base, path: b.path }, t('mergedOk', { branch: b.branch, base: board.health.base }), t('mergedRebuilt', { branch: b.branch, base: board.health.base })))
             if (action === 'remove') void run(key, () => bridge.remove(board.repo, b.path, false))
           }}>
           <p>{t(`confirm_${confirm.action}` as 'confirm_move', { branch: confirm.b.branch, base: confirm.board.health.base, agent: confirm.b.running[0] || confirm.b.agent || 'claude' })}</p>

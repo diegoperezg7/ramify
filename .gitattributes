@@ -1,0 +1,5 @@
+# Generated from other files in this repository. When two branches both rebuilt them, a merge from ramify
+# does not stop at the conflict: it runs .worktree/merge.sh, which rebuilds them from the merged sources.
+ui/dist/** ramify-generated
+claude-plugin/bin/ramify ramify-generated
+claude-plugin/ui/** ramify-generated
