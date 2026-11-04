@@ -24,6 +24,8 @@ const PS = `
 
 describe('process tree', () => {
   const procs = parsePs(PS)
+  // These process lists are macOS ones: name apps from their bundles on every OS.
+  const mac = (p: { args: string }) => appOf(p.args)
 
   it('parses etime', () => {
     assert.equal(parseEtime('05:00'), 300)
@@ -39,17 +41,17 @@ describe('process tree', () => {
   })
 
   it('finds the terminal an agent runs in', () => {
-    assert.deepEqual(hostOf(103, procs), { host: 'Ghostty', via: 'terminal' })
+    assert.deepEqual(hostOf(103, procs, undefined, mac), { host: 'Ghostty', via: 'terminal' })
   })
 
   it('finds the IDE that started an agent extension', () => {
-    assert.deepEqual(hostOf(202, procs), { host: 'VS Code', via: 'ide' })
+    assert.deepEqual(hostOf(202, procs, undefined, mac), { host: 'VS Code', via: 'ide' })
   })
 
   it('traces a tmux pane to the terminal attached to its session', () => {
     const tmux = { paneSession: new Map([[301, 'work']]), clients: new Map([['work', 402]]) }
-    assert.deepEqual(hostOf(302, procs, tmux), { host: 'Ghostty · tmux', via: 'terminal' })
-    assert.deepEqual(hostOf(302, procs), { host: 'tmux', via: 'terminal' })
+    assert.deepEqual(hostOf(302, procs, tmux, mac), { host: 'Ghostty · tmux', via: 'terminal' })
+    assert.deepEqual(hostOf(302, procs, undefined, mac), { host: 'tmux', via: 'terminal' })
   })
 })
 
@@ -78,13 +80,13 @@ describe('IDE chat', () => {
     ws('Cursor', 'old', false, 3600_000)
     ws('Code', 'b', true, 30_000)
     const cursorOnly = parsePs('  10 1 01:00 /Applications/Cursor.app/Contents/MacOS/Cursor')
-    const found = ideSessions(cursorOnly, now, support)
+    const found = ideSessions(cursorOnly, now, support, false)
     assert.equal(found.length, 1)
     assert.equal(found[0].host, 'Cursor')
     assert.equal(found[0].cwd, project)
     assert.equal(found[0].inferred, true)
     const both = parsePs('  10 1 01:00 /Applications/Cursor.app/Contents/MacOS/Cursor\n  11 1 01:00 /Applications/Visual Studio Code.app/Contents/MacOS/Electron')
-    assert.deepEqual(ideSessions(both, now, support).map((s) => s.agent).sort(), ['copilot', 'cursor'])
+    assert.deepEqual(ideSessions(both, now, support, false).map((s) => s.agent).sort(), ['copilot', 'cursor'])
   })
 })
 

@@ -13,6 +13,21 @@ export class EngineError extends Error {}
 const WIN = process.platform === 'win32'
 
 /**
+ * One spelling per folder. Windows: long names (not RUNNER~1), forward slashes as git prints them.
+ * Elsewhere paths are already canonical.
+ */
+export function normPath(p: string): string {
+  if (!WIN) return p
+  let long = p
+  try { long = realpathSync.native(p) } catch { /* missing: keep as given */ }
+  return long.replace(/\\/g, '/')
+}
+
+export function samePath(a: string, b: string): boolean {
+  return WIN ? normPath(a).toLowerCase() === normPath(b).toLowerCase() : a === b
+}
+
+/**
  * Windows: the ramify script runs in the bash that ships with Git for Windows
  * (not WSL's C:\Windows\System32\bash.exe, which sees a different filesystem).
  */
@@ -91,9 +106,9 @@ export class Engine {
     const r = await this.run('git', ['-C', dir, 'rev-parse', '--git-common-dir'])
     if (r.code !== 0) return null
     let common: string
-    try { common = realpathSync(resolve(dir, r.stdout.trim())) } catch { return null }
+    try { common = normPath(realpathSync(resolve(dir, r.stdout.trim()))) } catch { return null }
     const bare = (await this.run('git', ['-C', common, 'rev-parse', '--is-bare-repository'])).stdout.trim() === 'true'
-    if (!bare) return basename(common) === '.git' ? resolve(common, '..') : null
+    if (!bare) return basename(common) === '.git' ? normPath(resolve(common, '..')) : null
     // Bare repository with worktrees: the first non-bare worktree acts as the main checkout.
     const first = (await this.list(common)).find((w) => !w.bare)
     return first ? first.path : null
@@ -172,9 +187,9 @@ export class Engine {
 
   /** Validate that `path` is a worktree of `repo` (one `git worktree list`, no process scan). */
   private async find(repo: string, path: string): Promise<{ path: string; branch: string; main: boolean }> {
-    const wt = (await this.list(repo)).find((w) => w.path === path && !w.bare)
+    const wt = (await this.list(repo)).find((w) => samePath(w.path, path) && !w.bare)
     if (!wt) throw new EngineError('unknown worktree')
-    return { path: wt.path, branch: wt.branch, main: wt.path === repo }
+    return { path: wt.path, branch: wt.branch, main: samePath(wt.path, repo) }
   }
 
   private async mergeBase(repo: string, path: string, wt: { main: boolean }): Promise<string> {

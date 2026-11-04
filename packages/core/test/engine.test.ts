@@ -4,12 +4,14 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { after, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { Engine, EngineError, shellQuote } from '../src/engine.ts'
+import { Engine, EngineError, normPath, shellQuote } from '../src/engine.ts'
 
 const BIN = resolve(import.meta.dirname, '../../../ramify')
-const T = realpathSync(mkdtempSync(join(tmpdir(), 'ramify-core-')))
-const ROOT = join(T, 'wts')
-const REPO = join(T, 'shop')
+// Paths as git prints them (on Windows: long names, forward slashes).
+const T = normPath(realpathSync(mkdtempSync(join(tmpdir(), 'ramify-core-'))))
+const P = (...parts: string[]) => parts.join('/')
+const ROOT = P(T, 'wts')
+const REPO = P(T, 'shop')
 const env = {
   RAMIFY_ROOT: ROOT,
   GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.com',
@@ -34,7 +36,7 @@ describe('engine', () => {
 
   it('creates a worktree without launching and returns the launch command', async () => {
     const c = await engine.create(REPO, { branch: 'feat/x', agent: 'claude', prompt: "fix it's broken" })
-    assert.equal(c.path, join(ROOT, 'shop', 'feat-x'))
+    assert.equal(c.path, P(ROOT, 'shop', 'feat-x'))
     assert.match(c.command ?? '', /open .* -a claude -p 'fix it'\\''s broken'$/)
   })
 
@@ -44,7 +46,7 @@ describe('engine', () => {
   })
 
   it('reports state with owners per branch', async () => {
-    const wt = join(ROOT, 'shop', 'feat-x')
+    const wt = P(ROOT, 'shop', 'feat-x')
     writeFileSync(join(wt, 'b.txt'), 'b\n')
     sh(wt, 'add', '.')
     sh(wt, 'commit', '-qm', 'work')
@@ -56,7 +58,7 @@ describe('engine', () => {
   })
 
   it('lists files and diffs of a worktree', async () => {
-    const wt = join(ROOT, 'shop', 'feat-x')
+    const wt = P(ROOT, 'shop', 'feat-x')
     writeFileSync(join(wt, 'c.txt'), 'new\n')
     const d = await engine.worktree(REPO, wt)
     assert.deepEqual(d.files.map((f) => [f.file, f.status, f.uncommitted]), [['b.txt', 'A', false], ['c.txt', '?', true]])
@@ -64,7 +66,7 @@ describe('engine', () => {
   })
 
   it('refuses to merge with uncommitted changes, then merges', async () => {
-    const wt = join(ROOT, 'shop', 'feat-x')
+    const wt = P(ROOT, 'shop', 'feat-x')
     await assert.rejects(engine.merge(REPO, wt), /uncommitted/)
     rmSync(join(wt, 'c.txt'))
     await engine.merge(REPO, wt)
@@ -73,7 +75,7 @@ describe('engine', () => {
 
   it('refuses unknown paths and removes merged worktrees', async () => {
     await assert.rejects(engine.remove(REPO, '/etc', false), /unknown worktree/)
-    await engine.remove(REPO, join(ROOT, 'shop', 'feat-x'), false)
+    await engine.remove(REPO, P(ROOT, 'shop', 'feat-x'), false)
     assert.equal((await engine.worktrees(REPO)).length, 1)
   })
 

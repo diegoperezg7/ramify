@@ -11,7 +11,7 @@
 <p align="center">
   <a href="https://github.com/diegoperezg7/ramify/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/diegoperezg7/ramify/actions/workflows/ci.yml/badge.svg"></a>
   <img alt="bash" src="https://img.shields.io/badge/bash-3.2%2B-4e4e4e">
-  <img alt="platforms" src="https://img.shields.io/badge/macOS%20%7C%20Linux-4e4e4e">
+  <img alt="platforms" src="https://img.shields.io/badge/macOS%20%7C%20Windows%20%7C%20Linux-4e4e4e">
   <a href="LICENSE"><img alt="MIT" src="https://img.shields.io/badge/license-MIT-7c3aed"></a>
   <a href="README.es.md"><img alt="Español" src="https://img.shields.io/badge/lang-español-4e4e4e"></a>
 </p>
@@ -47,7 +47,8 @@ merge it as usual and `ramify rm` the worktree. Prefer a window? Download the
 - **Any IDE**: Xcode, Cursor, VS Code, Zed, IntelliJ, or any app.
 - **Ready to run**: ignored files copied, dependencies installed, a free block of ports, one simulator per worktree on iOS.
 - **See everything**: a branch graph coloured by agent, live detection of which agent is running where, diffs and merge from the UI.
-- **Four front ends, one engine**: CLI, macOS app in the menu bar, VS Code / Cursor extension, Claude Code plugin.
+- **Every AI session on your machine**: the app finds Claude Code, Codex, Gemini… in any terminal or tmux, the AI chat of Cursor and VS Code, and desktop AI apps; keeps a history (where, which repo and branch, how long, its pull request) and exports it to CSV or JSON.
+- **Four front ends, one engine**: CLI, desktop app for macOS and Windows, VS Code / Cursor extension, Claude Code plugin.
 - **Hard to lose work**: removing a worktree refuses when anything is uncommitted or unmerged.
 - **Nothing in your repo**: no config files required, one line in `.git/info/exclude`.
 
@@ -136,7 +137,8 @@ The same interface runs in four places. All of them read the repository live, ev
 
 | | What you get |
 |---|---|
-| **Desktop app** (macOS) | Lives in the menu bar with the number of agents working, puts it on the Dock icon and notifies you when an agent finishes (click to review its changes). `ramify app` opens the repository you are in. Every repository in one window. Repositories where an agent is running right now appear by themselves under *Working now*; your GitHub repositories are one click away (add the local clone or clone it). Create a worktree, pick the agent and it opens in Terminal, iTerm or Ghostty. ⌘K command palette, ⌘N new worktree, ↑/↓ to move. |
+| **Desktop app** (macOS, Windows) | Lives in the menu bar with the number of agents working, puts it on the Dock icon and notifies you when an agent finishes (click to review its changes). `ramify app` opens the repository you are in. Every repository in one window. Repositories where an agent is running right now appear by themselves under *Working now*; your GitHub repositories are one click away (add the local clone or clone it). Create a worktree, pick the agent and it opens in Terminal, iTerm or Ghostty. ⌘K command palette, ⌘N new worktree, ↑/↓ to move. |
+| **AI sessions** (desktop app) | Every AI conversation on the machine, detected by itself: agent CLIs in any terminal (with the app they run in: Terminal, iTerm, Ghostty, tmux, Windows Terminal, an IDE), the AI chat of Cursor, VS Code + Copilot and Windsurf (inferred from editor activity, and marked as such) and the ChatGPT and Claude apps. Time spent, repositories, branches and their pull requests; export to CSV or JSON; repositories an agent worked in that are not on GitHub yet can be published from there. |
 | **VS Code / Cursor extension** | The dashboard as an editor tab (`Ramify: Open dashboard`, ⌘⌥W), agents launched in the integrated terminal, a status bar counter of agents working. |
 | **Claude Code plugin** | Every Claude Code worktree (`--worktree`, background sessions, `/batch`, subagents) is created by Ramify, plus `/ramify:status` and `/ramify:ui`. |
 | **Browser** (`ramify ui`) | Single repository dashboard from the terminal: 127.0.0.1 only, one-time token. |
@@ -151,7 +153,7 @@ goes from three columns on a wide screen to a slide-over inspector and a phone-s
 
 ### Install
 
-Prebuilt `.dmg` and `.vsix` are attached to every [release](https://github.com/diegoperezg7/ramify/releases/latest). To build them yourself:
+Prebuilt `.dmg` (Apple silicon and Intel), Windows `.exe` installer and `.vsix` are attached to every [release](https://github.com/diegoperezg7/ramify/releases/latest). To build them yourself:
 
 ```bash
 # desktop app
@@ -168,7 +170,7 @@ cursor --install-extension apps/vscode/ramify.vsix   # or: code --install-extens
 /plugin install ramify@ramify
 ```
 
-The desktop app is not signed: the first time, right-click it and choose *Open*. GitHub integration uses the
+The desktop app is not signed: on macOS, the first time, right-click it and choose *Open*; on Windows, SmartScreen asks once (*More info* → *Run anyway*). On Windows it needs [Git for Windows](https://git-scm.com/download/win), whose bash runs the `ramify` script. GitHub integration uses the
 `gh` CLI you are already signed in to. The browser dashboard needs `python3` and uses the prebuilt `ui/dist`.
 
 ### How it is built

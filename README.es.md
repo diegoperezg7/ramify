@@ -8,7 +8,7 @@
   cada uno en su rama, con sus puertos, sus dependencias y su simulador.
 </p>
 
-<p align="center"><a href="README.md">English</a></p>
+<p align="center"><a href="README.md">English</a> · macOS · Windows · Linux</p>
 
 <p align="center">
   <a href="#empezar">Empezar</a> ·
@@ -41,7 +41,8 @@ diff, lo mergeas como siempre y quitas el worktree con `ramify rm`. ¿Prefieres 
 - **Cualquier IDE**: Xcode, Cursor, VS Code, Zed, IntelliJ o cualquier app.
 - **Listo para trabajar**: copia los ficheros ignorados, instala dependencias, reserva puertos libres y en iOS un simulador por worktree.
 - **Todo a la vista**: grafo de ramas coloreado por agente, detección en vivo de qué agente trabaja dónde, diffs y merge desde la interfaz.
-- **Cuatro interfaces, un motor**: CLI, app de macOS en la barra de menús, extensión de VS Code / Cursor y plugin de Claude Code.
+- **Todas las sesiones de IA de tu ordenador**: la app encuentra Claude Code, Codex, Gemini… en cualquier terminal o tmux, el chat de IA de Cursor y VS Code y las apps de IA de escritorio; guarda un historial (dónde, qué repo y rama, cuánto duró, su pull request) y lo exporta a CSV o JSON.
+- **Cuatro interfaces, un motor**: CLI, app de escritorio para macOS y Windows, extensión de VS Code / Cursor y plugin de Claude Code.
 - **Difícil perder trabajo**: quitar un worktree se niega si hay algo sin commitear o sin mergear.
 - **Nada en tu repo**: no hace falta ningún fichero de configuración; solo una línea en `.git/info/exclude`.
 
@@ -131,7 +132,8 @@ La misma interfaz corre en cuatro sitios, y todas leen el repositorio en vivo ca
 
 | | Qué tienes |
 |---|---|
-| **App de escritorio** (macOS) | Vive en la barra de menús con el número de agentes trabajando, lo pone en el icono del Dock y te avisa cuando un agente termina (pulsas y ves sus cambios). `ramify app` abre el repo en el que estés. Todos tus repos en una ventana. Los repos donde hay un agente trabajando aparecen solos en *Trabajando ahora*, y tus repos de GitHub están a un clic (añadir el clon local o clonarlo). Creas un worktree, eliges agente y se abre en Terminal, iTerm o Ghostty. Paleta de comandos ⌘K, ⌘N nuevo worktree, ↑/↓ para moverte. |
+| **App de escritorio** (macOS, Windows) | Vive en la barra de menús con el número de agentes trabajando, lo pone en el icono del Dock y te avisa cuando un agente termina (pulsas y ves sus cambios). `ramify app` abre el repo en el que estés. Todos tus repos en una ventana. Los repos donde hay un agente trabajando aparecen solos en *Trabajando ahora*, y tus repos de GitHub están a un clic (añadir el clon local o clonarlo). Creas un worktree, eliges agente y se abre en Terminal, iTerm o Ghostty. Paleta de comandos ⌘K, ⌘N nuevo worktree, ↑/↓ para moverte. |
+| **Sesiones de IA** (app de escritorio) | Todas las conversaciones con IA del ordenador, detectadas solas: agentes en cualquier terminal (con la app en la que corren: Terminal, iTerm, Ghostty, tmux, Windows Terminal o un IDE), el chat de IA de Cursor, VS Code + Copilot y Windsurf (inferido por la actividad del editor, y marcado así) y las apps de ChatGPT y Claude. Tiempo, repos, ramas y sus pull requests; exportación a CSV o JSON; y los repos en los que trabajó un agente que aún no están en GitHub se pueden subir desde ahí. |
 | **Extensión VS Code / Cursor** | El panel como pestaña del editor (`Ramify: Open dashboard`, ⌘⌥W), los agentes en el terminal integrado y un contador de agentes trabajando en la barra de estado. |
 | **Plugin de Claude Code** | Todos los worktrees de Claude Code (`--worktree`, sesiones en segundo plano, `/batch`, subagentes) los crea Ramify, más `/ramify:status` y `/ramify:ui`. |
 | **Navegador** (`ramify ui`) | Panel de un repositorio desde el terminal: solo 127.0.0.1 y token de un solo uso. |
@@ -146,7 +148,7 @@ columnas en pantalla ancha a un inspector deslizante y a una sola columna en el 
 
 ### Instalación
 
-Cada [release](https://github.com/diegoperezg7/ramify/releases/latest) incluye el `.dmg` y el `.vsix` ya compilados. Para compilarlos tú:
+Cada [release](https://github.com/diegoperezg7/ramify/releases/latest) incluye ya compilados el `.dmg` (Apple silicon e Intel), el instalador `.exe` de Windows y el `.vsix`. Para compilarlos tú:
 
 ```bash
 # app de escritorio
@@ -163,7 +165,7 @@ cursor --install-extension apps/vscode/ramify.vsix   # o: code --install-extensi
 /plugin install ramify@ramify
 ```
 
-La app no está firmada: la primera vez, clic derecho y *Abrir*. La integración con GitHub usa el CLI `gh` con el
+La app no está firmada: en macOS, la primera vez, clic derecho y *Abrir*; en Windows, SmartScreen pregunta una vez (*Más información* → *Ejecutar de todas formas*). En Windows necesita [Git para Windows](https://git-scm.com/download/win), cuyo bash ejecuta el script `ramify`. La integración con GitHub usa el CLI `gh` con el
 que ya tienes sesión. El panel de navegador necesita `python3` y usa el `ui/dist` ya compilado.
 
 ### Cómo está hecho
