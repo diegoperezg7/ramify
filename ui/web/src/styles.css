@@ -856,3 +856,49 @@ kbd {
 .diffstat i.is-add { background: var(--gh-add-sign); }
 .diffstat i.is-del { background: var(--gh-del-sign); }
 .diff, .dl .code { font-variant-ligatures: none; font-feature-settings: 'liga' 0, 'calt' 0; }
+
+/* --- onboarding --------------------------------------------------------------- */
+.dialog.onboarding { width: min(720px, calc(100vw - 32px)); padding: 26px 28px 20px; }
+.ob-steps { display: flex; gap: 6px; margin-bottom: 18px; }
+.ob-steps i { width: 22px; height: 4px; border-radius: 2px; background: var(--border-strong); transition: background 0.2s, width 0.2s; }
+.ob-steps i.is-done { background: color-mix(in srgb, var(--accent) 45%, transparent); }
+.ob-steps i.is-on { width: 40px; background: var(--brand-grad); }
+.ob-step { display: flex; flex-direction: column; gap: 12px; animation: card-in 0.3s ease-out both; }
+.ob-step h2 { margin: 0; font: 700 24px/1.2 var(--brand-font); letter-spacing: -0.03em; }
+.ob-step > p { margin: 0; max-width: 60ch; }
+.ob-hero { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+.ob-name { font-size: 30px; }
+.ob-group { display: flex; flex-direction: column; gap: 8px; }
+.ob-label { font: var(--label); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+.ob-tiles { display: flex; flex-wrap: wrap; gap: 8px; }
+.ob-tile { position: relative; display: inline-flex; align-items: center; gap: 9px; padding: 8px 14px 8px 9px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); color: var(--text); font: 500 13.5px var(--font); cursor: pointer; box-shadow: var(--shadow); animation: card-in 0.3s ease-out both; transition: opacity 0.15s, border-color 0.15s; }
+.ob-tile:hover { border-color: var(--accent-ring); }
+.ob-tile.is-off { opacity: 0.45; box-shadow: none; }
+.ob-tile.is-off span:nth-child(2) { text-decoration: line-through; }
+.ob-logo { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 9px; background: var(--surface-hover); border: 1px solid var(--border); color: var(--text); }
+.ob-check { position: absolute; top: -6px; right: -6px; display: grid; place-items: center; width: 17px; height: 17px; border-radius: 50%; background: var(--good); color: #fff; box-shadow: 0 0 0 2px var(--surface); }
+.ob-tile.is-off .ob-check { background: var(--border-strong); }
+.ob-live { display: flex; align-items: center; gap: 8px; margin: 4px 0 0; font-weight: 600; color: var(--good); }
+.ob-live .pulse { width: 7px; height: 7px; background: var(--good); animation: pulse 1.8s ease-out infinite; }
+.ob-repos { list-style: none; margin: 0; padding: 0; max-height: 46vh; overflow: auto; border: 1px solid var(--border); border-radius: var(--radius); }
+.ob-repos li + li { border-top: 1px solid var(--border); }
+.ob-repos label { display: flex; align-items: center; gap: 10px; padding: 9px 12px; cursor: pointer; min-width: 0; }
+.ob-repos label.is-on { background: var(--accent-soft); }
+.ob-repos label .muted { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.ob-how { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.ob-how > div { display: flex; flex-direction: column; gap: 6px; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow); animation: card-in 0.35s ease-out both; }
+.ob-how > div:nth-child(2) { animation-delay: 80ms; }
+.ob-how > div:nth-child(3) { animation-delay: 160ms; }
+.ob-how p { margin: 0; color: var(--text-2); font-size: 13px; }
+.ob-how-icon { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 11px; background: var(--brand-grad); color: #fff; box-shadow: var(--brand-glow); margin-bottom: 4px; }
+.onboarding .dialog-actions { display: flex; align-items: center; margin-top: 20px; }
+.form .dialog-actions .sb-spacer, .onboarding .sb-spacer { flex: 1; }
+.agent-option.is-more { color: var(--muted); border-style: dashed; }
+
+/* agents stepping on each other */
+.warn-card { display: flex; align-items: center; gap: 14px; padding: 12px 14px; border-radius: var(--radius); border: 1px solid color-mix(in srgb, var(--warn) 45%, var(--border)); background: color-mix(in srgb, var(--warn) 8%, var(--surface)); color: var(--text); flex-wrap: wrap; }
+.warn-card > svg { color: var(--warn); flex: none; }
+.warn-card > div { flex: 1; min-width: 220px; }
+.warn-card p { margin: 2px 0 0; color: var(--text-2); font-size: 13px; }
+.warn-card.is-main { border-color: var(--border); background: var(--surface); }
+.warn-card.is-main > svg { color: var(--accent-text); }

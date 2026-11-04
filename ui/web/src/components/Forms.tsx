@@ -2,6 +2,7 @@ import { Loader2 } from 'lucide-react'
 import { AgentBadge } from './AgentBadge'
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { agentVar, KNOWN_AGENTS } from '../agents'
+import { bridge } from '../bridge'
 import { useStore } from '../store'
 import type { Settings } from '../types'
 
@@ -28,8 +29,19 @@ export function CreateDialog() {
   const busy = useStore((s) => s.busy)
   const setModal = useStore((s) => s.setModal)
   const createWorktree = useStore((s) => s.createWorktree)
-  const [branch, setBranch] = useState('')
-  const [agent, setAgent] = useState(settings?.defaultAgent ?? 'claude')
+  const prefill = useStore((s) => s.createPrefill)
+  const [branch, setBranch] = useState(prefill?.branch ?? '')
+  const [agent, setAgent] = useState(prefill?.agent ?? settings?.defaultAgent ?? 'claude')
+  // Only the agents installed here, so the choice is short; the rest stay one click away.
+  const [installed, setInstalled] = useState<string[] | null>(null)
+  const [showAll, setShowAll] = useState(false)
+  useEffect(() => {
+    if (caps?.sessions) void bridge.tools().then((x) => setInstalled(x.agents)).catch(() => setInstalled(null))
+  }, [caps])
+  const choices = (() => {
+    const base = installed && installed.length && !showAll ? installed : KNOWN_AGENTS
+    return [...new Set([...base, ...(agent ? [agent] : [])])]
+  })()
   const [base, setBase] = useState('')
   const [prompt, setPrompt] = useState('')
 
@@ -53,7 +65,7 @@ export function CreateDialog() {
         <fieldset>
           <legend>{t('agent')}</legend>
           <div className="agent-picker">
-            {KNOWN_AGENTS.map((a) => (
+            {choices.map((a) => (
               <button key={a} type="button" className={`agent-option${agent === a ? ' is-on' : ''}`}
                 style={{ ['--c' as string]: agentVar(a) }} onClick={() => setAgent(a)} aria-pressed={agent === a}>
                 <AgentBadge agent={a} size={18} />{a}
@@ -62,6 +74,9 @@ export function CreateDialog() {
             <button type="button" className={`agent-option${agent === '' ? ' is-on' : ''}`} onClick={() => setAgent('')} aria-pressed={agent === ''}>
               {t('noneAgent')}
             </button>
+            {installed && installed.length > 0 && !showAll && (
+              <button type="button" className="agent-option is-more" onClick={() => setShowAll(true)}>{t('moreAgents')}</button>
+            )}
           </div>
         </fieldset>
         <label>
@@ -137,6 +152,8 @@ export function SettingsDialog() {
           </label>
         </fieldset>
         <div className="dialog-actions">
+          {caps?.sessions && <button type="button" className="btn btn-ghost" onClick={() => setModal('onboarding')}>{t('obReplay')}</button>}
+          <span className="sb-spacer" />
           <button type="button" className="btn btn-ghost" onClick={() => setModal(null)}>{t('cancel')}</button>
           <button type="submit" className="btn btn-primary">{t('save')}</button>
         </div>

@@ -1,4 +1,4 @@
-import { AppWindow, Code2, Download, ExternalLink, FolderGit2, GitPullRequest, Loader2, SquareTerminal, Upload } from 'lucide-react'
+import { AppWindow, Code2, Download, ExternalLink, FolderGit2, GitBranch, GitPullRequest, Loader2, SquareTerminal, Upload } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { bridge } from '../bridge'
 import { useStore } from '../store'
@@ -73,6 +73,29 @@ export function Sessions() {
     return { time, projects, top }
   }, [history, now])
 
+  // Agents that will step on each other: two on one branch of one folder, or one straight on the main branch.
+  const warnings = useMemo(() => {
+    const out: { key: string; kind: 'shared' | 'main'; repo: string; branch: string; agents: string[] }[] = []
+    const byPlace = new Map<string, AgentSession[]>()
+    for (const s of live) {
+      if (s.inferred || !s.repo || !s.branch) continue
+      // git checks a branch out in one folder only: same repo and branch means same files.
+      const k = `${s.repo}#${s.branch}`
+      byPlace.set(k, [...(byPlace.get(k) ?? []), s])
+    }
+    for (const [k, list] of byPlace) {
+      const { repo, branch } = list[0] as { repo: string; branch: string }
+      if (list.length > 1) out.push({ key: k, kind: 'shared', repo, branch, agents: list.map((s) => s.agent) })
+      else if (/^(main|master|trunk|develop)$/.test(branch)) out.push({ key: k, kind: 'main', repo, branch, agents: [list[0].agent] })
+    }
+    return out
+  }, [live])
+  const newWorktreeFor = useStore((s) => s.newWorktreeFor)
+  const giveBranch = (repo: string, agent: string) => {
+    const stamp = new Date().toISOString().slice(5, 16).replace(/[-:T]/g, '')
+    void newWorktreeFor(repo, { branch: `${agent}/${stamp}`, agent })
+  }
+
   // Repositories AI worked in that are not on GitHub yet.
   const unpublished = useMemo(() => {
     const seen = new Map<string, AgentSession>()
@@ -122,6 +145,21 @@ export function Sessions() {
         <p className="muted small"><Loader2 size={14} className="spin" /> …</p>
       ) : (
         <>
+          {warnings.map((w) => (
+            <div key={w.key} className={`warn-card is-${w.kind}`} role="alert">
+              <GitBranch size={18} />
+              <div>
+                <b>{w.kind === 'shared' ? t('shared', { n: w.agents.length }) : t('onMain', { branch: w.branch })}</b>
+                <p>{w.kind === 'shared'
+                  ? t('sharedText', { agents: w.agents.join(', '), repo: base(w.repo), branch: w.branch })
+                  : t('onMainText', { agent: w.agents[0], repo: base(w.repo) })}</p>
+              </div>
+              <button type="button" className="btn btn-primary" onClick={() => giveBranch(w.repo, w.agents[w.agents.length - 1])}>
+                <GitBranch size={14} />{t('ownBranch', { agent: w.agents[w.agents.length - 1] })}
+              </button>
+            </div>
+          ))}
+
           <section className="sessions-section">
             <h2 className="pane-kicker"><span className="pulse" />{t('sessionsLive')}</h2>
             {live.length === 0 && <p className="muted small">{sessions.length ? t('sessionsNoneLive') : t('sessionsNone')}</p>}

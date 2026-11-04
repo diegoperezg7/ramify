@@ -1,4 +1,4 @@
-import type { AgentSession, Bridge, Capabilities, Detail, GithubRepo, RepoInfo, Settings, State } from './types'
+import type { AgentSession, Bridge, Capabilities, InstalledTools, Detail, GithubRepo, RepoInfo, Settings, State } from './types'
 
 // One UI, three hosts:
 //  - desktop app: Electron preload exposes window.ramify.invoke
@@ -45,6 +45,9 @@ function rpc(invoke: Invoke, subscribe: (cb: (e: HostEvent) => void) => void): B
     settings: () => call<Settings>('settings'),
     saveSettings: (s) => call<void>('saveSettings', s),
     sessions: () => call<AgentSession[]>('sessions'),
+    tools: () => call<InstalledTools>('tools'),
+    suggestRepos: () => call<{ path: string; name: string }[]>('suggestRepos'),
+    addRepos: (paths) => call<void>('addRepos', paths),
     exportSessions: (format) => call<{ message: string }>('exportSessions', format),
     publishRepo: (path, name, isPrivate) => call<{ message: string; github: string }>('publishRepo', path, name, isPrivate),
     onEvent: subscribe,
@@ -124,6 +127,9 @@ function httpBridge(): Bridge {
     settings: unsupported,
     saveSettings: unsupported,
     sessions: async () => [],
+    tools: unsupported,
+    suggestRepos: async () => [],
+    addRepos: unsupported,
     exportSessions: unsupported,
     publishRepo: unsupported,
     onEvent: () => {},

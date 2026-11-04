@@ -24,6 +24,7 @@ jobs:
         with:
           node-version: 24
       - run: npm ci
+      - run: node node_modules/electron/install.js
       - run: npm run build:web
       - run: npm run ${{ matrix.script }} -w apps/desktop
       - name: VS Code extension

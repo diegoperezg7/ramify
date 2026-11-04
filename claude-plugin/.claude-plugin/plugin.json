@@ -1,6 +1,6 @@
 {
   "name": "ramify",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Every Claude Code worktree (--worktree, background sessions, /batch, subagents) is created by ramify: same layout as your other agents, own ports, copied .env files and project setup.",
   "author": { "name": "Diego Pérez" },
   "homepage": "https://github.com/diegoperezg7/ramify",

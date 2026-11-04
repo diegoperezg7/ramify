@@ -10,6 +10,7 @@ import { StatusBar } from './components/Stats'
 import { CommandPalette } from './components/CommandPalette'
 import { TopBar } from './components/TopBar'
 import { Sessions } from './components/Sessions'
+import { Onboarding } from './components/Onboarding'
 import { sortWorktrees, WorktreeList } from './components/WorktreeList'
 import { bridge } from './bridge'
 import { useStore } from './store'
@@ -85,6 +86,7 @@ export function App() {
       }
       if (e.path) useStore.getState().select(e.path)
       if (e.event === 'new') useStore.getState().setModal('create')
+      if (e.event === 'sessions') useStore.getState().setView('sessions')
     })
   }, [])
 
@@ -144,6 +146,7 @@ export function App() {
       {modal === 'settings' && <SettingsDialog />}
       {modal === 'github' && <GithubDialog />}
       {modal === 'palette' && <CommandPalette />}
+      {modal === 'onboarding' && <Onboarding />}
       <div className="toasts" aria-live="polite">
         {toasts.map((x) => (
           <div key={x.id} className={`toast toast-${x.kind}`}>

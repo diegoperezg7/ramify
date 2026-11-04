@@ -98,6 +98,17 @@ export interface Settings {
   openAtLogin?: boolean
   /** Desktop: show the agent count in the menu bar. */
   menuBar?: boolean
+  /** The first-run introduction has been seen. */
+  onboarded?: boolean
+  /** Agents or apps (by name) the user does not want tracked. */
+  ignored?: string[]
+}
+
+export interface InstalledTools {
+  agents: string[]
+  editors: string[]
+  terminals: string[]
+  apps: string[]
 }
 
 export type SessionVia = 'terminal' | 'ide' | 'app'
@@ -162,6 +173,11 @@ export interface Bridge {
   settings(): Promise<Settings>
   saveSettings(s: Settings): Promise<void>
   sessions(): Promise<AgentSession[]>
+  /** Agent CLIs, editors, terminals and AI apps installed on this machine. */
+  tools(): Promise<InstalledTools>
+  /** Repositories found in the projects folder that are not in the app yet, most recently used first. */
+  suggestRepos(): Promise<{ path: string; name: string }[]>
+  addRepos(paths: string[]): Promise<void>
   /** Save the whole history to a file the user picks. */
   exportSessions(format: 'csv' | 'json'): Promise<{ message: string }>
   /** Create a GitHub repository for a local repository without a remote, and push it. */

@@ -6,7 +6,7 @@ import type { AgentSession, Capabilities, CreateRequest, Detail, RepoInfo, Setti
 export type Theme = 'system' | 'light' | 'dark'
 export type Density = 'comfortable' | 'compact'
 type Conn = 'ok' | 'offline' | 'unauthorized'
-type Modal = 'create' | 'settings' | 'github' | 'palette' | null
+type Modal = 'create' | 'settings' | 'github' | 'palette' | 'onboarding' | null
 export type View = 'repo' | 'sessions'
 
 interface Toast { id: number; kind: 'ok' | 'error'; text: string }
@@ -33,6 +33,8 @@ interface Store {
   busy: boolean
   view: View
   sessions: AgentSession[] | null
+  /** Values the "new worktree" form opens with (from a shared-branch warning). */
+  createPrefill: { branch: string; agent: string } | null
 
   t: (key: Key, vars?: Record<string, string | number>) => string
   init: () => Promise<void>
@@ -56,6 +58,8 @@ interface Store {
   cloneRepo: (nameWithOwner: string) => Promise<boolean>
   toast: (kind: Toast['kind'], text: string) => void
   setView: (view: View) => void
+  /** Open the "new worktree" form on `repo`, filled in. */
+  newWorktreeFor: (repo: string, prefill: { branch: string; agent: string }) => Promise<void>
   refreshSessions: () => Promise<void>
   run: (action: () => Promise<{ message: string }>) => Promise<boolean>
 }
@@ -94,6 +98,7 @@ export const useStore = create<Store>((set, get) => ({
   busy: false,
   view: 'repo',
   sessions: null,
+  createPrefill: null,
 
   t: (key, vars) => format(dict[get().lang][key], vars),
 
@@ -102,6 +107,8 @@ export const useStore = create<Store>((set, get) => ({
     set({ caps })
     if (caps?.settings) set({ settings: await bridge.settings().catch(() => null) })
     if (caps?.sessions && load<View>('ramify-view', 'repo') === 'sessions') get().setView('sessions')
+    // First run of the desktop app: a short introduction built from what is installed here.
+    if (caps?.sessions && get().settings && !get().settings!.onboarded) set({ modal: 'onboarding' })
     if (caps?.multiRepo) {
       const repos = await bridge.repos()
       const saved = load('ramify-repo', '')
@@ -241,7 +248,7 @@ export const useStore = create<Store>((set, get) => ({
     set({ settings: s })
   },
 
-  setModal: (modal) => set({ modal }),
+  setModal: (modal) => set(modal === null ? { modal, createPrefill: null } : { modal }),
   setLang: (lang) => { save('ramify-lang', lang); set({ lang }) },
   setTheme: (theme) => { save('ramify-theme', theme); set({ theme }) },
   setDensity: (density) => { save('ramify-density', density); set({ density }) },
@@ -251,6 +258,12 @@ export const useStore = create<Store>((set, get) => ({
     save('ramify-view', view)
     set({ view, menuOpen: false })
     if (view === 'sessions') void get().refreshSessions()
+  },
+  newWorktreeFor: async (repo, prefill) => {
+    if (!get().repos.some((r) => r.path === repo)) await bridge.addRepoPath(repo).catch(() => {})
+    await get().refreshRepos()
+    get().setRepo(repo)
+    set({ createPrefill: prefill, modal: 'create' })
   },
   refreshSessions: async () => {
     try { set({ sessions: await bridge.sessions() }) } catch { /* keep the last list */ }

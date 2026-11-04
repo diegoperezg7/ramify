@@ -1,11 +1,11 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, screen, shell, Tray } from 'electron'
 import { execFileSync } from 'node:child_process'
-import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
   cloneGithub, createHandlers, defaultProjectsDir, dispatch, Engine, EngineError, githubRepos, IDES, openInTerminal, originSlug,
-  publishGithub, pullRequestFor, scanRepos, scanSessions, SessionLog, sessionsCsv, type Resolved,
+  installedTools, publishGithub, pullRequestFor, scanRepos, scanSessions, SessionLog, sessionsCsv, type Resolved,
 } from '../../../packages/core/src/index.ts'
 import type { AgentSession, GithubRepo, RepoInfo, Settings } from '../../../packages/core/src/types.ts'
 
@@ -128,7 +128,10 @@ async function resolveCwd(cwd: string | null): Promise<Resolved & { worktree: st
 }
 
 async function scan(): Promise<Live[]> {
-  const sessions = await Promise.all((await scanSessions(env)).map(async (s) => ({ ...s, ...(await resolveCwd(s.cwd)) })))
+  const ignored = new Set(config.settings.ignored ?? [])
+  const seen = (await scanSessions(env)).filter((s) => !ignored.has(s.agent) && !ignored.has(s.host.split(' · ')[0]))
+  const sessions = await Promise.all(seen.map(async (s) => ({ ...s, ...(await resolveCwd(s.cwd)) })))
+  warnSharedBranches(sessions)
   const { started, ended } = sessionLog.update(sessions)
   saveSessions(started.length > 0 || ended.length > 0)
   // Worktree view, Dock badge and notifications: agent CLIs at work in a repository.
@@ -142,6 +145,34 @@ async function scan(): Promise<Live[]> {
     found.set(s.worktree, entry)
   }
   return [...found.values()]
+}
+
+// Two agents on the same branch of the same folder overwrite each other: say so once, as it happens.
+const warned = new Set<string>()
+function warnSharedBranches(sessions: (Resolved & { inferred: boolean; agent: string; worktree: string | null })[]) {
+  const byPlace = new Map<string, { repo: string; branch: string; agents: string[] }>()
+  for (const s of sessions) {
+    if (s.inferred || !s.repo || !s.worktree) continue
+    const key = `${s.worktree}#${s.branch}`
+    const e = byPlace.get(key) ?? { repo: s.repo, branch: s.branch ?? '', agents: [] }
+    e.agents.push(s.agent)
+    byPlace.set(key, e)
+  }
+  const now = new Set<string>()
+  for (const [key, e] of byPlace) {
+    if (e.agents.length < 2) continue
+    now.add(key)
+    if (warned.has(key) || !config.settings.notifications || !Notification.isSupported()) continue
+    const n = new Notification({
+      title: es() ? `${e.agents.length} agentes en la misma rama` : `${e.agents.length} agents on the same branch`,
+      subtitle: `${e.repo.split('/').pop()} · ${e.branch}`,
+      body: es() ? `${e.agents.join(', ')} se pisarán los cambios. Pulsa para darle a uno su propia rama.` : `${e.agents.join(', ')} will overwrite each other. Click to give one its own branch.`,
+    })
+    n.on('click', () => focus({ event: 'sessions' }))
+    n.show()
+  }
+  for (const k of [...warned]) if (!now.has(k)) warned.delete(k)
+  for (const k of now) warned.add(k)
 }
 
 // Pull requests of the branches agents worked on, looked up in the background.
@@ -346,6 +377,22 @@ const handlers = {
     saveSessions(true)
     addRepoToConfig(path)
     return { message: `github.com/${github}`, github }
+  },
+  tools: () => installedTools(env),
+  suggestRepos: () => {
+    const used = (p: string) => { try { return statSync(join(p, '.git')).mtimeMs } catch { return 0 } }
+    return scanRepos(config.settings.projectsDir)
+      .filter((p) => !config.repos.includes(p))
+      .sort((a, b) => used(b) - used(a))
+      .slice(0, 30)
+      .map((path) => ({ path, name: path.split('/').pop() ?? path }))
+  },
+  addRepos: async (paths: string[]) => {
+    for (const p of Array.isArray(paths) ? paths : []) {
+      const main = typeof p === 'string' ? await engine.mainCheckout(p) : null
+      if (main) addRepoToConfig(main)
+    }
+    githubCache = null
   },
   settings: () => config.settings,
   saveSettings: (s: Settings) => {

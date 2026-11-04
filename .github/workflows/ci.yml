@@ -51,7 +51,7 @@ jobs:
       - name: session scan on a real Windows machine
         run: node -e "import('./packages/core/src/activity.ts').then(async (m) => { const s = await m.scanSessions(process.env); console.log(JSON.stringify(s, null, 2)) })"
       - name: installer builds
-        run: npm run build:web && npm run dist:win -w apps/desktop
+        run: node node_modules/electron/install.js && npm run build:web && npm run dist:win -w apps/desktop
       - uses: actions/upload-artifact@v4
         with:
           name: ramify-windows
