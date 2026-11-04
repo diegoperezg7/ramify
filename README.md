@@ -3,17 +3,16 @@
 <h1 align="center">Ramify</h1>
 
 <p align="center">
-  <b>Run every AI coding agent at once. Never lose track of a branch again.</b><br>
-  Claude Code, Codex, Gemini, Copilot, Cursor and 35 more, working side by side on the same repository,
-  each on its own branch, with its own ports and dependencies. Ramify sees them all, keeps them apart and
-  shows you what each one changed.
+  <b>Work with several AI assistants at once, without them stepping on each other.</b><br>
+  Claude Code, Codex, Gemini, Copilot, Cursor and 35 more can build different parts of your project at the same time.
+  Ramify gives each one its own space, shows you who is doing what right now, and lets you bring each piece of work
+  into your project with one click when it is ready.
 </p>
 
 <p align="center">
   <a href="https://github.com/diegoperezg7/ramify/releases/latest"><b>Download for macOS</b></a> ·
   <a href="https://github.com/diegoperezg7/ramify/releases/latest"><b>Download for Windows</b></a> ·
-  <a href="https://github.com/diegoperezg7/ramify/releases/latest">VS Code / Cursor extension</a> ·
-  <a href="#install">CLI</a>
+  <a href="#for-developers">CLI, editor extension and Claude Code plugin</a>
 </p>
 
 <p align="center">
@@ -24,76 +23,116 @@
   <a href="README.es.md"><img alt="Español" src="https://img.shields.io/badge/lang-español-4e4e4e"></a>
 </p>
 
-<p align="center"><img src="docs/ramify-demo.gif" alt="Ramify in 30 seconds: six agents working at once, each on its own branch; the control center, the GitHub-style diff of each agent and the branch timeline"><br><sub><a href="docs/ramify-demo.mp4">Watch it as a video</a></sub></p>
+<p align="center"><img src="docs/ramify-demo.gif" alt="Ramify in 40 seconds: five AI agents working at once, each on its own branch; their hours per day, one day hour by hour, the commit grid opened on a day, the changes of one agent, the branch timeline and a merge in one click"><br><sub><a href="docs/ramify-demo.mp4">Watch it as a video (40 s)</a></sub></p>
 
-## The problem
+## In plain words
 
-AI agents are fast, and you want more than one. Put two in the same folder and they overwrite each other's
-files. Give each its own branch and, a week later, nobody knows which branch had the fix you needed, which
-agent wrote it, or whether it was ever merged.
+AI assistants that write code are fast, and once you try two at a time you do not want to go back. The catch:
+put two of them in the same project and they overwrite each other's work. Give each one a separate copy and,
+a week later, nobody remembers which copy had the change you needed.
 
-**Ramify fixes both.** Every task gets its own git worktree, ready to run. Every AI session on your
-computer is detected by itself. And every branch is on one screen: what changed, who changed it, where it went.
+**Ramify is the desk organiser for your AI team.**
 
-## What you get
+- **Each assistant gets its own desk.** A separate copy of your project (a *branch*), set up and ready, so
+  nobody touches anybody else's work. It happens by itself, also when you open an assistant from the terminal.
+- **You see the whole office at a glance.** Who is working right now, on what, for how long, and what they have
+  changed. It finds them on its own: nothing to configure in each tool.
+- **You decide what goes in.** When a piece of work is ready, you look at exactly what changed and bring it
+  into your project with one click. If something clashes, Ramify says why in plain words and changes nothing.
 
-### 1. It sees every AI session, by itself
+Everything stays on your computer.
 
-<img src="docs/app-sessions.png" alt="AI sessions: six agents working now, each with its terminal, repository and branch, and a warning for the one working on main">
+## Who it is for
 
-Open Claude Code in a terminal, Codex in tmux, Cursor's chat or the ChatGPT app: Ramify notices, tells you
-which repository and branch each one is in and whether it is working or waiting for you. No buttons to press,
-no plugin to install in each tool.
+- **You build with AI.** You use Claude Code, Codex, Cursor or similar to make apps, sites or tools, and want
+  several working at once without losing track.
+- **You are a developer.** You already run agents in parallel and want branches, ports and dependencies handled
+  for you, plus one screen with every branch being built.
+- **You lead a small team.** You want to see where the AI work is going, what is ready, and what needs a look.
 
-- **40 agent CLIs, 32 editors, 16 terminals and 14 AI apps** recognised, with their official logos.
-- It follows a conversation to the project it is really working in, even when the agent was started in your home folder.
-- A history of every session (where, which repo and branch, how long, its pull request), exported to CSV or JSON.
-- In the menu bar: how many agents are working, in amber when one is waiting for you, and each one's logo and branch a click away.
+## Get started in three steps
 
-### 2. One branch per agent, without the mess
+**1. Install it.** Download the app for [macOS or Windows](https://github.com/diegoperezg7/ramify/releases/latest).
+On a Mac, drag Ramify into Applications.
 
-Open agents the way you always do: with the terminal integration on (`ramify install shell`, or one switch in the app),
-typing `claude`, `codex` or `gemini` in a repository gives that agent its own branch and folder before it starts. Already
-on a branch of its own, or running a script, nothing changes. Work started on `main` by mistake moves to its own branch
-in one step (`ramify move`), with a stash kept as a backup.
+<p align="center"><img src="docs/install-dmg.png" width="560" alt="The Ramify installer window: drag the app into Applications"></p>
 
-When two agents end up on the same branch, or one starts changing `main`, Ramify warns you (in the app and
-as a notification) and gives that agent its own branch in one click.
+**2. Let it set up this computer.** The first time, Ramify shows the AI tools it found on this computer and offers
+to set everything up with one click: from then on every assistant works on a branch of its own, also the ones you
+start from a terminal. You can undo it in Settings.
 
-Each worktree is ready to work in: ignored files such as `.env` copied, dependencies installed, its own block
-of ports and, for iOS, its own simulator. The same for every agent, from the app, the editor or the terminal.
+<p align="center"><img src="docs/app-setup.png" alt="Set up this computer: Claude Code, the other agents, the terminal and the ramify command, ready with one click"></p>
 
-### 3. See exactly what each agent changed
+**3. Work as you always do.** Open your assistants the way you already do. Ramify notices them, gives each one its
+own space and shows them in the control center. When one finishes, review its changes and bring them in.
 
-The diff you know from GitHub: line numbers, green for added, red for removed, a summary per file. Open the
-branch in the editors you actually have installed, launch the agent again, merge it, or remove it. Ramify
-refuses to delete anything that is not committed or not merged.
+## What you can do
 
-<img src="docs/app-dark.png" alt="Four agents on four branches of the same repository, with the GitHub-style diff of the one Codex is working on">
+### See who is working right now
 
-### 4. A control center for every branch being built
+<img src="docs/app-control.png" alt="Control center: five agents working right now, each with its project, branch, how long it has been working and what it has changed">
 
-Each branch with its agent and what it is doing, commits, uncommitted work, how far behind `main` it is, the size of the
-change (with a warning past ~400 lines), its pull request, and a warning when two branches touch the same files. One
-click for what it needs next: bring in `main`, open a draft pull request, merge, or remove it once merged. A
-contribution grid shows the last six months of commits. Optional automation, each with its own switch: warnings, a
-draft pull request when an agent finishes on a pushed branch, and clean-up of merged worktrees.
+One card per assistant at work: which one, in which project and branch, since when, and what it has changed so far.
+With nobody working, it shows where and with which assistants you worked last. A warning appears if one starts
+changing the main version of your project directly, with a button to move it to its own branch.
 
-<img src="docs/app-control.png" alt="Control center: every branch being built with its agent, commits, uncommitted work and size, and the contribution grid">
+### See how much, and when, your assistants work
 
-### 5. Every branch on one timeline
+<img src="docs/app-activity.png" alt="Agent activity: time with agents, most agents at once, sessions and main project, plus hours per day stacked by agent and one day hour by hour">
 
-<img src="docs/app-timeline.png" alt="Branch timeline: active, stale and merged branches with their forks and merges">
+The week or the month in four figures (time with agents, most at once, sessions, main project), hours per day for
+each assistant, and any day hour by hour: who worked when, and how many were working at the same time.
 
-One band per branch, from where it forked to where it was merged, coloured by the agent that worked on it.
-Branches that were merged and deleted are rebuilt from their merge commits, so the story stays complete.
+### Your work history at a glance, any day in detail
 
-### 6. Set up in a minute
+<img src="docs/app-heatmap.png" alt="A year of commits as a grid of squares, the current streak and the busiest day, and one day opened with its commits per project and its AI sessions">
 
-<img src="docs/app-onboarding.png" alt="Onboarding: the agents, editors, terminals and AI apps found on this computer">
+A year of work as a grid of squares, your current streak and your busiest day. Click any square to open that day:
+what was saved in each project and which assistants worked on it.
 
-Ramify finds what you use on its own, signs in to GitHub with a code (read-only, you pick the repositories)
-and lays your projects out by what matters: where agents are working now, what is on this machine, and the rest of GitHub.
+### Every AI conversation on your computer
+
+<img src="docs/app-sessions.png" alt="AI sessions: every agent working now with its terminal, project and branch, plus the history of past sessions">
+
+Assistants in any terminal, the chat in your editor and the AI desktop apps, found on their own. A history of every
+session (where, which project, how long), exportable to a spreadsheet.
+
+### See exactly what each assistant changed
+
+<img src="docs/app-dark.png" alt="Four agents on four branches of the same project, with the line-by-line changes of the one Codex is working on">
+
+Every branch with its assistant, and its changes line by line as on GitHub: green for added, red for removed.
+Open it in the editors you have installed, start the assistant again, bring it in, or remove it. Ramify never
+deletes work that has not been saved or brought in.
+
+### Bring the work in with one click
+
+<img src="docs/app-merge.png" alt="A short confirmation after merging: feat/wishlist is in main, with no conflicts">
+
+When a piece of work is ready, one click brings it into your project and a short message confirms it. If it
+clashes with something else, a window explains what happened, which files clash and what to do. Nothing is changed.
+
+### Every branch on one timeline
+
+<img src="docs/app-timeline.png" alt="Branch timeline: active, stale and merged branches with where each one started and where it was brought in">
+
+One band per branch, from where it started to where it was brought in, in the colour of the assistant that worked
+on it. Branches that were finished and deleted are still there, so the story stays complete.
+
+### Light or dark, as your system
+
+<img src="docs/app-control-light.png" alt="The control center in the light theme">
+
+## Words you will see
+
+| Word | What it means |
+|---|---|
+| **Agent** or **assistant** | An AI that writes code for you: Claude Code, Codex, Gemini, Copilot, Cursor… |
+| **Branch** | A separate version of your project where one piece of work is done without touching the rest. |
+| **Worktree** | The folder where a branch lives, so each agent has its own copy to work in. |
+| **main** | The main version of your project, the one the finished work goes into. |
+| **Merge** | Bringing the work of a branch into main. |
+| **Commit** | A saved step of work, with a short description of what changed. |
 
 ## Works with
 
@@ -122,13 +161,51 @@ Any other agent works too: Ramify launches whatever command you give it.
 | What each agent changed | `git diff` in each folder | GitHub-style diff per branch |
 | Last month's branches | Gone from memory | A timeline, merged ones included |
 
+## Questions
+
+**Do I need to know git?** No. Ramify creates and names the branches, keeps each assistant in its own, and brings
+the work in when you click. The words you will see are explained [above](#words-you-will-see).
+
+**Does it work with the AI tools I already use?** Very likely: it recognises 40 assistants, 32 editors, 16
+terminals and 14 AI apps, and any other command can run in its own branch all the same.
+
+**What happens if two assistants change the same file?** Ramify warns you while they work (the branch shows a
+"touches the same files" warning). When you bring the second one in, if the changes really clash, it stops,
+changes nothing and explains what to do.
+
+**Do I have to change how I work?** No. Keep opening agents the way you do now; Ramify notices them.
+Use `ramify new` (or the app's *New agent*) when you want a fresh branch for a task.
+
+**Does it send my code anywhere?** No. Everything runs on your computer. The only network calls are to
+github.com, and only if you sign in (or through the `gh` CLI you already use).
+
+**Which agents does it support?** The 40 it recognises are detected and shown with their logos; any other
+command can be launched in a worktree all the same.
+
+**How does it detect the chat inside Cursor or VS Code?** From the editor's own workspace activity. Those
+sessions are marked *inferred*, because an editor being active is not proof of a conversation.
+
+**Windows?** The app, the worktrees and session detection work on Windows. One difference: Windows does not let
+another program read a process's working folder, so terminal agents there are shown without their repository.
+
+**What happens to the branches when I am done?** Nothing you did not ask for. `ramify prune` removes only clean,
+merged worktrees, and `rm` refuses when there is anything uncommitted or unmerged.
+
+## For developers
+
+Everything above is the desktop app. Ramify is also a command line tool, a VS Code / Cursor extension and a Claude
+Code plugin, all built from this repository. This part is for people who want to install those, build from source
+or know how it works inside.
+
 ## Status
 
 **Version 0.6.0.** Desktop app for macOS (Apple silicon and Intel) and Windows (x64), VS Code / Cursor extension,
 CLI and Claude Code plugin, all built from this repository.
 
-- **Tested:** 68 core tests, 5 end-to-end UI tests in a real browser and 72 CLI tests run on every push; the core
+- **Tested:** 96 core tests, 5 end-to-end UI tests in a real browser and 79 CLI tests run on every push; the core
   suite, the Windows installer and a smoke test that opens the packaged app also run on Windows.
+- **First release on its way:** until the downloads appear in [Releases](https://github.com/diegoperezg7/ramify/releases), build the app from
+  source: `npm ci && npm run build:desktop` (the installers land in `apps/desktop/release/`).
 - **Not signed yet:** macOS and Windows show a warning the first time (see below). Signing and notarization switch on
   by themselves once the release has certificates.
 - **GitHub sign-in** needs the Ramify GitHub App to be registered for the build; until then GitHub features use the
@@ -176,26 +253,6 @@ ramify ls              # who is working where, what changed, what is ready to me
 ```
 
 When an agent is done, review its diff in the app, merge it, and `ramify rm` the worktree.
-
-## FAQ
-
-**Do I have to change how I work?** No. Keep opening agents the way you do now; Ramify notices them.
-Use `ramify new` (or the app's *New worktree*) when you want a fresh branch for a task.
-
-**Does it send my code anywhere?** No. Everything runs on your computer. The only network calls are to
-github.com, and only if you sign in (or through the `gh` CLI you already use).
-
-**Which agents does it support?** The 40 it recognises are detected and shown with their logos; any other
-command can be launched in a worktree all the same.
-
-**How does it detect the chat inside Cursor or VS Code?** From the editor's own workspace activity. Those
-sessions are marked *inferred*, because an editor being active is not proof of a conversation.
-
-**Windows?** The app, the worktrees and session detection work on Windows. One difference: Windows does not let
-another program read a process's working folder, so terminal agents there are shown without their repository.
-
-**What happens to the branches when I am done?** Nothing you did not ask for. `ramify prune` removes only clean,
-merged worktrees, and `rm` refuses when there is anything uncommitted or unmerged.
 
 ## Reference
 

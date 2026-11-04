@@ -6,7 +6,7 @@ import { BRANDS } from '../ui/web/src/brands.generated.ts'
 const ROWS = [
   ['Agents', [['claude', 'Claude Code'], ['codex', 'Codex'], ['gemini', 'Gemini CLI'], ['copilot', 'Copilot'], ['cursor', 'Cursor CLI'],
     ['qwen', 'Qwen Code'], ['deepseek', 'DeepSeek'], ['kimi', 'Kimi'], ['vibe', 'Mistral Vibe'], ['grok', 'Grok'], ['amp', 'Amp'],
-    ['opencode', 'OpenCode'], ['kiro', 'Kiro'], ['junie', 'Junie'], ['cline', 'Cline'], ['goose', 'Goose']]],
+    ['opencode', 'OpenCode'], ['droid', 'Droid'], ['kiro', 'Kiro'], ['junie', 'Junie'], ['cline', 'Cline'], ['goose', 'Goose']]],
   ['Editors', [['VS Code', 'VS Code'], ['Cursor', 'Cursor'], ['Windsurf', 'Windsurf'], ['Antigravity', 'Antigravity'], ['Zed', 'Zed'],
     ['Xcode', 'Xcode'], ['IntelliJ IDEA', 'IntelliJ'], ['Android Studio', 'Android Studio'], ['PyCharm', 'PyCharm'], ['Trae', 'Trae']]],
   ['Terminals & apps', [['iTerm', 'iTerm'], ['Ghostty', 'Ghostty'], ['Warp', 'Warp'], ['WezTerm', 'WezTerm'], ['Windows Terminal', 'Windows Terminal'],

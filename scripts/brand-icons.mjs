@@ -2,6 +2,7 @@
 //   - LobeHub Icons (MIT)  AI models and agents
 //   - Simple Icons  (CC0)  terminals, editors, GitHub
 //   - Devicon       (MIT)  VS Code, PowerShell, Windows and programming languages
+//   - scripts/brands/*.svg  official marks the libraries above do not have (each file says where it comes from)
 // Only the icons listed here end up in the app. Run: node scripts/brand-icons.mjs
 import { readFileSync, writeFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
@@ -36,9 +37,12 @@ const simple = (slug) => {
   return { svg: `<svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path fill="${dark ? 'currentColor' : `#${icon.hex}`}" d="${icon.path}"/></svg>`, mono: dark }
 }
 
+/** A mark kept in scripts/brands/ (official SVG, trimmed to the mark and drawn with currentColor). */
+const local = (name) => ({ svg: clean(readFileSync(join(process.cwd(), 'scripts/brands', `${name}.svg`), 'utf8')), mono: true })
+
 const ICONS = {
   // agent CLIs, by catalog id (packages/core/src/catalog.ts)
-  claude: lobe('claude-color'), codex: lobe('codex-color'), gemini: lobe('gemini-color'), copilot: lobe('githubcopilot'),
+  claude: lobe('claude-color'), codex: lobe('codex-color'), droid: local('factory'), gemini: lobe('gemini-color'), copilot: lobe('githubcopilot'),
   cursor: lobe('cursor'), 'cursor-agent': lobe('cursor'), opencode: lobe('opencode'), qwen: lobe('qwen-color'),
   deepcode: lobe('deepseek-color'), deepseek: lobe('deepseek-color'), kimi: lobe('kimi-color'), vibe: lobe('mistral-color'),
   grok: lobe('grok'), amp: lobe('amp-color'), kiro: lobe('kiro-color'), 'kiro-cli': lobe('kiro-color'), junie: lobe('junie-color'),

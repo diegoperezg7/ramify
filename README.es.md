@@ -1,93 +1,132 @@
-<p align="center"><img src="docs/logo.png" width="160" alt="Ramify logo"></p>
+<p align="center"><img src="docs/logo.png" width="160" alt="Logo de Ramify"></p>
 
 <h1 align="center">Ramify</h1>
 
 <p align="center">
-  <b>Todos tus agentes de IA a la vez. Sin perder nunca la pista de una rama.</b><br>
-  Claude Code, Codex, Gemini, Copilot, Cursor y 35 más trabajando a la vez sobre el mismo repositorio,
-  cada uno en su rama, con sus puertos y sus dependencias. Ramify los ve todos, los mantiene separados y
-  te enseña qué ha cambiado cada uno.
+  <b>Trabaja con varios asistentes de IA a la vez, sin que se pisen.</b><br>
+  Claude Code, Codex, Gemini, Copilot, Cursor y 35 más pueden construir partes distintas de tu proyecto al mismo
+  tiempo. Ramify le da a cada uno su propio espacio, te enseña quién está haciendo qué ahora mismo y te deja llevar
+  cada trabajo a tu proyecto con un clic cuando está listo.
 </p>
 
 <p align="center">
   <a href="https://github.com/diegoperezg7/ramify/releases/latest"><b>Descargar para macOS</b></a> ·
   <a href="https://github.com/diegoperezg7/ramify/releases/latest"><b>Descargar para Windows</b></a> ·
-  <a href="https://github.com/diegoperezg7/ramify/releases/latest">Extensión VS Code / Cursor</a> ·
-  <a href="#instalación">CLI</a>
+  <a href="#para-desarrolladores">CLI, extensión de editor y plugin de Claude Code</a>
 </p>
 
 <p align="center"><a href="README.md">English</a></p>
 
-<p align="center"><img src="docs/ramify-demo.gif" alt="Ramify en 30 segundos: seis agentes trabajando a la vez, cada uno en su rama; el centro de control, el diff estilo GitHub de cada agente y la línea de tiempo de ramas"><br><sub><a href="docs/ramify-demo.mp4">Verlo en vídeo</a></sub></p>
+<p align="center"><img src="docs/ramify-demo.gif" alt="Ramify en 40 segundos: cinco agentes de IA trabajando a la vez, cada uno en su rama; sus horas por día, un día hora a hora, el mapa de commits abierto en un día, los cambios de un agente, la línea de tiempo de ramas y un merge con un clic"><br><sub><a href="docs/ramify-demo.mp4">Verlo en vídeo (40 s)</a></sub></p>
 
-## El problema
+## En pocas palabras
 
-Los agentes de IA son rápidos y quieres más de uno. Mete dos en la misma carpeta y se pisan los ficheros.
-Dale a cada uno su rama y, una semana después, nadie sabe qué rama tenía el arreglo que necesitabas, qué
-agente lo hizo ni si llegó a mergearse.
+Los asistentes de IA que escriben código son rápidos, y cuando pruebas a usar dos a la vez ya no quieres volver
+atrás. El problema: si los pones en el mismo proyecto, se pisan el trabajo. Si le das a cada uno una copia aparte,
+a la semana nadie recuerda en qué copia estaba el cambio que necesitabas.
 
-**Ramify resuelve las dos cosas.** Cada tarea tiene su propio git worktree, listo para trabajar. Cada sesión
-de IA del ordenador se detecta sola. Y todas las ramas están en una pantalla: qué cambió, quién lo cambió y dónde acabó.
+**Ramify es el organizador de mesas de tu equipo de IA.**
 
-## Qué te da
+- **Cada asistente tiene su propia mesa.** Una copia aparte de tu proyecto (una *rama*), preparada y lista, para
+  que nadie toque el trabajo de otro. Pasa sola, también cuando abres un asistente desde la terminal.
+- **Ves toda la oficina de un vistazo.** Quién está trabajando ahora, en qué, desde cuándo y qué ha cambiado. Los
+  encuentra solo: no hay que configurar nada en cada herramienta.
+- **Tú decides qué entra.** Cuando un trabajo está listo, ves exactamente qué ha cambiado y lo llevas a tu proyecto
+  con un clic. Si algo choca, Ramify te dice por qué en palabras normales y no cambia nada.
 
-### 1. Ve cada sesión de IA, sola
+Todo se queda en tu ordenador.
 
-<img src="docs/app-sessions.png" alt="Sesiones de IA: seis agentes trabajando ahora, cada uno con su terminal, repositorio y rama, y un aviso por el que trabaja en main">
+## Para quién es
 
-Abre Claude Code en una terminal, Codex en tmux, el chat de Cursor o la app de ChatGPT: Ramify lo nota y te dice
-en qué repo y rama está cada uno y si está trabajando o esperándote. Sin botones que pulsar ni plugins que
-instalar en cada herramienta.
+- **Construyes con IA.** Usas Claude Code, Codex, Cursor o parecidos para hacer apps, webs o herramientas, y quieres
+  varios trabajando a la vez sin perder el hilo.
+- **Eres desarrollador.** Ya lanzas agentes en paralelo y quieres que las ramas, los puertos y las dependencias se
+  resuelvan solos, con una pantalla donde ver todas las ramas en construcción.
+- **Llevas un equipo pequeño.** Quieres ver por dónde va el trabajo de la IA, qué está listo y qué necesita una revisión.
 
-- **40 agentes CLI, 32 editores, 16 terminales y 14 apps de IA** reconocidos, con sus logos oficiales.
-- Sigue cada conversación hasta el proyecto en el que trabaja de verdad, aunque el agente se abriera en tu carpeta personal.
-- Historial de cada sesión (dónde, qué repo y rama, cuánto duró, su pull request), exportable a CSV o JSON.
-- En la barra de menús: cuántos agentes trabajan, en ámbar si alguno te espera, y el logo y la rama de cada uno a un clic.
+## Empieza en tres pasos
 
-### 2. Una rama por agente, sin líos
+**1. Instálalo.** Descarga la app para [macOS o Windows](https://github.com/diegoperezg7/ramify/releases/latest).
+En Mac, arrastra Ramify a Aplicaciones.
 
-Abre los agentes como siempre: con la integración de terminal activada (`ramify install shell`, o un interruptor en la app),
-escribir `claude`, `codex` o `gemini` en un repo le da a ese agente su rama y su carpeta antes de empezar. Si ya estás en
-una rama propia, o es un script, no cambia nada. El trabajo empezado en `main` por error pasa a su propia rama de un paso
-(`ramify move`), con una copia en el stash.
+<p align="center"><img src="docs/install-dmg.png" width="560" alt="La ventana del instalador de Ramify: arrastra la app a Aplicaciones"></p>
 
-Si dos agentes acaban en la misma rama, o uno empieza a cambiar `main`, Ramify te avisa (en la app y con una
-notificación) y le da a ese agente su propia rama con un clic.
+**2. Deja que prepare este ordenador.** La primera vez, Ramify te enseña las herramientas de IA que ha encontrado y
+te ofrece dejarlo todo listo con un clic: desde entonces cada asistente trabaja en su propia rama, también los que
+abres desde una terminal. Se puede deshacer en Ajustes.
 
-Cada worktree está listo para trabajar: copia los ficheros ignorados como `.env`, instala dependencias, reserva su
-bloque de puertos y, en iOS, su propio simulador. Igual para todos los agentes, desde la app, el editor o la terminal.
+<p align="center"><img src="docs/app-setup.png" alt="Prepara este equipo: Claude Code, los demás agentes, la terminal y el comando ramify, listos con un clic"></p>
 
-### 3. Ve exactamente qué ha cambiado cada agente
+**3. Trabaja como siempre.** Abre tus asistentes como ya lo haces. Ramify los ve, le da a cada uno su espacio y los
+muestra en el centro de control. Cuando uno termina, revisa sus cambios y llévalos a tu proyecto.
 
-El diff de GitHub que ya conoces: números de línea, verde lo añadido, rojo lo quitado, resumen por fichero. Abre la
-rama en los editores que tienes instalados, vuelve a lanzar el agente, mergéala o quítala. Ramify se niega a borrar
-nada que no esté commiteado o mergeado.
+## Qué puedes hacer
 
-<img src="docs/app-dark.png" alt="Cuatro agentes en cuatro ramas del mismo repositorio, con el diff estilo GitHub de la que está haciendo Codex">
+### Ver quién está trabajando ahora mismo
 
-### 4. Un centro de control de las ramas en construcción
+<img src="docs/app-control.png" alt="Centro de control: cinco agentes trabajando ahora, cada uno con su proyecto, su rama, cuánto lleva y qué ha cambiado">
 
-Cada rama con su agente y lo que está haciendo, sus commits, lo que falta por guardar, cuánto va por detrás de `main`, el
-tamaño del cambio (con aviso a partir de ~400 líneas), su pull request y un aviso si dos ramas tocan los mismos ficheros.
-Un clic para lo siguiente que necesita: traer `main`, abrir una PR en borrador, mergear o quitarla cuando ya está
-mergeada. Un mapa de calor muestra los commits de los últimos seis meses. Automatismos opcionales, cada uno con su
-interruptor: avisos, PR en borrador cuando un agente termina en una rama subida y limpieza de worktrees mergeados.
+Una tarjeta por cada asistente trabajando: cuál es, en qué proyecto y rama, desde cuándo y qué ha cambiado hasta
+ahora. Si no hay nadie trabajando, te enseña dónde y con qué asistentes trabajaste por última vez. Si uno empieza a
+cambiar la versión principal de tu proyecto, aparece un aviso con un botón para llevarlo a su propia rama.
 
-<img src="docs/app-control.png" alt="Centro de control: cada rama en construcción con su agente, commits, cambios sin guardar y tamaño, y el mapa de commits">
+### Ver cuánto y cuándo trabajan tus asistentes
 
-### 5. Todas las ramas en una línea de tiempo
+<img src="docs/app-activity.png" alt="Actividad de los agentes: tiempo con agentes, máximo a la vez, sesiones y proyecto principal, horas por día apiladas por agente y un día hora a hora">
 
-<img src="docs/app-timeline.png" alt="Línea de tiempo: ramas activas, paradas y mergeadas con su ramificación y su merge">
+La semana o el mes en cuatro cifras (tiempo con agentes, máximo a la vez, sesiones y proyecto principal), las horas
+por día de cada asistente y cualquier día hora a hora: quién trabajó cuándo y cuántos había a la vez.
 
-Una franja por rama, desde que nace hasta su merge, con el color del agente que trabajó en ella. Las ramas
-mergeadas y borradas se reconstruyen desde su commit de merge, así la historia queda completa.
+### Tu historial de un vistazo, y cualquier día al detalle
 
-### 6. Listo en un minuto
+<img src="docs/app-heatmap.png" alt="Un año de commits en una cuadrícula, la racha actual y el día con más commits, y un día abierto con sus commits por proyecto y sus sesiones de IA">
 
-<img src="docs/app-onboarding.png" alt="Onboarding: los agentes, editores, terminales y apps de IA encontrados en este ordenador">
+Un año de trabajo en una cuadrícula de cuadraditos, tu racha actual y tu día con más trabajo. Pulsa cualquier
+cuadradito para abrir ese día: qué se guardó en cada proyecto y qué asistentes trabajaron en él.
 
-Ramify encuentra solo lo que usas, inicia sesión en GitHub con un código (solo lectura, tú eliges los repos) y
-ordena tus proyectos por lo que importa: dónde hay agentes trabajando ahora, qué está en este ordenador y el resto de GitHub.
+### Todas las conversaciones de IA de tu ordenador
+
+<img src="docs/app-sessions.png" alt="Sesiones de IA: cada agente trabajando ahora con su terminal, proyecto y rama, y el historial de sesiones anteriores">
+
+Asistentes en cualquier terminal, el chat de tu editor y las apps de IA de escritorio, encontrados solos. Un
+historial de cada sesión (dónde, en qué proyecto y cuánto tiempo), exportable a una hoja de cálculo.
+
+### Ver exactamente qué ha cambiado cada asistente
+
+<img src="docs/app-dark.png" alt="Cuatro agentes en cuatro ramas del mismo proyecto, con los cambios línea a línea del que está haciendo Codex">
+
+Cada rama con su asistente, y sus cambios línea a línea como en GitHub: verde lo añadido, rojo lo quitado. Ábrela en
+los editores que tienes instalados, vuelve a lanzar el asistente, llévala a tu proyecto o quítala. Ramify nunca borra
+trabajo que no esté guardado o llevado al proyecto.
+
+### Llevar el trabajo a tu proyecto con un clic
+
+<img src="docs/app-merge.png" alt="Un aviso corto tras el merge: feat/wishlist ya está en main, sin conflictos">
+
+Cuando un trabajo está listo, un clic lo lleva a tu proyecto y un mensaje corto te lo confirma. Si choca con otra
+cosa, una ventana te explica qué ha pasado, qué ficheros chocan y qué hacer. No se cambia nada.
+
+### Todas las ramas en una línea de tiempo
+
+<img src="docs/app-timeline.png" alt="Línea de tiempo: ramas activas, paradas y mergeadas, desde donde empezó cada una hasta donde entró en el proyecto">
+
+Una banda por rama, desde donde empezó hasta donde entró en el proyecto, del color del asistente que trabajó en ella.
+Las ramas terminadas y borradas siguen ahí, para que la historia quede completa.
+
+### Claro u oscuro, como tu sistema
+
+<img src="docs/app-control-light.png" alt="El centro de control con el tema claro">
+
+## Palabras que vas a ver
+
+| Palabra | Qué significa |
+|---|---|
+| **Agente** o **asistente** | Una IA que escribe código por ti: Claude Code, Codex, Gemini, Copilot, Cursor… |
+| **Rama** | Una versión aparte de tu proyecto donde se hace un trabajo sin tocar el resto. |
+| **Worktree** | La carpeta donde vive una rama, para que cada agente tenga su propia copia en la que trabajar. |
+| **main** | La versión principal de tu proyecto, a la que van los trabajos terminados. |
+| **Merge** | Llevar el trabajo de una rama a main. |
+| **Commit** | Un paso de trabajo guardado, con una frase de qué ha cambiado. |
 
 ## Funciona con
 
@@ -116,13 +155,51 @@ Cualquier otro agente también funciona: Ramify lanza el comando que le digas.
 | Qué cambió cada agente | `git diff` en cada carpeta | Diff estilo GitHub por rama |
 | Las ramas del mes pasado | Olvidadas | Una línea de tiempo, mergeadas incluidas |
 
+## Preguntas
+
+**¿Necesito saber git?** No. Ramify crea y nombra las ramas, mantiene a cada asistente en la suya y lleva el trabajo
+al proyecto cuando haces clic. Las palabras que vas a ver están explicadas [arriba](#palabras-que-vas-a-ver).
+
+**¿Funciona con las herramientas de IA que ya uso?** Casi seguro: reconoce 40 asistentes, 32 editores, 16 terminales
+y 14 apps de IA, y cualquier otro comando puede trabajar en su propia rama igualmente.
+
+**¿Qué pasa si dos asistentes cambian el mismo fichero?** Ramify te avisa mientras trabajan (la rama muestra que toca
+los mismos ficheros que otra). Al llevar la segunda al proyecto, si los cambios chocan de verdad, se para, no cambia
+nada y te explica qué hacer.
+
+**¿Tengo que cambiar mi forma de trabajar?** No. Sigue abriendo los agentes como siempre; Ramify los ve.
+Usa `ramify new` (o *Nuevo agente* en la app) cuando quieras una rama nueva para una tarea.
+
+**¿Envía mi código a algún sitio?** No. Todo corre en tu ordenador. Las únicas llamadas de red van a github.com,
+y solo si inicias sesión (o a través del CLI `gh` que ya usas).
+
+**¿Qué agentes soporta?** Los 40 que reconoce se detectan y se muestran con su logo; cualquier otro comando se puede
+lanzar en un worktree igualmente.
+
+**¿Cómo detecta el chat de Cursor o VS Code?** Por la actividad del propio editor en ese proyecto. Esas sesiones se
+marcan como *inferidas*, porque que el editor esté activo no prueba que haya una conversación.
+
+**¿Y Windows?** La app, los worktrees y la detección de sesiones funcionan en Windows. Una diferencia: Windows no deja
+que otro programa lea la carpeta de trabajo de un proceso, así que ahí los agentes de terminal salen sin su repo.
+
+**¿Qué pasa con las ramas cuando termino?** Nada que no hayas pedido. `ramify prune` solo quita worktrees limpios y
+mergeados, y `rm` se niega si queda algo sin commitear o sin mergear.
+
+## Para desarrolladores
+
+Todo lo anterior es la app de escritorio. Ramify también es una herramienta de línea de comandos, una extensión para
+VS Code / Cursor y un plugin de Claude Code, todo compilado desde este repositorio. Esta parte es para quien quiera
+instalar esas piezas, compilar desde el código o saber cómo funciona por dentro.
+
 ## Estado
 
 **Versión 0.6.0.** App de escritorio para macOS (Apple silicon e Intel) y Windows (x64), extensión de VS Code / Cursor,
 CLI y plugin de Claude Code, todo compilado desde este repositorio.
 
-- **Probado:** 68 tests del núcleo, 5 tests de la interfaz en un navegador real y 72 del CLI en cada push; la batería
+- **Probado:** 96 tests del núcleo, 5 tests de la interfaz en un navegador real y 79 del CLI en cada push; la batería
   del núcleo, el instalador de Windows y una prueba de humo que abre la app empaquetada también corren en Windows.
+- **Primera release en camino:** hasta que aparezcan las descargas en [Releases](https://github.com/diegoperezg7/ramify/releases), compila la app
+  desde el código: `npm ci && npm run build:desktop` (los instaladores quedan en `apps/desktop/release/`).
 - **Aún sin firmar:** macOS y Windows avisan la primera vez (ver abajo). La firma y la notarización se activan solas
   cuando la release tenga certificados.
 - **Login con GitHub:** necesita que la GitHub App de Ramify esté registrada para la build; mientras tanto, las funciones
@@ -170,26 +247,6 @@ ramify ls              # quién trabaja dónde, qué ha cambiado y qué está li
 ```
 
 Cuando un agente termina, revisas su diff en la app, lo mergeas y quitas el worktree con `ramify rm`.
-
-## Preguntas frecuentes
-
-**¿Tengo que cambiar mi forma de trabajar?** No. Sigue abriendo los agentes como siempre; Ramify los ve.
-Usa `ramify new` (o *Nuevo worktree* en la app) cuando quieras una rama nueva para una tarea.
-
-**¿Envía mi código a algún sitio?** No. Todo corre en tu ordenador. Las únicas llamadas de red van a github.com,
-y solo si inicias sesión (o a través del CLI `gh` que ya usas).
-
-**¿Qué agentes soporta?** Los 40 que reconoce se detectan y se muestran con su logo; cualquier otro comando se puede
-lanzar en un worktree igualmente.
-
-**¿Cómo detecta el chat de Cursor o VS Code?** Por la actividad del propio editor en ese proyecto. Esas sesiones se
-marcan como *inferidas*, porque que el editor esté activo no prueba que haya una conversación.
-
-**¿Y Windows?** La app, los worktrees y la detección de sesiones funcionan en Windows. Una diferencia: Windows no deja
-que otro programa lea la carpeta de trabajo de un proceso, así que ahí los agentes de terminal salen sin su repo.
-
-**¿Qué pasa con las ramas cuando termino?** Nada que no hayas pedido. `ramify prune` solo quita worktrees limpios y
-mergeados, y `rm` se niega si queda algo sin commitear o sin mergear.
 
 ## Referencia
 
