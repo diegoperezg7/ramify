@@ -116,3 +116,42 @@ export function lastActivity(sessions: Timed[], from: number, now: number): { re
   }
   return [...by].map(([repo, e]) => ({ repo, last: e.last, agents: [...e.agents], ms: unionMs(e.spans) })).sort((a, b) => b.last - a.last)
 }
+
+/** One day of work, by agent: each agent's sessions clipped to the day, overlaps merged (for an hour-by-hour lane). */
+export function dayLanes(sessions: Timed[], day: number, next: number, now: number): { agent: string; spans: [number, number][]; ms: number }[] {
+  const by = new Map<string, [number, number][]>()
+  for (const s of work(sessions)) {
+    const a = Math.max(s.start, day), b = Math.min(s.end ?? now, next)
+    if (b > a) by.set(s.agent, [...(by.get(s.agent) ?? []), [a, b]])
+  }
+  return [...by].map(([agent, sp]) => {
+    const merged: [number, number][] = []
+    for (const [a, b] of sp.sort((x, y) => x[0] - y[0])) {
+      const last = merged[merged.length - 1]
+      if (last && a <= last[1]) last[1] = Math.max(last[1], b); else merged.push([a, b])
+    }
+    return { agent, spans: merged, ms: unionMs(merged) }
+  }).sort((x, y) => y.ms - x.ms)
+}
+
+/** Most agent sessions running at the same moment between `from` and `to`, and when that first happened. */
+export function peakParallel(sessions: Timed[], from: number, to: number, now: number): { n: number; at: number | null } {
+  const ev: [number, number][] = []
+  for (const s of work(sessions)) {
+    const a = Math.max(s.start, from), b = Math.min(s.end ?? now, to)
+    if (b > a) ev.push([a, 1], [b, -1])
+  }
+  // Ends before starts at the same instant: a session handing over to the next is not two at once.
+  ev.sort((x, y) => x[0] - y[0] || x[1] - y[1])
+  let n = 0, peak = 0, at: number | null = null
+  for (const [t, d] of ev) { n += d; if (n > peak) { peak = n; at = t } }
+  return { n: peak, at }
+}
+
+/** Agents with a real share of the time, in order; the ones under `share` of the total fold into one "others" figure. */
+export function splitMinor(totals: [string, number][], share = 0.04): { main: string[]; minor: string[] } {
+  const sorted = [...totals].sort((a, b) => b[1] - a[1])
+  const sum = sorted.reduce((s, [, ms]) => s + ms, 0)
+  const main = sorted.filter(([, ms], i) => i === 0 || ms >= sum * share).map(([a]) => a)
+  return { main, minor: sorted.map(([a]) => a).filter((a) => !main.includes(a)) }
+}

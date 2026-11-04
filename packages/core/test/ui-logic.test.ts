@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { agentTimeByDay, lastActivity, lastDays, levels, nextAction, parseDiff, taskSlug, timeBy, unionMs } from '../../../ui/web/src/logic.ts'
+import { agentTimeByDay, dayLanes, lastActivity, lastDays, levels, nextAction, parseDiff, peakParallel, splitMinor, taskSlug, timeBy, unionMs } from '../../../ui/web/src/logic.ts'
 import type { BranchHealth, PullRequest } from '../src/types.ts'
 
 const branch = (o: Partial<BranchHealth>): BranchHealth => ({
@@ -105,5 +105,25 @@ describe('control center: time with AI', () => {
     const rows = lastActivity([s('claude', '/a', day - 48 * H, day - 47 * H), s('codex', '/b', day, day + H), s('gemini', '/b', day + H, day + 2 * H)], day - 24 * H, day + 5 * H)
     assert.deepEqual(rows.map((r) => [r.repo, r.agents.sort()]), [['/b', ['codex', 'gemini']], ['/a', []]])
     assert.equal(rows[0].last, day + 2 * H)
+  })
+})
+
+describe('control center: one day hour by hour', () => {
+  const H = 3600_000
+  const day = new Date(2026, 9, 20).getTime()
+  const next = new Date(2026, 9, 21).getTime()
+  const s = (agent: string, start: number, end: number | null, via = 'terminal') => ({ agent, repo: '/r', via, start, end })
+
+  it('gives each agent one lane with its sessions merged and clipped to the day', () => {
+    const lanes = dayLanes([s('claude', day - H, day + 2 * H), s('claude', day + H, day + 3 * H), s('codex', day + 5 * H, null), s('chatgpt', day, day + H, 'app')], day, next, day + 6 * H)
+    assert.deepEqual(lanes.map((l) => [l.agent, l.spans.map(([a, b]) => [(a - day) / H, (b - day) / H])]), [['claude', [[0, 3]]], ['codex', [[5, 6]]]])
+  })
+  it('finds the most sessions at once, without counting a hand-over as two', () => {
+    const p = peakParallel([s('claude', day, day + 2 * H), s('codex', day + H, day + 3 * H), s('gemini', day + 3 * H, day + 4 * H)], day, next, next)
+    assert.deepEqual(p, { n: 2, at: day + H })
+    assert.equal(peakParallel([], day, next, next).n, 0)
+  })
+  it('folds agents with a sliver of the time into others', () => {
+    assert.deepEqual(splitMinor([['claude', 600], ['codex', 300], ['qwen', 10], ['opencode', 5]]), { main: ['claude', 'codex'], minor: ['qwen', 'opencode'] })
   })
 })
