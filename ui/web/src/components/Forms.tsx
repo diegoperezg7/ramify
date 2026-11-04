@@ -89,20 +89,23 @@ export function SettingsDialog() {
   const t = useStore((s) => s.t)
   const settings = useStore((s) => s.settings)
   const saveSettings = useStore((s) => s.saveSettings)
+  const caps = useStore((s) => s.caps)
   const setModal = useStore((s) => s.setModal)
   const [draft, setDraft] = useState<Settings>(settings ?? { terminal: 'Terminal', defaultAgent: 'claude', projectsDir: '', autoDetect: true })
 
   return (
     <Modal title={t('settings')} onClose={() => setModal(null)}>
       <form className="form" onSubmit={async (e) => { e.preventDefault(); await saveSettings(draft); setModal(null) }}>
-        <label>
-          <span>{t('terminal')}</span>
-          <select value={draft.terminal} onChange={(e) => setDraft({ ...draft, terminal: e.target.value as Settings['terminal'] })}>
-            <option>Terminal</option>
-            <option>iTerm</option>
-            <option>Ghostty</option>
-          </select>
-        </label>
+        {caps?.platform !== 'win32' && (
+          <label>
+            <span>{t('terminal')}</span>
+            <select value={draft.terminal} onChange={(e) => setDraft({ ...draft, terminal: e.target.value as Settings['terminal'] })}>
+              <option>Terminal</option>
+              <option>iTerm</option>
+              <option>Ghostty</option>
+            </select>
+          </label>
+        )}
         <label>
           <span>{t('defaultAgent')}</span>
           <select value={draft.defaultAgent} onChange={(e) => setDraft({ ...draft, defaultAgent: e.target.value })}>

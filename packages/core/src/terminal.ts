@@ -1,4 +1,7 @@
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
+import { join } from 'node:path'
+import { gitBash } from './engine.ts'
 import type { Settings } from './types.ts'
 
 function run(cmd: string, args: string[]): Promise<void> {
@@ -11,8 +14,21 @@ function appleScriptString(s: string): string {
   return `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`
 }
 
-/** Run `command` in a new window of the user's terminal app (macOS). */
+/** Windows: Windows Terminal when installed, otherwise a Git Bash console. The command runs in Git Bash. */
+async function openOnWindows(command: string, cwd: string): Promise<void> {
+  const bash = gitBash()
+  const args = ['--login', '-i', '-c', `${command}; exec bash --login -i`]
+  const wt = process.env.LOCALAPPDATA ? join(process.env.LOCALAPPDATA, 'Microsoft', 'WindowsApps', 'wt.exe') : ''
+  const child = wt && existsSync(wt)
+    ? spawn(wt, ['-d', cwd, bash, ...args], { detached: true, stdio: 'ignore' })
+    : spawn('cmd.exe', ['/c', 'start', '"Ramify"', bash, ...args], { cwd, detached: true, stdio: 'ignore', windowsVerbatimArguments: false })
+  await new Promise<void>((resolve, reject) => { child.once('error', reject); child.once('spawn', () => resolve()) })
+  child.unref()
+}
+
+/** Run `command` in a new window of the user's terminal app. */
 export async function openInTerminal(terminal: Settings['terminal'], command: string, cwd: string): Promise<void> {
+  if (process.platform === 'win32') return openOnWindows(command, cwd)
   if (terminal === 'iTerm') {
     await run('osascript', [
       '-e', 'tell application "iTerm"',

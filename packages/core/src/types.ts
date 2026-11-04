@@ -131,6 +131,8 @@ export interface AgentSession {
 /** What the current host can do. The browser build (ramify ui) is single-repo. */
 export interface Capabilities {
   host: 'browser' | 'desktop' | 'vscode'
+  /** Operating system of the host (process.platform), when it matters to the UI. */
+  platform?: string
   multiRepo: boolean
   create: boolean
   settings: boolean

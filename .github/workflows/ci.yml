@@ -37,3 +37,22 @@ jobs:
         run: npm run package -w apps/vscode
       - name: UI end-to-end
         run: npx playwright install --with-deps chromium && npm run test:e2e -w packages/core
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - run: npm ci
+      - name: core tests (engine through Git Bash, session detection)
+        run: npm run test:core
+      - name: session scan on a real Windows machine
+        run: node -e "import('./packages/core/src/activity.ts').then(async (m) => { const s = await m.scanSessions(process.env); console.log(JSON.stringify(s, null, 2)) })"
+      - name: installer builds
+        run: npm run build:web && npm run dist:win -w apps/desktop
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ramify-windows
+          path: apps/desktop/release/*.exe

@@ -19,7 +19,7 @@ function out(cmd: string, args: string[], env?: NodeJS.ProcessEnv, cwd?: string)
 
 /** Name of the agent a process is, from its executable or, for interpreters, its script. */
 export function agentOf(comm: string, args: string): string | null {
-  const exe = basename(comm)
+  const exe = basename(comm.replace(/\\/g, '/')).replace(/\.(exe|cmd)$/i, '')
   if (AGENT_PROCESSES.includes(exe)) return exe
   if (!INTERPRETERS.test(exe)) return null
   for (const word of args.split(/\s+/).slice(1, 4)) {

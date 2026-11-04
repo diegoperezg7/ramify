@@ -10,6 +10,29 @@ export const IDES = ['xcode', 'cursor', 'code', 'zed', 'idea', 'Finder']
 
 export class EngineError extends Error {}
 
+const WIN = process.platform === 'win32'
+
+/**
+ * Windows: the ramify script runs in the bash that ships with Git for Windows
+ * (not WSL's C:\Windows\System32\bash.exe, which sees a different filesystem).
+ */
+export function gitBash(env: NodeJS.ProcessEnv = process.env): string {
+  if (env.RAMIFY_BASH && existsSync(env.RAMIFY_BASH)) return env.RAMIFY_BASH
+  const roots = [env.ProgramFiles, env['ProgramFiles(x86)'], env.LOCALAPPDATA && join(env.LOCALAPPDATA, 'Programs')].filter(Boolean) as string[]
+  for (const root of roots) {
+    const p = join(root, 'Git', 'bin', 'bash.exe')
+    if (existsSync(p)) return p
+  }
+  // git.exe lives in <Git>\cmd: its bash is in <Git>\bin.
+  for (const dir of (env.PATH ?? env.Path ?? '').split(';')) {
+    if (existsSync(join(dir, 'git.exe'))) {
+      const p = resolve(dir, '..', 'bin', 'bash.exe')
+      if (existsSync(p)) return p
+    }
+  }
+  return 'bash.exe'
+}
+
 export interface EngineOptions {
   /** Path to the ramify script. */
   bin: string
@@ -37,6 +60,17 @@ export class Engine {
         resolve({ code, stdout: String(stdout), stderr: String(stderr) })
       })
     })
+  }
+
+  /** Run the ramify script (through Git Bash on Windows). */
+  private runBin(args: string[], cwd?: string): Promise<RunResult> {
+    return WIN ? this.run(gitBash(this.env), [this.bin.replace(/\\/g, '/'), ...args], cwd) : this.run(this.bin, args, cwd)
+  }
+
+  private async mustBin(args: string[], cwd?: string): Promise<string> {
+    const r = await this.runBin(args, cwd)
+    if (r.code !== 0) throw new EngineError((r.stderr || r.stdout).trim().replace(/^ramify: /, '') || 'ramify failed')
+    return r.stdout
   }
 
   private async must(cmd: string, args: string[], cwd?: string): Promise<string> {
@@ -103,7 +137,7 @@ export class Engine {
   // --- reads -----------------------------------------------------------------
 
   async worktrees(repo: string): Promise<Worktree[]> {
-    return JSON.parse(await this.must(this.bin, ['ls', '--json'], repo)) as Worktree[]
+    return JSON.parse(await this.mustBin(['ls', '--json'], repo)) as Worktree[]
   }
 
   private async base(repo: string): Promise<string> {
@@ -212,14 +246,17 @@ export class Engine {
   async openIde(repo: string, path: string, ide: string): Promise<string> {
     await this.find(repo, path)
     if (!IDES.includes(ide)) throw new EngineError('unknown IDE')
-    if (ide === 'Finder') await this.must('open', [path])
-    else await this.must(this.bin, ['open', path, '-i', ide], repo)
+    if (ide === 'Finder') {
+      // explorer.exe exits with 1 even when it opened the folder.
+      if (WIN) await this.run('explorer.exe', [path.replace(/\//g, '\\')])
+      else await this.must(process.platform === 'darwin' ? 'open' : 'xdg-open', [path])
+    } else await this.mustBin(['open', path, '-i', ide], repo)
     return 'ok'
   }
 
   async remove(repo: string, path: string, force: boolean): Promise<string> {
     if ((await this.find(repo, path)).main) throw new EngineError('that is the main checkout')
-    const r = await this.run(this.bin, ['rm', path, ...(force ? ['--force'] : [])], repo)
+    const r = await this.runBin(['rm', path, ...(force ? ['--force'] : [])], repo)
     const msg = (r.stderr || r.stdout).trim()
     if (r.code !== 0) throw new EngineError(msg.replace(/^ramify: /, ''))
     return msg
@@ -248,7 +285,7 @@ export class Engine {
     if (req.agent && !/^[\w.-]+$/.test(req.agent)) throw new EngineError('invalid agent name')
     if (req.agent) args.push('-a', req.agent)
     if (req.base) args.push('-f', req.base)
-    const out = await this.must(this.bin, args, repo)
+    const out = await this.mustBin(args, repo)
     const path = out.trim().split('\n').pop() ?? ''
     return { path, command: req.agent ? this.launchCommand(path, req.agent, req.prompt) : null }
   }
@@ -256,7 +293,7 @@ export class Engine {
   /** Shell command that starts `agent` inside the worktree at `path`. */
   launchCommand(path: string, agent: string, prompt?: string): string {
     if (!/^[\w.-]+$/.test(agent)) throw new EngineError('invalid agent name')
-    const parts = [this.bin, 'open', path, '-a', agent]
+    const parts = [WIN ? this.bin.replace(/\\/g, '/') : this.bin, 'open', path, '-a', agent]
     if (prompt) parts.push('-p', prompt)
     return `cd ${shellQuote(path)} && ${parts.map(shellQuote).join(' ')}`
   }

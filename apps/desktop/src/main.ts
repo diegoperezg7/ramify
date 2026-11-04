@@ -12,6 +12,7 @@ import type { AgentSession, GithubRepo, RepoInfo, Settings } from '../../../pack
 // Apps started from Finder get a minimal PATH: borrow the login shell's so agents,
 // xcodegen, npm and friends are found exactly as in the terminal.
 function loginPath(): string | undefined {
+  if (process.platform === 'win32') return undefined
   try {
     const out = execFileSync(process.env.SHELL || '/bin/zsh', ['-ilc', 'printf "__P__%s__P__" "$PATH"'], { timeout: 5000 }).toString()
     return /__P__(.*)__P__/.exec(out)?.[1]
@@ -205,6 +206,8 @@ function notifyFinished(f: Live) {
 let tray: Tray | null = null
 function trayIcon() {
   const dir = app.isPackaged ? process.resourcesPath : resolve(__dirname, '../resources')
+  // macOS: a monochrome template the menu bar tints. Windows / Linux: the coloured logo.
+  if (process.platform !== 'darwin') return nativeImage.createFromPath(join(dir, 'tray.png'))
   const img = nativeImage.createFromPath(join(dir, 'trayTemplate.png'))
   img.setTemplateImage(true)
   return img
@@ -287,7 +290,7 @@ async function addPath(path: string): Promise<RepoInfo> {
 const handlers = {
   ...createHandlers({
     engine,
-    capabilities: { host: 'desktop', multiRepo: true, create: true, settings: true, github: true, sessions: true, ides: IDES },
+    capabilities: { host: 'desktop', platform: process.platform, multiRepo: true, create: true, settings: true, github: true, sessions: true, ides: IDES },
     repo: knownRepo,
     runInTerminal: (_name, cwd, command) => openInTerminal(config.settings.terminal, command, cwd),
   }),
@@ -427,8 +430,9 @@ function createWindow() {
     minHeight: 520,
     show: false,
     title: 'Ramify',
-    titleBarStyle: 'hiddenInset',
-    trafficLightPosition: { x: 16, y: 18 },
+    ...(process.platform === 'darwin'
+      ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 16, y: 18 } }
+      : { autoHideMenuBar: true, icon: join(app.isPackaged ? process.resourcesPath : resolve(__dirname, '../resources'), 'tray.png') }),
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#000000' : '#ffffff',
     webPreferences: { preload: join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true },
   })
@@ -461,10 +465,12 @@ if (!app.requestSingleInstanceLock()) {
     if (target) void openTarget(target)
     else focus()
   })
+  // Windows needs the app id for notifications to show under the app's name.
+  if (process.platform === 'win32') app.setAppUserModelId('io.github.diegoperezg7.ramify')
   app.whenReady().then(() => {
-    Menu.setApplicationMenu(Menu.buildFromTemplate([
-      { role: 'appMenu' }, { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' },
-    ]))
+    Menu.setApplicationMenu(process.platform === 'darwin'
+      ? Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'viewMenu' }, { role: 'windowMenu' }])
+      : null)
     applyLoginItem()
     createWindow()
     const target = app.isPackaged ? targetFrom(process.argv) : process.env.RAMIFY_OPEN

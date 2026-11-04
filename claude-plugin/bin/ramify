@@ -11,6 +11,9 @@ PORT_BLOCK=10
 # Process names counted as agents in `ls` (node/bun/python count as the worktree's recorded agent).
 AGENT_NAMES="claude codex gemini copilot cursor-agent opencode aider amp goose droid qwen crush"
 SELF_DIR=$(cd "$(dirname "$(readlink "$0" 2>/dev/null || echo "$0")")" && pwd)
+# Physical path of the current directory. Git Bash on Windows prints C:/... so git and
+# native programs (the desktop app, editors) get paths they understand.
+abspwd() { if [ -n "${MSYSTEM:-}" ]; then pwd -W; else pwd -P; fi; }
 
 if { [ -t 2 ] || [ -n "${FORCE_COLOR:-}" ]; } && [ -z "${NO_COLOR:-}" ]; then
   B=$'\033[1m'; D=$'\033[2m'; G=$'\033[32m'; Y=$'\033[33m'; R=$'\033[31m'; M=$'\033[35m'; N=$'\033[0m'
@@ -52,7 +55,7 @@ EOF
 common_dir() {
   local rel
   rel=$(git -C "$1" rev-parse --git-common-dir 2>/dev/null) || return 1
-  (cd "$1" && cd "$rel" && pwd -P)
+  (cd "$1" && cd "$rel" && abspwd)
 }
 
 main_checkout() {
@@ -64,7 +67,7 @@ main_checkout() {
       case "$line" in
         "worktree "*) cur=${line#worktree } ;;
         bare) cur="" ;;
-        "") [ -n "$cur" ] && { (cd "$cur" && pwd -P); return; } ;;
+        "") [ -n "$cur" ] && { (cd "$cur" && abspwd); return; } ;;
       esac
     done < <(git -C "$common" worktree list --porcelain; echo)
     die "bare repository without a checkout: $1 (add one with git worktree add)"
@@ -98,7 +101,7 @@ find_wt() {
   repo=$(basename "$main")
   if [ -d "$name/.git" ] || [ -f "$name/.git" ]; then (cd "$name" && pwd); return; fi
   if [ -d "$ROOT/$repo/$(slugify "$name")" ]; then
-    (cd "$ROOT/$repo/$(slugify "$name")" && pwd -P); return
+    (cd "$ROOT/$repo/$(slugify "$name")" && abspwd); return
   fi
   while IFS= read -r line; do
     case "$line" in
@@ -286,7 +289,7 @@ create() {
   [ -e "$wt" ] && die "$wt already exists (use: ramify open $branch)"
   [ -z "$agent" ] || valid_agent "$agent"
   mkdir -p "$ROOT/$repo"
-  wt="$(cd "$ROOT/$repo" && pwd -P)/$slug"
+  wt="$(cd "$ROOT/$repo" && abspwd)/$slug"
 
   if git -C "$main" show-ref --verify --quiet "refs/heads/$branch"; then
     [ -n "$from" ] && log "${Y}branch $branch already exists; ignoring -f $from${N}"
@@ -475,6 +478,7 @@ cmd_ui() {
         log "${B}ramify ui${N}  $url  ${D}(Ctrl-C to stop)${N}"
         if [ "$open_browser" = 1 ]; then
           if [ "$(uname)" = Darwin ]; then open "$url"
+          elif [ -n "${MSYSTEM:-}" ]; then cmd.exe //c start "" "$url"
           elif command -v xdg-open >/dev/null; then xdg-open "$url" >/dev/null 2>&1; fi
         fi
       done
@@ -483,11 +487,12 @@ cmd_ui() {
 # Open the desktop app on this repository (or worktree) through its ramify:// link.
 cmd_app() {
   local dir url
-  dir=$(pwd -P)
+  dir=$(abspwd)
   main_checkout "$dir" >/dev/null
-  [ "$(uname)" = Darwin ] || die "the desktop app is macOS only; use: ramify ui"
-  open -Ra ramify 2>/dev/null || die "ramify.app is not installed (see apps/desktop in the repository)"
   url="ramify://open?path=$(printf '%s' "$dir" | jq -sRr @uri 2>/dev/null || python3 -I -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.argv[1]))' "$dir")"
+  if [ -n "${MSYSTEM:-}" ]; then cmd.exe //c start "" "$url"; return; fi
+  [ "$(uname)" = Darwin ] || die "the desktop app is for macOS and Windows; use: ramify ui"
+  open -Ra ramify 2>/dev/null || die "ramify.app is not installed (see apps/desktop in the repository)"
   open "$url"
 }
 

@@ -10,7 +10,10 @@ import type { AgentSession, SessionVia } from './types.ts'
 //  - the AI chat built into an IDE (Cursor, VS Code + Copilot, Windsurf), inferred from its workspace storage;
 //  - desktop AI apps (ChatGPT, Claude), while they are open.
 
-export interface Proc { pid: number; ppid: number; elapsed: number; args: string }
+/** One process. `exe` is the executable path and `args` the whole command line, both with forward slashes. */
+export interface Proc { pid: number; ppid: number; elapsed: number; exe: string; args: string }
+
+const WIN = process.platform === 'win32'
 
 export interface LiveSession {
   /** Stable while the session lasts: pid + start for processes, app + folder for IDEs. */
@@ -44,10 +47,43 @@ export function parsePs(stdout: string): Map<number, Proc> {
   const procs = new Map<number, Proc>()
   for (const line of stdout.split('\n')) {
     const m = /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/.exec(line)
-    if (m) procs.set(Number(m[1]), { pid: Number(m[1]), ppid: Number(m[2]), elapsed: parseEtime(m[3]), args: m[4] })
+    if (m) procs.set(Number(m[1]), { pid: Number(m[1]), ppid: Number(m[2]), elapsed: parseEtime(m[3]), exe: m[4].split(/\s+/)[0], args: m[4] })
   }
   return procs
 }
+
+/** Windows: Get-CimInstance Win32_Process rendered as pid, ppid, age in seconds, exe and command line, tab-separated. */
+export const WIN_PS = "Get-CimInstance Win32_Process | ForEach-Object { if ($_.CreationDate) { $age = [int]((Get-Date) - $_.CreationDate).TotalSeconds } else { $age = 0 }; " +
+  '"$($_.ProcessId)`t$($_.ParentProcessId)`t$age`t$($_.ExecutablePath)`t$($_.CommandLine)" }'
+
+export function parseWinPs(stdout: string): Map<number, Proc> {
+  const procs = new Map<number, Proc>()
+  for (const line of stdout.split(/\r?\n/)) {
+    const [pid, ppid, age, exePath = '', ...rest] = line.split('\t')
+    if (!/^\d+$/.test(pid ?? '')) continue
+    const exe = exePath.replace(/\\/g, '/')
+    let cmd = rest.join(' ').trim()
+    // Drop the executable from the command line (quoted or not) and keep its arguments.
+    cmd = cmd.startsWith('"') ? cmd.slice(cmd.indexOf('"', 1) + 1) : cmd.slice(cmd.split(/\s/)[0].length)
+    procs.set(Number(pid), { pid: Number(pid), ppid: Number(ppid), elapsed: Number(age) || 0, exe, args: `${exe} ${cmd.trim().replace(/\\/g, '/')}`.trim() })
+  }
+  return procs
+}
+
+const WIN_APPS: Record<string, string> = {
+  windowsterminal: 'Windows Terminal', code: 'VS Code', cursor: 'Cursor', windsurf: 'Windsurf', chatgpt: 'ChatGPT',
+  idea64: 'IntelliJ IDEA', pycharm64: 'PyCharm', webstorm64: 'WebStorm', studio64: 'Android Studio', zed: 'Zed',
+  'wezterm-gui': 'WezTerm', alacritty: 'Alacritty', tabby: 'Tabby', hyper: 'Hyper', mintty: 'Git Bash', conemu64: 'ConEmu', warp: 'Warp',
+}
+
+/** The Windows app an executable belongs to, or null. */
+export function winAppOf(exe: string): string | null {
+  if (/\/AnthropicClaude\//i.test(exe)) return 'Claude'
+  const name = (exe.split('/').pop() ?? '').replace(/\.exe$/i, '').toLowerCase()
+  return WIN_APPS[name] ?? null
+}
+
+const procApp = (p: Proc) => (WIN ? winAppOf(p.exe) : appOf(p.args))
 
 const APP_NAMES: Record<string, string> = {
   'Visual Studio Code': 'VS Code', 'Visual Studio Code - Insiders': 'VS Code', iTerm2: 'iTerm', iTerm: 'iTerm',
@@ -67,19 +103,19 @@ const isTmux = (args: string) => /^-?(?:\S*\/)?tmux(?:\s|$)/.test(args)
  * Where a process was started from: the first app among its ancestors (Terminal, Ghostty, Cursor…).
  * tmux servers are detached from the terminal, so a pane is traced to the client attached to its session.
  */
-export function hostOf(pid: number, procs: Map<number, Proc>, tmux?: { paneSession: Map<number, string>; clients: Map<string, number> }): { host: string; via: SessionVia } {
+export function hostOf(pid: number, procs: Map<number, Proc>, tmux?: { paneSession: Map<number, string>; clients: Map<string, number> }, app_ = procApp): { host: string; via: SessionVia } {
   let child = pid
   let p = procs.get(pid)?.ppid
   for (let i = 0; p && p > 1 && i < 40; i++) {
     const proc = procs.get(p)
     if (!proc) break
-    const app = appOf(proc.args)
+    const app = app_(proc)
     if (app) return { host: app, via: AI_APPS[app] ? 'app' : IDE_HOSTS.has(app) ? 'ide' : 'terminal' }
     if (isTmux(proc.args)) {
       const session = tmux?.paneSession.get(child)
       const client = session !== undefined ? tmux?.clients.get(session) : undefined
       if (client) {
-        const outer = hostOf(client, procs)
+        const outer = hostOf(client, procs, undefined, app_)
         return { host: outer.host === 'unknown' ? 'tmux' : `${outer.host} · tmux`, via: 'terminal' }
       }
       return { host: 'tmux', via: 'terminal' }
@@ -104,13 +140,13 @@ async function tmuxMap(env?: NodeJS.ProcessEnv) {
 
 // --- IDE chat ---------------------------------------------------------------------
 
-interface IdeSpec { host: string; agent: string; storage: string; exe: RegExp; chatOnly: boolean }
+interface IdeSpec { host: string; agent: string; storage: string; exe: RegExp; winExe: RegExp; chatOnly: boolean }
 const IDES: IdeSpec[] = [
   // Cursor's AI is built in: any recent activity in a workspace counts.
-  { host: 'Cursor', agent: 'cursor', storage: 'Cursor', exe: /\/Cursor\.app\/Contents\/MacOS\/Cursor$/, chatOnly: false },
-  { host: 'Windsurf', agent: 'windsurf', storage: 'Windsurf', exe: /\/Windsurf\.app\/Contents\/MacOS\/(Electron|Windsurf)$/, chatOnly: false },
+  { host: 'Cursor', agent: 'cursor', storage: 'Cursor', exe: /\/Cursor\.app\/Contents\/MacOS\/Cursor$/, winExe: /\/Cursor\.exe$/i, chatOnly: false },
+  { host: 'Windsurf', agent: 'windsurf', storage: 'Windsurf', exe: /\/Windsurf\.app\/Contents\/MacOS\/(Electron|Windsurf)$/, winExe: /\/Windsurf\.exe$/i, chatOnly: false },
   // VS Code: only when its chat (Copilot and friends) has been written to.
-  { host: 'VS Code', agent: 'copilot', storage: 'Code', exe: /\/Visual Studio Code\.app\/Contents\/MacOS\/(Electron|Code)$/, chatOnly: true },
+  { host: 'VS Code', agent: 'copilot', storage: 'Code', exe: /\/Visual Studio Code\.app\/Contents\/MacOS\/(Electron|Code)$/, winExe: /\/Code\.exe$/i, chatOnly: true },
 ]
 /** A workspace counts as in use while its storage changed within this window. */
 export const IDE_IDLE_MS = 5 * 60_000
@@ -129,16 +165,21 @@ function newest(dir: string): number {
 export function folderOf(workspaceJson: string): string | null {
   try {
     const uri = (JSON.parse(workspaceJson) as { folder?: string }).folder
-    return uri?.startsWith('file://') ? decodeURIComponent(uri.slice(7)) : null
+    if (!uri?.startsWith('file://')) return null
+    const path = decodeURIComponent(uri.slice(7))
+    // file:///c%3A/Users/x → c:/Users/x
+    return /^\/[a-zA-Z]:/.test(path) ? path.slice(1) : path
   } catch {
     return null
   }
 }
 
-export function ideSessions(procs: Map<number, Proc>, now: number, support = join(homedir(), 'Library', 'Application Support')): LiveSession[] {
+export const appSupportDir = () => WIN ? (process.env.APPDATA ?? join(homedir(), 'AppData', 'Roaming')) : join(homedir(), 'Library', 'Application Support')
+
+export function ideSessions(procs: Map<number, Proc>, now: number, support = appSupportDir(), win = WIN): LiveSession[] {
   const out: LiveSession[] = []
   for (const ide of IDES) {
-    if (![...procs.values()].some((p) => ide.exe.test(p.args))) continue
+    if (![...procs.values()].some((p) => (win ? ide.winExe.test(p.exe) : ide.exe.test(p.args)))) continue
     const root = join(support, ide.storage, 'User', 'workspaceStorage')
     let dirs: string[] = []
     try { dirs = readdirSync(root) } catch { continue }
@@ -164,31 +205,33 @@ const HELPERS = new Set(['--chrome-native-host', 'mcp', 'mcp-server', 'daemon'])
 const isHelper = (args: string) => args.split(/\s+/).slice(1, 3).some((a) => HELPERS.has(a))
 
 export async function scanSessions(env?: NodeJS.ProcessEnv, now = Date.now()): Promise<LiveSession[]> {
-  const ps = await run('ps', ['-axww', '-o', 'pid=,ppid=,etime=,args='], env)
+  const ps = WIN
+    ? await run('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', WIN_PS], env)
+    : await run('ps', ['-axww', '-o', 'pid=,ppid=,etime=,args='], env)
   // A failed scan must not look like "every agent stopped" (that would end every session).
-  if (ps.code !== 0) throw new Error('ps failed')
-  const procs = parsePs(ps.stdout)
+  if (ps.code !== 0) throw new Error('process list failed')
+  const procs = WIN ? parseWinPs(ps.stdout) : parsePs(ps.stdout)
   const sessions: LiveSession[] = []
 
   const agents: { proc: Proc; agent: string }[] = []
   for (const proc of procs.values()) {
-    if (proc.pid === process.pid || isHelper(proc.args)) continue
-    const exe = proc.args.split(/\s+/)[0]
-    const agent = agentOf(exe, proc.args)
+    if (proc.pid === process.pid || isHelper(proc.args) || /\/AnthropicClaude\//i.test(proc.exe)) continue
+    const agent = agentOf(proc.exe, proc.args)
     if (agent) agents.push({ proc, agent })
   }
   // A direct child of the same agent is part of that session (wrappers, re-execs).
   const agentByPid = new Map(agents.map((a) => [a.proc.pid, a.agent]))
   const top = agents.filter(({ proc, agent }) => agentByPid.get(proc.ppid) !== agent)
 
-  const needTmux = top.some(({ proc }) => {
+  const needTmux = !WIN && top.some(({ proc }) => {
     for (let p = proc.ppid, i = 0; p > 1 && i < 40; i++) { const x = procs.get(p); if (!x) break; if (isTmux(x.args)) return true; p = x.ppid }
     return false
   })
   const tmux = needTmux ? await tmuxMap(env) : undefined
 
   const cwds = new Map<number, string>()
-  if (top.length) {
+  // Windows has no lsof: the folder of a process is not readable from outside it.
+  if (top.length && !WIN) {
     const lsof = await run('lsof', ['-a', '-d', 'cwd', '-p', top.map((a) => a.proc.pid).join(','), '-Fpn'], env)
     let pid = 0
     for (const line of lsof.stdout.split('\n')) {
@@ -207,14 +250,26 @@ export async function scanSessions(env?: NodeJS.ProcessEnv, now = Date.now()): P
   }
 
   for (const proc of procs.values()) {
-    const m = /^\/Applications\/([^/]+)\.app\/Contents\/MacOS\/([^/\s]+)$/.exec(proc.args)
-    if (!m || m[1] !== m[2] || !AI_APPS[m[1]]) continue
+    const name = aiAppMain(proc, procs)
+    if (!name) continue
     const start = Math.round((now - proc.elapsed * 1000) / 1000) * 1000
-    sessions.push({ key: `app:${m[1]}:${proc.pid}`, agent: AI_APPS[m[1]], host: m[1], via: 'app', inferred: true, cwd: null, start, pid: proc.pid })
+    sessions.push({ key: `app:${name}:${proc.pid}`, agent: AI_APPS[name], host: name, via: 'app', inferred: true, cwd: null, start, pid: proc.pid })
   }
 
   sessions.push(...ideSessions(procs, now))
   return sessions
+}
+
+/** Name of the desktop AI app whose main process this is, or null (helpers and crash handlers are not). */
+export function aiAppMain(proc: Proc, procs: Map<number, Proc>, win = WIN): string | null {
+  if (!win) {
+    const m = /^\/Applications\/([^/]+)\.app\/Contents\/MacOS\/([^/\s]+)$/.exec(proc.args)
+    return m && m[1] === m[2] && AI_APPS[m[1]] ? m[1] : null
+  }
+  const app = winAppOf(proc.exe)
+  if (!app || !AI_APPS[app] || /--type=/.test(proc.args)) return null
+  const parent = procs.get(proc.ppid)
+  return parent && winAppOf(parent.exe) === app ? null : app
 }
 
 // --- history ------------------------------------------------------------------------

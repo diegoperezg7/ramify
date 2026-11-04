@@ -4,13 +4,14 @@
   "description": "One git worktree per task, for any coding agent",
   "version": "0.4.0",
   "private": true,
-  "author": "Diego P\u00e9rez",
+  "author": "Diego Pérez",
   "main": "dist/main.cjs",
   "scripts": {
     "build": "node build.mjs",
     "start": "node build.mjs && electron .",
-    "dist": "node build.mjs && electron-builder --mac --arm64 --publish never",
-    "typecheck": "tsc -p ."
+    "dist": "node build.mjs && electron-builder --mac --publish never",
+    "typecheck": "tsc -p .",
+    "dist:win": "node build.mjs && electron-builder --win --publish never"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
@@ -22,7 +23,7 @@
   "build": {
     "appId": "io.github.diegoperezg7.ramify",
     "productName": "Ramify",
-    "copyright": "Copyright \u00a9 2026 Diego P\u00e9rez",
+    "copyright": "Copyright © 2026 Diego Pérez",
     "directories": {
       "output": "release",
       "buildResources": "resources"
@@ -44,6 +45,10 @@
       {
         "from": "resources/trayTemplate@2x.png",
         "to": "trayTemplate@2x.png"
+      },
+      {
+        "from": "resources/tray.png",
+        "to": "tray.png"
       }
     ],
     "mac": {
@@ -53,7 +58,8 @@
         {
           "target": "dmg",
           "arch": [
-            "arm64"
+            "arm64",
+            "x64"
           ]
         }
       ],
@@ -77,6 +83,25 @@
         ]
       }
     ],
-    "artifactName": "ramify-${version}-${arch}.${ext}"
+    "artifactName": "ramify-${version}-${arch}.${ext}",
+    "win": {
+      "icon": "resources/icon.png",
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "arm64"
+          ]
+        }
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Ramify"
+    }
   }
 }

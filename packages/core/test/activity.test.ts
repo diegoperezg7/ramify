@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { appOf, folderOf, hostOf, ideSessions, parseEtime, parsePs, SessionLog, sessionsCsv, type LiveSession, type Resolved } from '../src/activity.ts'
+import { aiAppMain, appOf, folderOf, hostOf, parseWinPs, winAppOf, ideSessions, parseEtime, parsePs, SessionLog, sessionsCsv, type LiveSession, type Resolved } from '../src/activity.ts'
 
 const PS = `
     1     0  10-00:00:00 /sbin/launchd
@@ -142,5 +142,39 @@ describe('restarts', () => {
     assert.equal(r.started.length, 1)
     assert.equal(r.ended.length, 1)
     assert.equal(log.sessions.length, 2)
+  })
+})
+
+describe('Windows', () => {
+  const WIN_OUT = [
+    '4\t0\t9000\t\t',
+    '500\t4\t3600\tC:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal\\WindowsTerminal.exe\t"C:\\Program Files\\WindowsApps\\Microsoft.WindowsTerminal\\WindowsTerminal.exe"',
+    '501\t500\t3500\tC:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe\tpowershell.exe -NoExit',
+    '502\t501\t120\tC:\\Program Files\\nodejs\\node.exe\t"C:\\Program Files\\nodejs\\node.exe" C:\\Users\\d\\AppData\\Roaming\\npm\\node_modules\\@anthropic-ai\\claude-code\\cli.js',
+    '600\t4\t800\tC:\\Users\\d\\AppData\\Local\\Programs\\ChatGPT\\ChatGPT.exe\t"C:\\Users\\d\\AppData\\Local\\Programs\\ChatGPT\\ChatGPT.exe"',
+    '601\t600\t790\tC:\\Users\\d\\AppData\\Local\\Programs\\ChatGPT\\ChatGPT.exe\t"C:\\Users\\d\\AppData\\Local\\Programs\\ChatGPT\\ChatGPT.exe" --type=renderer',
+  ].join('\r\n')
+  const procs = parseWinPs(WIN_OUT)
+
+  it('parses the PowerShell process list', () => {
+    const node = procs.get(502)!
+    assert.equal(node.exe, 'C:/Program Files/nodejs/node.exe')
+    assert.match(node.args, /@anthropic-ai\/claude-code\/cli\.js$/)
+    assert.equal(node.elapsed, 120)
+  })
+
+  it('finds Windows Terminal as the host', () => {
+    assert.equal(winAppOf('C:/x/WindowsTerminal.exe'), 'Windows Terminal')
+    assert.equal(winAppOf('C:/Users/d/AppData/Local/AnthropicClaude/app-1.0/claude.exe'), 'Claude')
+    assert.deepEqual(hostOf(502, procs, undefined, (p) => winAppOf(p.exe)), { host: 'Windows Terminal', via: 'terminal' })
+  })
+
+  it('counts only the main process of a desktop AI app', () => {
+    assert.equal(aiAppMain(procs.get(600)!, procs, true), 'ChatGPT')
+    assert.equal(aiAppMain(procs.get(601)!, procs, true), null)
+  })
+
+  it('reads Windows workspace folders', () => {
+    assert.equal(folderOf('{"folder":"file:///c%3A/Users/d/proj"}'), 'c:/Users/d/proj')
   })
 })
