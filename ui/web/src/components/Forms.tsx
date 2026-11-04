@@ -3,6 +3,7 @@ import { AgentBadge } from './AgentBadge'
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { agentVar, KNOWN_AGENTS } from '../agents'
 import { bridge } from '../bridge'
+import { taskSlug } from '../logic'
 import { IDE_LABELS } from './Detail'
 import { useStore } from '../store'
 import type { Settings } from '../types'
@@ -22,17 +23,31 @@ function Modal({ title, children, onClose }: { title: string; children: ReactNod
   )
 }
 
+const stamp = () => new Date().toISOString().slice(5, 16).replace(/[-:T]/g, '').replace(/^(\d{4})/, '$1-')
+
 export function CreateDialog() {
   const t = useStore((s) => s.t)
   const caps = useStore((s) => s.caps)
   const settings = useStore((s) => s.settings)
   const state = useStore((s) => s.state)
+  const repos = useStore((s) => s.repos)
+  const currentRepo = useStore((s) => s.repo)
   const busy = useStore((s) => s.busy)
   const setModal = useStore((s) => s.setModal)
   const createWorktree = useStore((s) => s.createWorktree)
   const prefill = useStore((s) => s.createPrefill)
-  const [branch, setBranch] = useState(prefill?.branch ?? '')
+  const [repo, setRepo] = useState(currentRepo)
   const [agent, setAgent] = useState(prefill?.agent ?? settings?.defaultAgent ?? 'claude')
+  const [prompt, setPrompt] = useState('')
+  // The branch names itself from the agent and the task until it is edited by hand.
+  const [branch, setBranch] = useState(prefill?.branch ?? '')
+  const [touched, setTouched] = useState(!!prefill?.branch)
+  const [fallbackStamp] = useState(stamp)
+  useEffect(() => {
+    if (touched) return
+    const slug = taskSlug(prompt)
+    setBranch(`${agent || 'task'}/${slug || fallbackStamp}`)
+  }, [agent, prompt, touched, fallbackStamp])
   // Only the agents installed here, so the choice is short; the rest stay one click away.
   const [installed, setInstalled] = useState<string[] | null>(null)
   const [showAll, setShowAll] = useState(false)
@@ -40,29 +55,32 @@ export function CreateDialog() {
     if (caps?.sessions) void bridge.tools().then((x) => setInstalled(x.agents)).catch(() => setInstalled(null))
   }, [caps])
   const choices = (() => {
-    const base = installed && installed.length && !showAll ? installed : KNOWN_AGENTS
-    return [...new Set([...base, ...(agent ? [agent] : [])])]
+    const list = installed && installed.length && !showAll ? installed : KNOWN_AGENTS
+    return [...new Set([...list, ...(agent ? [agent] : [])])]
   })()
   const [base, setBase] = useState('')
-  const [prompt, setPrompt] = useState('')
 
   const where = caps?.host === 'vscode' ? t('integratedTerminal') : settings?.terminal ?? 'Terminal'
-  const valid = /^[\w./-]+$/.test(branch) && !branch.startsWith('-')
+  const valid = /^[\w./-]+$/.test(branch) && !branch.startsWith('-') && !!repo || (!caps?.multiRepo && /^[\w./-]+$/.test(branch))
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
     if (!valid || busy) return
-    if (await createWorktree({ branch, agent, base: base || undefined, prompt: prompt || undefined })) setModal(null)
+    if (await createWorktree({ branch, agent, base: base || undefined, prompt: prompt || undefined }, repo)) setModal(null)
   }
 
   return (
-    <Modal title={t('newWorktree')} onClose={() => !busy && setModal(null)}>
+    <Modal title={t('newAgent')} onClose={() => !busy && setModal(null)}>
       <form className="form" onSubmit={submit}>
-        <label>
-          <span>{t('branch')}</span>
-          <input autoFocus value={branch} onChange={(e) => setBranch(e.target.value.replace(/\s/g, '-'))}
-            placeholder="feat/login" spellCheck={false} autoCapitalize="off" autoCorrect="off" />
-        </label>
+        <p className="muted small form-lead">{t('newAgentLead')}</p>
+        {caps?.multiRepo && repos.length > 1 && (
+          <label>
+            <span>{t('repository')}</span>
+            <select value={repo} onChange={(e) => setRepo(e.target.value)}>
+              {repos.map((r) => <option key={r.path} value={r.path}>{r.name}</option>)}
+            </select>
+          </label>
+        )}
         <fieldset>
           <legend>{t('agent')}</legend>
           <div className="agent-picker">
@@ -81,20 +99,26 @@ export function CreateDialog() {
           </div>
         </fieldset>
         <label>
-          <span>{t('baseRef')}</span>
-          <input value={base} onChange={(e) => setBase(e.target.value.trim())} placeholder={state?.base ?? t('basePlaceholder')} spellCheck={false} />
+          <span>{t('task')}</span>
+          <textarea autoFocus rows={3} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder={t('taskPlaceholder')} />
         </label>
-        {agent && (
+        <label>
+          <span>{t('branch')} <em className="muted">{t('branchAuto')}</em></span>
+          <input value={branch} onChange={(e) => { setTouched(true); setBranch(e.target.value.replace(/\s/g, '-')) }}
+            spellCheck={false} autoCapitalize="off" autoCorrect="off" />
+        </label>
+        <details className="more-options">
+          <summary>{t('moreOptions')}</summary>
           <label>
-            <span>{t('prompt')}</span>
-            <textarea rows={3} value={prompt} onChange={(e) => setPrompt(e.target.value)} placeholder={t('promptPlaceholder')} />
+            <span>{t('baseRef')}</span>
+            <input value={base} onChange={(e) => setBase(e.target.value.trim())} placeholder={state?.base ?? t('basePlaceholder')} spellCheck={false} />
           </label>
-        )}
+        </details>
         <p className="muted small">{t('createHint', { where })}</p>
         <div className="dialog-actions">
           <button type="button" className="btn btn-ghost" disabled={busy} onClick={() => setModal(null)}>{t('cancel')}</button>
           <button type="submit" className="btn btn-primary" disabled={!valid || busy}>
-            {busy ? <><Loader2 size={14} className="spin" />{t('creating')}</> : t('create')}
+            {busy ? <><Loader2 size={14} className="spin" />{t('creating')}</> : t('startAgent')}
           </button>
         </div>
       </form>
@@ -152,6 +176,23 @@ export function SettingsDialog() {
               <option value={0}>{t('forever')}</option>
             </select>
           </label>
+        )}
+        {caps?.control && (
+          <fieldset className="toggles">
+            <legend>{t('careTitle')}</legend>
+            <label className="check">
+              <input type="checkbox" checked={draft.watchBranches ?? true} onChange={(e) => setDraft({ ...draft, watchBranches: e.target.checked })} />
+              {t('careWatch')}
+            </label>
+            <label className="check">
+              <input type="checkbox" checked={draft.autoDraftPr ?? true} onChange={(e) => setDraft({ ...draft, autoDraftPr: e.target.checked })} />
+              {t('careDraftPr')}
+            </label>
+            <label className="check">
+              <input type="checkbox" checked={draft.autoClean ?? true} onChange={(e) => setDraft({ ...draft, autoClean: e.target.checked })} />
+              {t('careClean')}
+            </label>
+          </fieldset>
         )}
         <fieldset className="toggles">
           <label className="check">

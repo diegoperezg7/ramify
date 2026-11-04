@@ -1,15 +1,16 @@
 import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, safeStorage, screen, session, shell, Tray } from 'electron'
 import { execFile, execFileSync } from 'node:child_process'
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
   cloneGithub, createHandlers, defaultProjectsDir, dispatch, Engine, EngineError, githubRepos, idesFor, openInTerminal, originSlug,
-  accessibleRepos, AuthError, currentUser, hardenedGitEnv, isSafeExternal, normPath, riskyGitConfig, sanitizeSettings, strings, installedTools, pollForTokens, publishGithub, pullRequestFor, pullRequestWithToken,
+  accessibleRepos, AuthError, currentUser, hardenedGitEnv, isSafeExternal, normPath, pullRequestsWithToken, riskyGitConfig, sanitizeSettings, strings, installedTools, pollForTokens, publishGithub, pullRequestFor, pullRequestWithToken,
   refreshTokens, requestDeviceCode, scanRepos, scanSessions, SessionLog, sessionsCsv, type Resolved, type Tokens,
 } from '../../../packages/core/src/index.ts'
 import { GITHUB_APP } from './github-app.ts'
-import type { AgentSession, GithubAccount, GithubRepo, GithubSync, RepoInfo, Settings } from '../../../packages/core/src/types.ts'
+import type { AgentSession, GithubAccount, GithubRepo, GithubSync, PullRequest, RepoInfo, Settings } from '../../../packages/core/src/types.ts'
 
 // Apps started from Finder get a minimal PATH: borrow the login shell's so agents,
 // xcodegen, npm and friends are found exactly as in the terminal.
@@ -44,7 +45,7 @@ if (!existsSync(configFile) && existsSync(legacyConfig)) {
 }
 const defaultSettings: Settings = {
   terminal: 'Terminal', defaultAgent: 'claude', projectsDir: defaultProjectsDir(), autoDetect: true,
-  notifications: true, openAtLogin: false, menuBar: true, historyDays: 90,
+  notifications: true, openAtLogin: false, menuBar: true, historyDays: 90, watchBranches: true, autoDraftPr: true, autoClean: true,
 }
 
 function readConfig(): Config {
@@ -72,6 +73,11 @@ const presentRepos = () => config.repos.filter((r) => existsSync(r))
 function knownRepo(repo: string): string {
   if (!config.repos.includes(repo)) throw new EngineError('unknown repository')
   return repo
+}
+
+const tempRoots = [tmpdir(), '/tmp', '/private/tmp', '/var/folders', '/private/var/folders'].map((p) => { try { return realpathSync(p) } catch { return p } })
+function isTemporary(path: string): boolean {
+  return tempRoots.some((root) => path === root || path.startsWith(`${root}/`))
 }
 
 function addRepoToConfig(path: string) {
@@ -156,7 +162,8 @@ async function scan(): Promise<Live[]> {
   const found = new Map<string, Live>()
   for (const s of sessions) {
     if (s.inferred || !s.repo || !s.worktree) continue
-    if (config.settings.autoDetect) addRepoToConfig(s.repo)
+    // Throwaway repositories in the system's temporary folders (tests, demos) are not followed by themselves.
+    if (config.settings.autoDetect && !isTemporary(s.repo)) addRepoToConfig(s.repo)
     if (!config.repos.includes(s.repo)) continue
     const entry = found.get(s.worktree) ?? { repo: s.repo, path: s.worktree, branch: s.branch ?? '', agents: [] }
     if (!entry.agents.includes(s.agent)) entry.agents.push(s.agent)
@@ -237,6 +244,65 @@ async function monitor() {
   if (process.platform === 'darwin') app.dock?.setBadge(n ? String(n) : '')
   updateTray(n)
   if (config.settings.notifications && Notification.isSupported()) for (const f of finished) void notifyFinished(f)
+  if (config.settings.autoDraftPr) for (const f of finished) void draftPrFor(f)
+}
+
+// --- branch care (every 2 minutes) ----------------------------------------------
+// Warns about what will hurt at merge time and tidies up what is done. Each part has its own switch in Settings.
+
+const told = new Set<string>()
+function tell(key: string, title: string, body: string, payload: Payload) {
+  if (told.has(key) || !config.settings.notifications || !Notification.isSupported()) return
+  told.add(key)
+  const n = new Notification({ title, body })
+  n.on('click', () => focus(payload))
+  n.show()
+}
+
+async function careForBranches() {
+  if (!config.settings.watchBranches && !config.settings.autoClean) return
+  for (const repo of presentRepos()) {
+    let health
+    try { health = await engine.health(repo) } catch { continue }
+    const name = repo.split('/').pop()
+    for (const b of health.branches) {
+      if (b.main) continue
+      if (b.merged && !b.running.length) {
+        if (config.settings.autoClean) {
+          try {
+            await engine.remove(repo, b.path, false)
+            tell(`clean:${b.path}`, es() ? 'Worktree recogido' : 'Worktree tidied up', es() ? `${name} · ${b.branch} ya estaba en ${health.base}` : `${name} · ${b.branch} was already in ${health.base}`, { repo })
+          } catch { /* something left in it: keep */ }
+        } else if (config.settings.watchBranches) {
+          tell(`merged:${b.path}`, es() ? 'Rama ya mergeada' : 'Branch already merged', es() ? `${name} · ${b.branch} está en ${health.base}: puedes quitar su worktree.` : `${name} · ${b.branch} is in ${health.base}: its worktree can go.`, { repo, path: b.path })
+        }
+        continue
+      }
+      if (!config.settings.watchBranches) continue
+      if (b.behind >= 20) tell(`behind:${b.path}:${Math.floor(b.behind / 20)}`, es() ? `${b.branch} se queda atrás` : `${b.branch} is falling behind`,
+        es() ? `${name}: ${b.behind} commits nuevos en ${health.base}. Tráelos antes de que crezca el conflicto.` : `${name}: ${b.behind} new commits in ${health.base}. Bring them in before the conflict grows.`, { repo, path: b.path })
+      for (const other of b.overlaps) {
+        const pair = [b.branch, other].sort().join(' ↔ ')
+        tell(`overlap:${repo}:${pair}`, es() ? 'Dos ramas tocan lo mismo' : 'Two branches touch the same files',
+          es() ? `${name}: ${pair}. Se encontrarán al mergear.` : `${name}: ${pair}. They will meet at merge time.`, { event: 'control' })
+      }
+    }
+  }
+}
+
+async function repoPullRequests(repo: string): Promise<PullRequest[]> {
+  const slug = await cachedSlug(repo)
+  const token = slug ? await githubToken() : null
+  if (token && slug) { try { return await pullRequestsWithToken(token, slug) } catch { /* fall back to gh */ } }
+  return engine.pullRequests(repo)
+}
+
+/** An agent finished on a pushed branch with no pull request yet: open it as a draft. */
+async function draftPrFor(f: Live) {
+  try {
+    const url = await engine.draftPrIfPushed(f.repo, f.path, await repoPullRequests(f.repo))
+    if (url) tell(`pr:${f.path}`, es() ? 'Pull request en borrador' : 'Draft pull request', `${f.repo.split('/').pop()} · ${f.branch}`, { repo: f.repo, path: f.path })
+  } catch { /* not a GitHub branch, or gh missing */ }
 }
 
 async function notifyFinished(f: Live) {
@@ -310,7 +376,7 @@ function updateTray(count: number) {
     })),
     { type: 'separator' },
     { label: es() ? 'Abrir Ramify' : 'Open Ramify', click: () => focus() },
-    { label: es() ? 'Nuevo worktree…' : 'New worktree…', click: () => focus({ event: 'new' }) },
+    { label: es() ? 'Nuevo agente…' : 'New agent…', click: () => focus({ event: 'new' }) },
     { type: 'separator' },
     { role: 'quit', label: es() ? 'Salir' : 'Quit' },
   ]
@@ -325,6 +391,15 @@ function installedIdes(): string[] {
   if (!idesCache || Date.now() - idesCache.at > 60_000) idesCache = { at: Date.now(), ides: idesFor(installedTools(env).editors) }
   const preferred = config.settings.defaultIde
   return preferred && idesCache.ides.includes(preferred) ? [preferred, ...idesCache.ides.filter((i) => i !== preferred)] : idesCache.ides
+}
+
+// --- terminal integration --------------------------------------------------------
+
+function shellStatus(): { installed: boolean; rc: string } {
+  const rc = join(app.getPath('home'), process.env.SHELL?.endsWith('bash') ? '.bashrc' : '.zshrc')
+  let text = ''
+  try { text = readFileSync(rc, 'utf8') } catch { /* no rc yet */ }
+  return { installed: text.includes('# >>> ramify: one branch per agent >>>'), rc }
 }
 
 // --- GitHub ---------------------------------------------------------------------
@@ -494,7 +569,7 @@ const handlers = {
   ...createHandlers({
     engine,
     // Only the editors installed on this machine, the chosen default first.
-    capabilities: () => ({ host: 'desktop', platform: process.platform, multiRepo: true, create: true, settings: true, github: true, sessions: true, timeline: true, ides: installedIdes() }),
+    capabilities: () => ({ host: 'desktop', platform: process.platform, multiRepo: true, create: true, settings: true, github: true, sessions: true, timeline: true, control: true, ides: installedIdes() }),
     repo: knownRepo,
     runInTerminal: (_name, cwd, command) => openInTerminal(config.settings.terminal, command, cwd),
   }),
@@ -531,6 +606,22 @@ const handlers = {
     return list.map((s) => (s.repo && slugs.has(s.repo) ? { ...s, github: slugs.get(s.repo) ?? null } : s))
   },
   clearSessions: () => { sessionLog.clear(); saveSessions(true) },
+  pullRequests: (r: string) => { strings(r); return repoPullRequests(knownRepo(r)) },
+  shellIntegration: () => shellStatus(),
+  setShellIntegration: async (on: boolean) => {
+    await new Promise<void>((ok, fail) => execFile(bin, [on ? 'install' : 'uninstall', 'shell'], { env }, (e) => (e ? fail(e) : ok())))
+    return shellStatus()
+  },
+  moveToBranch: async (r: string, agent: string) => {
+    strings(r, agent)
+    if (!/^[\w.-]+$/.test(agent)) throw new EngineError('invalid agent name')
+    const repo = knownRepo(r)
+    const stamp = new Date().toISOString().slice(5, 16).replace(/[-:T]/g, '').replace(/^(\d{4})/, '$1-')
+    const branch = `${agent}/${stamp}`
+    const path = await new Promise<string>((ok, fail) => execFile(bin, ['move', branch, '-a', agent], { cwd: repo, env }, (e, out, err) => (e ? fail(new EngineError(String(err).trim().replace(/^ramify: /, '') || e.message)) : ok(String(out).trim().split('\n').pop() ?? ''))))
+    await openInTerminal(config.settings.terminal, engine.launchCommand(path, agent), path)
+    return { message: branch, path }
+  },
   exportSessions: async (format: 'csv' | 'json') => {
     if (format !== 'csv' && format !== 'json') throw new EngineError('bad arguments')
     const ext = format === 'json' ? 'json' : 'csv'
@@ -736,6 +827,8 @@ if (!app.requestSingleInstanceLock()) {
     if (target) void openTarget(target)
     void monitor()
     setInterval(() => void monitor(), 4000)
+    setTimeout(() => void careForBranches(), 20_000)
+    setInterval(() => void careForBranches(), 120_000)
     app.on('activate', () => focus())
   })
   // On macOS the app keeps running in the menu bar after the window closes, like other background tools.

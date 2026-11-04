@@ -40,6 +40,7 @@ export function Sessions() {
   const [range, setRange] = useState<Range>('week')
   const [publishing, setPublishing] = useState<string | null>(null)
   const [clearing, setClearing] = useState(false)
+  const [moving, setMoving] = useState<{ repo: string; agent: string } | null>(null)
   const refreshSessions = useStore((s) => s.refreshSessions)
   const now = Date.now()
 
@@ -173,7 +174,7 @@ export function Sessions() {
                         <b>{base(w.repo)} · {w.branch}</b>
                         <span className="muted">{w.kind === 'shared' ? t('warnShared', { agents: countAgents(w.agents) }) : t('warnMain', { agent })}</span>
                       </span>
-                      <button type="button" className="link att-action" onClick={() => giveBranch(w.repo, agent)}>{t('ownBranch', { agent })} →</button>
+                      <button type="button" className="link att-action" onClick={() => (w.kind === 'main' ? setMoving({ repo: w.repo, agent }) : giveBranch(w.repo, agent))}>{t('ownBranch', { agent })} →</button>
                     </li>
                   )
                 })}
@@ -265,6 +266,17 @@ export function Sessions() {
         </>
       )}
       {publishing && <PublishDialog repo={publishing} onClose={() => setPublishing(null)} />}
+      {moving && (
+        <Dialog title={t('ownBranch', { agent: moving.agent })} confirmLabel={t('ownBranch', { agent: moving.agent })}
+          onCancel={() => setMoving(null)}
+          onConfirm={async () => {
+            const m = moving
+            setMoving(null)
+            try { const { message } = await bridge.moveToBranch(m.repo, m.agent); toast('ok', message); await refreshSessions() } catch (e) { toast('error', (e as Error).message) }
+          }}>
+          <p>{t('confirm_move', { agent: moving.agent, branch: '', base: '' })}</p>
+        </Dialog>
+      )}
       {clearing && (
         <Dialog title={t('clearHistory')} confirmLabel={t('clearHistory')} danger onCancel={() => setClearing(false)}
           onConfirm={async () => { setClearing(false); await bridge.clearSessions(); await refreshSessions() }}>

@@ -173,6 +173,14 @@ export async function accessibleRepos(token: string): Promise<{ installations: n
   return { installations: installs.length, repos: [...repos.values()].sort((a, b) => b.pushedAt.localeCompare(a.pushedAt)) }
 }
 
+/** Every pull request of a repository (newest first), read with the user's token. */
+export async function pullRequestsWithToken(token: string, slug: string): Promise<{ number: number; url: string; state: 'OPEN' | 'MERGED' | 'CLOSED'; draft: boolean; title: string; branch: string }[]> {
+  if (!/^[\w.-]+\/[\w.-]+$/.test(slug)) return []
+  const { data } = await api<{ number: number; html_url: string; state: string; merged_at: string | null; draft: boolean; title: string; head: { ref: string } }[]>(
+    token, `/repos/${slug}/pulls?state=all&per_page=100&sort=updated&direction=desc`)
+  return data.map((p) => ({ number: p.number, url: p.html_url, state: p.merged_at ? 'MERGED' : p.state === 'open' ? 'OPEN' : 'CLOSED', draft: p.draft, title: p.title, branch: p.head.ref }))
+}
+
 /** The pull request for `branch`, read with the user's token. */
 export async function pullRequestWithToken(token: string, slug: string, branch: string): Promise<{ number: number; url: string; state: string; title: string } | null> {
   if (!/^[\w.-]+\/[\w.-]+$/.test(slug)) return null

@@ -175,6 +175,16 @@ git checkout -q main
 (cd "$T" && RAMIFY_INTERACTIVE=1 "$AW" run claude "go" 2>/dev/null)
 check "outside a repository it runs in place" 'grep -q "^claude|$T|" "$T/last-agent"'
 
+echo "move work off main"
+cd "$T/demo" || exit 1
+echo "half done" > wip.txt; echo changed >> a.txt
+mp=$("$AW" move feat/moved -a claude 2>/dev/null)
+check "move takes uncommitted work to a new branch" '[ "$mp" = "$W/feat-moved" ] && [ -f "$mp/wip.txt" ] && grep -q changed "$mp/a.txt"'
+check "the main checkout is left clean" '[ -z "$(git status --porcelain)" ]'
+check "a stash keeps a copy" 'git stash list | grep -q "ramify: moved to feat/moved"'
+check "the new worktree records the agent" 'grep -qx "WT_AGENT=claude" "$mp/.worktree.env"'
+check "move refuses inside a worktree" '! (cd "$mp" && "$AW" move other 2>/dev/null)'
+
 echo "shell integration"
 init=$("$AW" shell-init)
 check "shell-init wraps installed agents only" 'printf "%s" "$init" | grep -q "^claude() {" && ! printf "%s" "$init" | grep -q "^kimi() {"'

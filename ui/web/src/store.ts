@@ -6,8 +6,8 @@ import type { AgentSession, Capabilities, CreateRequest, Detail, RepoInfo, Setti
 export type Theme = 'system' | 'light' | 'dark'
 export type Density = 'comfortable' | 'compact'
 type Conn = 'ok' | 'offline' | 'unauthorized'
-type Modal = 'create' | 'settings' | 'github' | 'palette' | 'onboarding' | null
-export type View = 'repo' | 'sessions' | 'timeline'
+type Modal = 'create' | 'settings' | 'github' | 'palette' | 'onboarding' | 'guide' | null
+export type View = 'repo' | 'sessions' | 'timeline' | 'control'
 
 interface Toast { id: number; kind: 'ok' | 'error'; text: string }
 
@@ -46,7 +46,7 @@ interface Store {
   select: (path: string | null) => void
   refreshDetail: () => Promise<void>
   openFile: (file: string | null) => Promise<void>
-  createWorktree: (req: CreateRequest) => Promise<boolean>
+  createWorktree: (req: CreateRequest, repo?: string) => Promise<boolean>
   saveSettings: (s: Settings) => Promise<void>
   setModal: (m: Modal) => void
   setLang: (lang: Lang) => void
@@ -108,7 +108,8 @@ export const useStore = create<Store>((set, get) => ({
     const caps = await bridge.capabilities().catch(() => null)
     set({ caps })
     if (caps?.settings) set({ settings: await bridge.settings().catch(() => null) })
-    if (caps?.sessions && load<View>('ramify-view', 'repo') === 'sessions') get().setView('sessions')
+    const savedView = load<View>('ramify-view', 'repo')
+    if ((caps?.sessions && savedView === 'sessions') || (caps?.control && savedView === 'control')) get().setView(savedView)
     // First run of the desktop app: a short introduction built from what is installed here.
     if (caps?.sessions && get().settings && !get().settings!.onboarded) set({ modal: 'onboarding' })
     if (caps?.multiRepo) {
@@ -121,7 +122,7 @@ export const useStore = create<Store>((set, get) => ({
 
   poll: async () => {
     const { caps } = get()
-    if (get().view === 'sessions') { void get().refreshSessions(); if (caps?.multiRepo) void get().refreshRepos(); return }
+    if (get().view === 'sessions' || get().view === 'control') { void get().refreshSessions(); if (caps?.multiRepo) void get().refreshRepos(); return }
     // One poll at a time: a slow repository must not pile up processes every 2.5 s.
     if (polling) return
     polling = true
@@ -237,13 +238,18 @@ export const useStore = create<Store>((set, get) => ({
     }
   },
 
-  createWorktree: async (req) => {
+  createWorktree: async (req, repo) => {
     set({ busy: true })
     try {
-      const { message, path } = await bridge.create(get().repo, req)
+      const target = repo || get().repo
+      const { message, path } = await bridge.create(target, req)
       get().toast('ok', message)
-      await get().poll()
-      get().select(path)
+      // From the repository view, show the new worktree; from the control center, stay there.
+      if (get().view === 'repo' || get().view === 'timeline') {
+        if (target !== get().repo) get().setRepo(target)
+        await get().poll()
+        get().select(path)
+      } else void get().refreshRepos()
       return true
     } catch (e) {
       get().toast('error', (e as Error).message)
@@ -268,7 +274,7 @@ export const useStore = create<Store>((set, get) => ({
   setView: (view) => {
     save('ramify-view', view)
     set({ view, menuOpen: false })
-    if (view === 'sessions') void get().refreshSessions()
+    if (view === 'sessions' || view === 'control') void get().refreshSessions()
   },
   newWorktreeFor: async (repo, prefill) => {
     if (!get().repos.some((r) => r.path === repo)) await bridge.addRepoPath(repo).catch(() => {})

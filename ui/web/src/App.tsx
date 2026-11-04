@@ -12,6 +12,8 @@ import { TopBar } from './components/TopBar'
 import { Sessions } from './components/Sessions'
 import { Onboarding } from './components/Onboarding'
 import { Timeline } from './components/Timeline'
+import { ControlCenter } from './components/ControlCenter'
+import { Guide } from './components/Guide'
 import { GanttChart, Network } from 'lucide-react'
 import { sortWorktrees, WorktreeList } from './components/WorktreeList'
 import { bridge } from './bridge'
@@ -133,6 +135,7 @@ export function App() {
           </div>
         )}
         {view === 'sessions' && caps?.sessions && <Sessions />}
+        {view === 'control' && caps?.control && <ControlCenter />}
         {(view === 'repo' || view === 'timeline') && caps?.timeline && state && !noRepos && (
           <div className="view-tabs" role="tablist">
             <button type="button" role="tab" aria-selected={view === 'repo'} className={view === 'repo' ? 'is-on' : ''} onClick={() => setView('repo')}><Network size={14} />{t('viewTree')}</button>
@@ -160,6 +163,7 @@ export function App() {
       {modal === 'github' && <GithubDialog />}
       {modal === 'palette' && <CommandPalette />}
       {modal === 'onboarding' && <Onboarding />}
+      {modal === 'guide' && <Guide />}
       <div className="toasts" aria-live="polite">
         {toasts.map((x) => (
           <div key={x.id} className={`toast toast-${x.kind}`}>

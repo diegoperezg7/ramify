@@ -52,6 +52,11 @@ no plugin to install in each tool.
 
 ### 2. One branch per agent, without the mess
 
+Open agents the way you always do: with the terminal integration on (`ramify install shell`, or one switch in the app),
+typing `claude`, `codex` or `gemini` in a repository gives that agent its own branch and folder before it starts. Already
+on a branch of its own, or running a script, nothing changes. Work started on `main` by mistake moves to its own branch
+in one step (`ramify move`), with a stash kept as a backup.
+
 When two agents end up on the same branch, or one starts changing `main`, Ramify warns you (in the app and
 as a notification) and gives that agent its own branch in one click.
 
@@ -64,14 +69,22 @@ The diff you know from GitHub: line numbers, green for added, red for removed, a
 branch in the editors you actually have installed, launch the agent again, merge it, or remove it. Ramify
 refuses to delete anything that is not committed or not merged.
 
-### 4. Every branch on one timeline
+### 4. A control center for every branch being built
+
+Each branch with its agent and what it is doing, commits, uncommitted work, how far behind `main` it is, the size of the
+change (with a warning past ~400 lines), its pull request, and a warning when two branches touch the same files. One
+click for what it needs next: bring in `main`, open a draft pull request, merge, or remove it once merged. A
+contribution grid shows the last six months of commits. Optional automation, each with its own switch: warnings, a
+draft pull request when an agent finishes on a pushed branch, and clean-up of merged worktrees.
+
+### 5. Every branch on one timeline
 
 <img src="docs/app-timeline.png" alt="Branch timeline: active, stale and merged branches with their forks and merges">
 
 One band per branch, from where it forked to where it was merged, coloured by the agent that worked on it.
 Branches that were merged and deleted are rebuilt from their merge commits, so the story stays complete.
 
-### 5. Set up in a minute
+### 6. Set up in a minute
 
 <img src="docs/app-onboarding.png" alt="Onboarding: the agents, editors, terminals and AI apps found on this computer">
 
@@ -145,6 +158,10 @@ subagents) goes through Ramify.
 /plugin install ramify@ramify
 ```
 
+It adds good-practice skills: `/ramify:nueva-rama` (start a task on its own branch), `/ramify:portar-tarea` (move work
+off main), `/ramify:preparar-pr` (up to date, small, conventional commits, draft PR) and `/ramify:terminar-tarea`
+(check it is merged, remove worktree and branch), plus `/ramify:status` and `/ramify:ui`.
+
 ## Quick start
 
 ```bash
@@ -193,6 +210,9 @@ ramify ui                                       # live web dashboard in the brow
 ramify app                                      # open this repository in the desktop app
 ramify rm fix/cart                              # refuses if anything would be lost
 ramify prune                                    # remove clean worktrees that are already merged
+
+ramify install shell                            # agents typed in a main checkout get their own branch
+ramify move feat/tax -a claude                  # move uncommitted work off main to its own branch
 ```
 
 `-f <ref>` picks the base, `--no-setup` skips setup, and anything after `--` is passed to the agent.

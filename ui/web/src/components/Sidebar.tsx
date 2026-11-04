@@ -1,4 +1,4 @@
-import { FolderGit2, MessagesSquare, PanelLeftClose, PanelLeftOpen, Plus, Settings, X } from 'lucide-react'
+import { FolderGit2, LayoutDashboard, MessagesSquare, PanelLeftClose, PanelLeftOpen, Plus, Settings, X } from 'lucide-react'
 import { GithubIcon } from './GithubIcon'
 import { agentVar } from '../agents'
 import { Logo, Wordmark } from './Logo'
@@ -40,6 +40,11 @@ export function Sidebar() {
           <Wordmark className="side-brand-name" />
         </div>
         <div className="sidebar-section">
+          {caps?.control && (
+            <button type="button" className={`side-btn side-view${view === 'control' ? ' is-active' : ''}`} onClick={() => setView('control')} title={t('controlTitle')}>
+              <LayoutDashboard size={16} /><span>{t('controlTitle')}</span>
+            </button>
+          )}
           {caps?.sessions && (
             <button type="button" className={`side-btn side-view${view === 'sessions' ? ' is-active' : ''}`} onClick={() => setView('sessions')} title={t('sessions')}>
               <MessagesSquare size={16} /><span>{t('sessions')}</span>
@@ -79,7 +84,7 @@ function RepoItem({ r }: { r: RepoInfo }) {
 
   return (
     <li>
-      <button type="button" className={`repo-item${r.path === repo && view !== 'sessions' ? ' is-active' : ''}`} onClick={() => setRepo(r.path)}
+      <button type="button" className={`repo-item${r.path === repo && view !== 'sessions' && view !== 'control' ? ' is-active' : ''}`} onClick={() => setRepo(r.path)}
         title={`${r.name}\n${r.path}${working ? `\n${r.active!.join(', ')}` : ''}`}>
         <span className="repo-avatar">
           <FolderGit2 size={15} className="repo-icon" />

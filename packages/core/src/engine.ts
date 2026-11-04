@@ -4,7 +4,7 @@ import { homedir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import { EDITORS, launchBin } from './catalog.ts'
 import { windowsAppPath } from './tools.ts'
-import type { Commit, Created, CreateRequest, Detail, FileChange, RepoInfo, State, Timeline, TimelineBranch, TimelineCommit, Worktree } from './types.ts'
+import type { BranchHealth, Commit, Created, CreateRequest, Detail, FileChange, Health, PullRequest, RepoInfo, State, Timeline, TimelineBranch, TimelineCommit, Worktree } from './types.ts'
 
 const MAX_COMMITS = 300
 const MAX_DIFF = 400_000
@@ -385,6 +385,128 @@ export class Engine {
     const out = await this.mustBin(args, repo)
     const path = out.trim().split('\n').pop() ?? ''
     return { path, command: req.agent ? this.launchCommand(path, req.agent, req.prompt) : null }
+  }
+
+  // --- control center ----------------------------------------------------------
+
+  /** Health of every branch being built: the worktrees, and the main checkout when someone works in it. */
+  async health(repo: string): Promise<Health> {
+    const base = await this.base(repo)
+    const wts = await this.worktrees(repo)
+    const files = new Map<string, Set<string>>()
+    const out: BranchHealth[] = []
+    for (const w of wts) {
+      // The main checkout counts only while an agent works in it: your own edits there are not a branch being built.
+      if (w.main && !w.running.length) continue
+      const at = w.path
+      let behind = 0
+      let ahead = 0
+      if (!w.main && w.branch) {
+        const counts = (await this.git(repo, 'rev-list', '--left-right', '--count', `${base}...${w.branch}`)).trim().split(/\s+/)
+        behind = Number(counts[0]) || 0
+        ahead = Number(counts[1]) || 0
+      }
+      const mb = w.main ? 'HEAD' : ((await this.git(at, 'merge-base', base, 'HEAD')).trim() || 'HEAD')
+      // Committed and uncommitted changes against the fork point, the size a reviewer will read.
+      let added = 0
+      let deleted = 0
+      const touched = new Set<string>()
+      const numstat = (await this.git(at, 'diff', '--no-ext-diff', '--no-textconv', '-z', '--numstat', mb)).split('\0')
+      for (let i = 0; i < numstat.length; i++) {
+        const m = /^(\d+|-)\t(\d+|-)\t(.*)$/s.exec(numstat[i])
+        if (!m) continue
+        added += Number(m[1]) || 0
+        deleted += Number(m[2]) || 0
+        const name = m[3] || numstat[i + 2] // renames: "a\tb\t" then old\0new
+        if (!m[3]) i += 2
+        if (name) touched.add(name)
+      }
+      for (const f of (await this.git(at, 'ls-files', '-z', '--others', '--exclude-standard')).split('\0').filter(Boolean)) touched.add(f)
+      if (!w.main) files.set(w.branch, touched)
+      const upstream = (await this.run('git', ['-C', at, 'rev-parse', '--abbrev-ref', '@{upstream}'])).code === 0
+      const unpushed = upstream ? Number((await this.git(at, 'rev-list', '--count', '@{upstream}..HEAD')).trim()) || 0 : null
+      const last = Number((await this.git(at, 'log', '-1', '--format=%ct')).trim()) || null
+      const tipIsBase = !w.main && (await this.git(repo, 'rev-parse', w.branch)).trim() === (await this.git(repo, 'rev-parse', base)).trim()
+      out.push({
+        path: w.path, branch: w.branch, main: w.main, agent: w.agent, running: w.running,
+        ahead, behind, uncommitted: w.changes, added, deleted, files: touched.size, unpushed, lastCommit: last,
+        merged: !w.main && !!w.branch && ahead === 0 && !w.changes && !tipIsBase
+          && (await this.run('git', ['-C', repo, 'merge-base', '--is-ancestor', w.branch, base])).code === 0,
+        overlaps: [],
+      })
+    }
+    // Two branches changing the same file will meet at merge time: say so now.
+    for (const b of out) {
+      const mine = files.get(b.branch)
+      if (!mine || b.main) continue
+      b.overlaps = [...files.entries()].filter(([name, theirs]) => name !== b.branch && [...mine].some((f) => theirs.has(f))).map(([name]) => name)
+    }
+    return { base, branches: out }
+  }
+
+  /** Pull requests through the gh CLI (the desktop app uses the signed-in account instead when it can). */
+  async pullRequests(repo: string): Promise<PullRequest[]> {
+    const r = await this.run('gh', ['pr', 'list', '--state', 'all', '--limit', '100', '--json', 'number,url,state,isDraft,title,headRefName'], repo)
+    if (r.code !== 0) return []
+    try {
+      return (JSON.parse(r.stdout) as { number: number; url: string; state: PullRequest['state']; isDraft: boolean; title: string; headRefName: string }[])
+        .map((p) => ({ number: p.number, url: p.url, state: p.state, draft: p.isDraft, title: p.title, branch: p.headRefName }))
+    } catch { return [] }
+  }
+
+  async updateFromBase(repo: string, path: string): Promise<string> {
+    const wt = await this.find(repo, path)
+    if (wt.main || !wt.branch) throw new EngineError('the main checkout is the base')
+    if ((await this.git(path, 'status', '--porcelain', '--untracked-files=no')).trim()) throw new EngineError('commit or stash the changes in the worktree first')
+    const base = await this.base(repo)
+    const r = await this.run('git', ['-C', path, 'merge', '--no-edit', base])
+    if (r.code !== 0) {
+      await this.run('git', ['-C', path, 'merge', '--abort'])
+      throw new EngineError(`${base} and ${wt.branch} conflict: nothing was changed. Ask the agent to merge ${base} and resolve it.`)
+    }
+    return `${wt.branch} ← ${base}`
+  }
+
+  async openPr(repo: string, path: string): Promise<string> {
+    const wt = await this.find(repo, path)
+    if (wt.main || !wt.branch) throw new EngineError('open pull requests from a branch, not the main checkout')
+    if (!(await this.git(repo, 'config', '--get', 'remote.origin.url')).includes('github.com')) throw new EngineError('this repository has no GitHub remote')
+    const push = await this.run('git', ['-C', path, 'push', '-u', 'origin', wt.branch])
+    if (push.code !== 0) throw new EngineError((push.stderr || push.stdout).trim() || 'push failed')
+    const pr = await this.run('gh', ['pr', 'create', '--draft', '--fill', '--head', wt.branch], path)
+    if (pr.code !== 0) throw new EngineError((pr.stderr || pr.stdout).trim() || 'gh pr create failed')
+    return pr.stdout.trim().split('\n').pop() ?? wt.branch
+  }
+
+  /**
+   * A draft pull request for a branch its agent already pushed (nothing is pushed here), unless one exists.
+   * Returns its URL, or null when there is nothing to do.
+   */
+  async draftPrIfPushed(repo: string, path: string, existing: { branch: string }[]): Promise<string | null> {
+    const wt = await this.find(repo, path)
+    if (wt.main || !wt.branch || existing.some((p) => p.branch === wt.branch)) return null
+    if (!(await this.git(repo, 'config', '--get', 'remote.origin.url')).includes('github.com')) return null
+    if ((await this.run('git', ['-C', path, 'rev-parse', '--abbrev-ref', '@{upstream}'])).code !== 0) return null
+    if (Number((await this.git(path, 'rev-list', '--count', '@{upstream}..HEAD')).trim())) return null
+    const base = await this.base(repo)
+    if (!Number((await this.git(repo, 'rev-list', '--count', `${base}..${wt.branch}`)).trim())) return null
+    const pr = await this.run('gh', ['pr', 'create', '--draft', '--fill', '--head', wt.branch], path)
+    return pr.code === 0 ? pr.stdout.trim().split('\n').pop() ?? null : null
+  }
+
+  /** Commits per day, every branch, for the contribution grid. */
+  async commitDays(repo: string, days: number): Promise<Record<number, number>> {
+    const since = Math.floor(Date.now() / 1000) - days * 86400
+    const out = await this.git(repo, 'log', '--all', `--since=${since}`, '--format=%ct')
+    const counts: Record<number, number> = {}
+    for (const line of out.split('\n')) {
+      const t = Number(line)
+      if (!t) continue
+      const d = new Date(t * 1000)
+      const day = Math.floor(new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime() / 1000)
+      counts[day] = (counts[day] ?? 0) + 1
+    }
+    return counts
   }
 
   // --- timeline ----------------------------------------------------------------

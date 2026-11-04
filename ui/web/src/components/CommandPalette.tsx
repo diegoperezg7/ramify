@@ -1,4 +1,4 @@
-import { CornerDownLeft, FolderGit2, GitBranch, Moon, Plus, Search, Settings, Sun } from 'lucide-react'
+import { BookOpen, CornerDownLeft, FolderGit2, GitBranch, Moon, Plus, Search, Settings, Sun } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useStore } from '../store'
 import { GithubIcon } from './GithubIcon'
@@ -32,6 +32,7 @@ export function CommandPalette() {
     const close = (fn: () => void) => () => { setModal(null); fn() }
     const list: Item[] = []
     if (caps?.create && state) list.push({ id: 'new', group: t('groupActions'), label: t('newWorktree'), hint: '⌘N', icon: <Plus size={15} />, run: () => setModal('create') })
+    if (caps?.control) list.push({ id: 'guide', group: t('groupActions'), label: t('guideTitle'), icon: <BookOpen size={15} />, run: () => setModal('guide') })
     if (caps?.github) list.push({ id: 'gh', group: t('groupActions'), label: t('githubTitle'), icon: <GithubIcon size={15} />, run: () => setModal('github') })
     list.push({ id: 'theme', group: t('groupActions'), label: dark ? t('toLight') : t('toDark'), icon: dark ? <Sun size={15} /> : <Moon size={15} />, run: close(() => setTheme(dark ? 'light' : 'dark')) })
     if (caps?.settings) list.push({ id: 'settings', group: t('groupActions'), label: t('settings'), hint: '⌘,', icon: <Settings size={15} />, run: () => setModal('settings') })

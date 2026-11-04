@@ -41,6 +41,7 @@ ${B}Usage${N}
   ramify install [claude-hooks|instructions|shell|all]
   ramify uninstall shell        stop giving agents their own branch from the terminal
   ramify run <agent> [args]     open an agent; from a main checkout it gets its own branch first
+  ramify move <branch> [-a agent]  move the main checkout's uncommitted work to a branch of its own
   ramify hook create|remove     Claude Code WorktreeCreate/WorktreeRemove hook
 
 ${B}Agents${N} (-a)   claude, codex, gemini, copilot, cursor, opencode, aider, amp, or any command
@@ -604,6 +605,37 @@ cmd_run() {
   exec "$real" "$@"
 }
 
+# `ramify move <branch> [-a agent]`: the uncommitted work of the main checkout goes to a new branch and folder
+# of its own, and the main checkout is left clean. A stash keeps a copy until you drop it yourself.
+cmd_move() {
+  local branch="" agent="" main stash wt
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      -a|--agent) agent=$2; shift 2 ;;
+      -*) die "unknown option: $1" ;;
+      *) branch=$1; shift ;;
+    esac
+  done
+  [ -n "$branch" ] || die "usage: ramify move <branch> [-a agent]"
+  main=$(main_checkout "$PWD")
+  [ "$(cd "$(git rev-parse --show-toplevel)" && abspwd)" = "$main" ] || die "run it from the main checkout: this is already a worktree"
+  if [ -z "$(git -C "$main" status --porcelain)" ]; then
+    log "${D}nothing uncommitted to move; creating $branch from the last commit${N}"
+    create "$branch" "" 1 "$agent"; printf '%s\n' "$CREATED_WT"; return 0
+  fi
+  git -C "$main" stash push --include-untracked -m "ramify: moved to $branch" >/dev/null || die "could not stash the changes"
+  stash=$(git -C "$main" rev-parse stash@{0})
+  # The branch starts where the work started: the commit the changes were made on.
+  create "$branch" "" 1 "$agent"; wt=$CREATED_WT
+  if ! git -C "$wt" stash apply --index "$stash" >/dev/null 2>&1 && ! git -C "$wt" stash apply "$stash" >/dev/null 2>&1; then
+    git -C "$main" stash pop >/dev/null 2>&1
+    die "the changes did not apply to $branch; they are back in the main checkout"
+  fi
+  log "${G}→${N} uncommitted work moved to ${M}$branch${N} ($wt); the main checkout is clean"
+  log "${D}a copy stays in the stash (\"ramify: moved to $branch\"); drop it with: git stash drop${N}"
+  printf '%s\n' "$wt"
+}
+
 # Shell functions that route the agents installed here through `ramify run`.
 cmd_shell_init() {
   local bin a
@@ -686,6 +718,7 @@ case "$sub" in
   prune) cmd_prune ;;
   hook) cmd_hook "$@" ;;
   run) cmd_run "$@" ;;
+  move) cmd_move "$@" ;;
   shell-init) cmd_shell_init ;;
   install)
     case "${1:-all}" in

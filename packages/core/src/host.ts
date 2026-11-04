@@ -51,6 +51,14 @@ export function createHandlers(o: HostOptions): Handlers {
       if (created.command) await o.runInTerminal(req.branch, created.path, created.command)
       return { path: created.path, message: created.command ? `${req.branch} · ${req.agent}` : req.branch }
     },
+    health: async (r: string) => engine.health(await repo(r)),
+    pullRequests: async (r: string) => engine.pullRequests(await repo(r)),
+    updateFromBase: async (r: string, path: string) => { strings(path); return { message: await engine.updateFromBase(await repo(r), path) } },
+    openPr: async (r: string, path: string) => { strings(path); return { message: await engine.openPr(await repo(r), path) } },
+    commitDays: async (r: string, days: number) => {
+      if (typeof days !== 'number' || !Number.isInteger(days) || days < 1 || days > 400) throw new Error('bad arguments')
+      return engine.commitDays(await repo(r), days)
+    },
     timeline: async (r: string, days: number) => {
       if (typeof days !== 'number' || !Number.isInteger(days) || days < 0 || days > 3650) throw new Error('bad arguments')
       return engine.timeline(await repo(r), days)
@@ -110,6 +118,9 @@ export function sanitizeSettings(input: unknown, current: Settings): Settings {
     onboarded: bool('onboarded') as boolean | undefined,
     ignored: Array.isArray(s.ignored) ? (s.ignored as unknown[]).filter((x): x is string => typeof x === 'string' && x.length < 128).slice(0, 200) : current.ignored,
     historyDays: typeof s.historyDays === 'number' && [0, 30, 90, 365].includes(s.historyDays) ? s.historyDays : current.historyDays,
+    watchBranches: bool('watchBranches') as boolean | undefined,
+    autoDraftPr: bool('autoDraftPr') as boolean | undefined,
+    autoClean: bool('autoClean') as boolean | undefined,
   }
   for (const k of Object.keys(next) as (keyof Settings)[]) if (next[k] === undefined) delete next[k]
   return next

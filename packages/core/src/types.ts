@@ -76,6 +76,36 @@ export interface Timeline {
   branches: TimelineBranch[]
 }
 
+/** A branch being built, with what a reviewer would want to know before it goes in. */
+export interface BranchHealth {
+  path: string
+  branch: string
+  /** The main checkout: listed only while an agent works there. */
+  main: boolean
+  agent: string
+  running: string[]
+  /** Commits on the branch and not in the base. */
+  ahead: number
+  /** Commits in the base the branch does not have yet. */
+  behind: number
+  uncommitted: number
+  /** Lines added and deleted against where it forked, uncommitted work included. */
+  added: number
+  deleted: number
+  files: number
+  /** Commits not pushed to its upstream; null when it has no upstream. */
+  unpushed: number | null
+  lastCommit: number | null
+  /** Everything it had is in the base already. */
+  merged: boolean
+  /** Other branches that change some of the same files. */
+  overlaps: string[]
+}
+
+export interface Health { base: string; branches: BranchHealth[] }
+
+export interface PullRequest { number: number; url: string; state: 'OPEN' | 'MERGED' | 'CLOSED'; draft: boolean; title: string; branch: string }
+
 export interface CreateRequest {
   branch: string
   agent: string
@@ -122,6 +152,12 @@ export interface Settings {
   autoDetect: boolean
   /** Desktop: notify when an agent finishes. */
   notifications?: boolean
+  /** Desktop: warn about branches far behind the base, branches changing the same files, merged worktrees left open. */
+  watchBranches?: boolean
+  /** Desktop: when an agent finishes and its branch is pushed, open a draft pull request for it. */
+  autoDraftPr?: boolean
+  /** Desktop: remove worktrees that are clean and already merged. */
+  autoClean?: boolean
   /** Desktop: start at login (hidden, in the menu bar). */
   openAtLogin?: boolean
   /** Desktop: show the agent count in the menu bar. */
@@ -218,6 +254,8 @@ export interface Capabilities {
   sessions?: boolean
   /** Branch timeline view. */
   timeline?: boolean
+  /** Control center (branch health, pull requests, contribution grid). */
+  control?: boolean
   ides: string[]
 }
 
@@ -232,6 +270,16 @@ export interface Bridge {
   remove(repo: string, path: string, force: boolean): Promise<{ message: string }>
   create(repo: string, req: CreateRequest): Promise<{ message: string; path: string }>
   launch(repo: string, path: string, agent: string, prompt?: string): Promise<{ message: string }>
+  /** Every branch being built in a repository, with its health. */
+  health(repo: string): Promise<Health>
+  /** Pull requests of the repository, newest first (GitHub, through the user's account or gh). */
+  pullRequests(repo: string): Promise<PullRequest[]>
+  /** Bring the base's new commits into a worktree's branch (merge; aborted on conflict). */
+  updateFromBase(repo: string, path: string): Promise<{ message: string }>
+  /** Push a worktree's branch and open a draft pull request for it. */
+  openPr(repo: string, path: string): Promise<{ message: string }>
+  /** Commits per day (unix day start → count) across all branches, for the last `days` days. */
+  commitDays(repo: string, days: number): Promise<Record<number, number>>
   /** Every local branch and every branch merged into the base in the last `days` days (0: all history). */
   timeline(repo: string, days: number): Promise<Timeline>
   repos(): Promise<RepoInfo[]>
@@ -256,6 +304,11 @@ export interface Bridge {
   /** Repositories found in the projects folder that are not in the app yet, most recently used first. */
   suggestRepos(): Promise<{ path: string; name: string }[]>
   addRepos(paths: string[]): Promise<void>
+  /** Is the terminal integration on (an agent opened in a main checkout gets its own branch)? */
+  shellIntegration(): Promise<{ installed: boolean; rc: string }>
+  setShellIntegration(on: boolean): Promise<{ installed: boolean; rc: string }>
+  /** Move the main checkout's uncommitted work to a new branch for `agent` and open the agent there. */
+  moveToBranch(repo: string, agent: string): Promise<{ message: string; path: string }>
   /** Forget the finished sessions. */
   clearSessions(): Promise<void>
   /** Save the whole history to a file the user picks. */

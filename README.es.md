@@ -46,6 +46,11 @@ instalar en cada herramienta.
 
 ### 2. Una rama por agente, sin líos
 
+Abre los agentes como siempre: con la integración de terminal activada (`ramify install shell`, o un interruptor en la app),
+escribir `claude`, `codex` o `gemini` en un repo le da a ese agente su rama y su carpeta antes de empezar. Si ya estás en
+una rama propia, o es un script, no cambia nada. El trabajo empezado en `main` por error pasa a su propia rama de un paso
+(`ramify move`), con una copia en el stash.
+
 Si dos agentes acaban en la misma rama, o uno empieza a cambiar `main`, Ramify te avisa (en la app y con una
 notificación) y le da a ese agente su propia rama con un clic.
 
@@ -58,14 +63,22 @@ El diff de GitHub que ya conoces: números de línea, verde lo añadido, rojo lo
 rama en los editores que tienes instalados, vuelve a lanzar el agente, mergéala o quítala. Ramify se niega a borrar
 nada que no esté commiteado o mergeado.
 
-### 4. Todas las ramas en una línea de tiempo
+### 4. Un centro de control de las ramas en construcción
+
+Cada rama con su agente y lo que está haciendo, sus commits, lo que falta por guardar, cuánto va por detrás de `main`, el
+tamaño del cambio (con aviso a partir de ~400 líneas), su pull request y un aviso si dos ramas tocan los mismos ficheros.
+Un clic para lo siguiente que necesita: traer `main`, abrir una PR en borrador, mergear o quitarla cuando ya está
+mergeada. Un mapa de calor muestra los commits de los últimos seis meses. Automatismos opcionales, cada uno con su
+interruptor: avisos, PR en borrador cuando un agente termina en una rama subida y limpieza de worktrees mergeados.
+
+### 5. Todas las ramas en una línea de tiempo
 
 <img src="docs/app-timeline.png" alt="Línea de tiempo: ramas activas, paradas y mergeadas con su ramificación y su merge">
 
 Una franja por rama, desde que nace hasta su merge, con el color del agente que trabajó en ella. Las ramas
 mergeadas y borradas se reconstruyen desde su commit de merge, así la historia queda completa.
 
-### 5. Listo en un minuto
+### 6. Listo en un minuto
 
 <img src="docs/app-onboarding.png" alt="Onboarding: los agentes, editores, terminales y apps de IA encontrados en este ordenador">
 
@@ -139,6 +152,10 @@ Necesita `git` 2.20+ y `bash` 3.2+. Opcional: `python3` para `ramify ui`, `jq` p
 /plugin install ramify@ramify
 ```
 
+Añade skills de buenas prácticas: `/ramify:nueva-rama` (empezar una tarea en su rama), `/ramify:portar-tarea` (sacar el
+trabajo de main), `/ramify:preparar-pr` (al día, pequeña, commits convencionales, PR en borrador) y
+`/ramify:terminar-tarea` (comprobar que está mergeada y quitar worktree y rama), además de `/ramify:status` y `/ramify:ui`.
+
 ## Empezar
 
 ```bash
@@ -187,6 +204,9 @@ ramify ui                                       # panel web en el navegador
 ramify app                                      # abre este repo en la app de escritorio
 ramify rm fix/cart                              # se niega si algo se perdería
 ramify prune                                    # borra los worktrees limpios ya mergeados
+
+ramify install shell                            # los agentes abiertos en el checkout principal reciben su rama
+ramify move feat/tax -a claude                  # lleva el trabajo sin commitear de main a su propia rama
 ```
 
 `-f <ref>` elige la base, `--no-setup` omite la preparación y lo que va después de `--` se pasa al agente.
