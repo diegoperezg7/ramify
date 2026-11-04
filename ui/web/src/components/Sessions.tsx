@@ -1,4 +1,4 @@
-import { AppWindow, Code2, Download, FolderGit2, GitBranch, GitPullRequest, Loader2, MoreHorizontal, SquareTerminal, Trash2, Upload } from 'lucide-react'
+import { AppWindow, Code2, Download, FolderGit2, GitBranch, GitPullRequest, MoreHorizontal, SquareTerminal, Trash2, Upload } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { bridge } from '../bridge'
 import { useStore } from '../store'
@@ -7,6 +7,7 @@ import { AgentBadge } from './AgentBadge'
 import { Dialog } from './Dialog'
 import { BrandIcon, hasBrand } from './BrandIcon'
 import { GithubIcon } from './GithubIcon'
+import { Bar, SessionsSkeleton } from './Skeletons'
 
 type Range = 'today' | 'week' | 'all'
 
@@ -175,16 +176,19 @@ export function Sessions() {
         </div>
       </header>
 
-      <p className="sess-summary">
+      {sessions === null && (
+        <p className="sess-summary" aria-hidden="true"><span><Bar w={70} /></span><span><Bar w={100} /></span><span><Bar w={90} /></span><span><Bar w={70} /></span></p>
+      )}
+      {sessions !== null && <p className="sess-summary">
         <span className={live.length ? 'is-live' : ''}>{live.length > 0 && <i className="pulse" />}<b>{live.length}</b> {t('sumNow')}</span>
         <span><b>{history.length}</b> {t('sumSessions')}</span>
         <span><b>{duration(stats.time)}</b> {t('sumTime')}</span>
         <span><b>{stats.projects}</b> {t('sumRepos')}</span>
         {stats.top !== '—' && <span>{t('sumTop')} <AgentBadge agent={stats.top} size={16} /> <b>{stats.top}</b></span>}
-      </p>
+      </p>}
 
       {sessions === null ? (
-        <p className="muted small"><Loader2 size={14} className="spin" /> …</p>
+        <SessionsSkeleton />
       ) : (
         <>
           {warnings.length > 0 && (

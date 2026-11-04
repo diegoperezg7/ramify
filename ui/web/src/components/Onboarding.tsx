@@ -9,6 +9,7 @@ import { AgentBadge } from './AgentBadge'
 import { BrandIcon, hasBrand } from './BrandIcon'
 import { GithubIcon } from './GithubIcon'
 import { Logo, Wordmark } from './Logo'
+import { Bar } from './Skeletons'
 
 type Step = 'welcome' | 'tools' | 'github' | 'sync' | 'done'
 const STEPS: Step[] = ['welcome', 'tools', 'github', 'sync', 'done']
@@ -102,8 +103,10 @@ function ToolsStep({ tools, live }: { tools: InstalledTools | null; live: number
     <section className="ob-step" key="tools">
       <h2>{t('obFoundTitle')}</h2>
       <p className="muted">{t('obFoundShort')}</p>
-      {!tools && <p className="muted small"><Loader2 size={14} className="spin" /> {t('obScanning')}</p>}
-      <div className="ob-cloud">
+      <div className="ob-cloud" aria-busy={!tools} aria-label={tools ? undefined : t('obScanning')}>
+        {!tools && Array.from({ length: 10 }, (_, i) => (
+          <div key={i} className="ob-cloud-item" aria-hidden="true"><Bar w={46} h={46} r={12} /><Bar w={56 + ((i * 13) % 24)} h={10} /></div>
+        ))}
         {all.map((x, i) => (
           <div key={x.key} className="ob-cloud-item" style={{ animationDelay: `${i * 35}ms` }} title={x.label}>
             {x.agent ? <AgentBadge agent={x.agent} size={46} /> : <span className="ob-cloud-logo">{hasBrand(x.label) ? <BrandIcon name={x.label} size={26} /> : <Laptop size={22} />}</span>}

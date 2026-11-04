@@ -116,9 +116,10 @@ export const useStore = create<Store>((set, get) => ({
     // First run of the desktop app: a short introduction built from what is installed here.
     if (caps?.sessions && get().settings && !get().settings!.onboarded) set({ modal: 'onboarding' })
     if (caps?.multiRepo) {
-      const repos = await bridge.repos()
+      // A failed first read must not stop the start-up: the next poll reads the list again.
+      const repos = await bridge.repos().catch(() => null)
       const saved = load('ramify-repo', '')
-      set({ repos, repo: repos.find((r) => r.path === saved)?.path ?? repos[0]?.path ?? '' })
+      if (repos) set({ repos, reposLoaded: true, repo: repos.find((r) => r.path === saved)?.path ?? repos[0]?.path ?? '' })
     }
     await get().poll()
   },

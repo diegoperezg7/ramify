@@ -1,4 +1,5 @@
 import { useStore } from '../store'
+import { DiffSkeleton } from './Skeletons'
 
 type Row = { kind: 'hunk' | 'add' | 'del' | 'ctx' | 'meta'; old: number | null; new: number | null; text: string }
 
@@ -24,7 +25,7 @@ const SIGN = { add: '+', del: '−', ctx: ' ', hunk: '', meta: '' }
 
 export function DiffView() {
   const diff = useStore((s) => s.diff)
-  if (!diff) return <div className="diff is-loading" />
+  if (!diff) return <DiffSkeleton />
   return (
     <div className="diff" role="table">
       <div className="diff-rows">

@@ -377,6 +377,22 @@ html, body, #root { height: 100%; }
 .cc-skel .row-main { display: flex; flex-direction: column; gap: 7px; }
 .heat-grid.is-loading { animation: skel-pulse 1.4s ease-in-out infinite; }
 @keyframes skel-pulse { 50% { opacity: 0.45; } }
+.skel-list { display: flex; flex-direction: column; padding: 4px 0; }
+.skel-row { display: flex; align-items: center; gap: 10px; padding: 9px 14px; min-width: 0; }
+.skel-lines { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.skel-push { margin-left: auto; display: inline-flex; gap: 10px; align-items: center; }
+.skel-wt .skel-row { padding: 12px 16px; border-left: 3px solid var(--border); margin: 2px 6px; }
+.skel-graph { flex: 1; min-height: 0; overflow: hidden; }
+.skel-graph-row { display: flex; align-items: center; gap: 14px; height: 36px; padding: 0 14px; }
+.skel-lane { width: 60px; flex: none; display: inline-flex; }
+.skel-tl { min-height: 240px; }
+.skel-tl-labels { padding: 30px 0 6px; border-right: 1px solid var(--border); }
+.skel-tl-labels .skel-row { height: 52px; padding: 0 12px; }
+.skel-tl-plot { padding: 30px 14px 6px; }
+.skel-tl-band { height: 52px; display: flex; align-items: center; }
+.skel-diff { display: flex; flex-direction: column; padding: 6px 0; }
+.skel-diff .skel-row { padding: 3px 12px; }
+.ob-cloud-item .skel { border-radius: 12px; }
 @media (prefers-reduced-motion: reduce) { .skel, .heat-grid.is-loading { animation: none; } }
 .commits li { display: grid; grid-template-columns: 16px 1fr; column-gap: 8px; padding: 7px 8px; position: relative; }
 .commits .node { width: 10px; height: 10px; margin-top: 5px; border-radius: 50%; background: var(--c); box-shadow: 0 0 0 2px var(--surface); }

@@ -5,6 +5,7 @@ import { relTime } from '../i18n'
 import { useStore } from '../store'
 import type { GithubRepo } from '../types'
 import { BrandIcon } from './BrandIcon'
+import { ListSkeleton } from './Skeletons'
 
 export function GithubDialog() {
   const t = useStore((s) => s.t)
@@ -66,7 +67,7 @@ export function GithubDialog() {
       {settings && <p className="muted small">{t('githubCloneTo', { dir: settings.projectsDir })}</p>}
       <div className="gh-list">
         {error && <p className="gh-error">{error}</p>}
-        {!error && repos === null && <p className="muted small"><Loader2 size={14} className="spin" /> …</p>}
+        {!error && repos === null && <ListSkeleton rows={6} />}
         {!error && repos !== null && filtered.length === 0 && <p className="muted small">{t('githubEmpty')}</p>}
         {filtered.map((r) => (
           <div key={r.nameWithOwner} className="gh-row">
