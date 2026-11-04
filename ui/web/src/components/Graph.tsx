@@ -6,8 +6,8 @@ import { relTime } from '../i18n'
 import { useStore } from '../store'
 import type { Worktree } from '../types'
 
-const LANE = 18
-const PAD = 16
+const LANE = 26
+const PAD = 18
 // The graph column is shared by the svg, the rows and the "Graph" header label:
 // it must never be narrower than that label, even with a single lane.
 const GRAPH_MIN = 76
@@ -75,8 +75,8 @@ export function Graph() {
                 : `M${x1} ${y1} C${x1} ${y1 + ROW * 0.55} ${x2} ${y2 - ROW * 0.55} ${x2} ${y2}`
               const isNew = fresh(e.id)
               return (
-                <path key={e.id} d={d} fill="none" stroke={colorOf(e.owner)} strokeWidth={2}
-                  strokeLinecap="round" opacity={dimmed(e.owner) ? 0.2 : 1}
+                <path key={e.id} d={d} fill="none" stroke={colorOf(e.owner)} strokeWidth={e.owner ? 3 : 2.5}
+                  strokeLinecap="round" opacity={dimmed(e.owner) ? 0.2 : e.owner ? 1 : 0.6}
                   className={`edge${isNew ? ' is-new' : ''}${e.last ? ' is-last' : ''}`}
                   pathLength={isNew && !e.last ? 1 : undefined}
                   style={{ d: `path("${d}")`, animationDelay: delay(e.row) } as CSSProperties} />
@@ -84,12 +84,12 @@ export function Graph() {
             })}
             {g.rows.filter(({ commit }) => liveTips.has(commit.hash)).map(({ commit, col }) => {
               const r = g.rows.findIndex((x) => x.commit.hash === commit.hash)
-              return <circle key={`live-${commit.hash}`} className="node-live" cx={x(col)} cy={y(r)} r={6} fill="none" stroke={liveTips.get(commit.hash)} strokeWidth={2} />
+              return <circle key={`live-${commit.hash}`} className="node-live" cx={x(col)} cy={y(r)} r={6} fill={liveTips.get(commit.hash)} opacity={0.4} />
             })}
             {g.rows.map(({ commit, col }, r) => {
               const merge = commit.parents.length > 1
               return (
-                <circle key={commit.hash} cx={x(col)} cy={y(r)} r={merge ? 4.5 : 5.5}
+                <circle key={commit.hash} cx={x(col)} cy={y(r)} r={merge ? 4.5 : 6}
                   className={`node${fresh(commit.hash) ? ' is-new' : ''}`}
                   style={{ cx: x(col), cy: y(r), animationDelay: delay(r) } as CSSProperties}
                   fill={merge ? 'var(--bg)' : colorOf(commit.owner)} stroke={merge ? colorOf(commit.owner) : 'var(--bg)'}
@@ -104,8 +104,8 @@ export function Graph() {
             const target = wt ?? tipWt
             return (
               <button key={commit.hash} type="button"
-                className={`graph-row${dimmed(commit.owner) ? ' is-dim' : ''}${target && target.path === selected ? ' is-selected' : ''}${fresh(commit.hash) ? ' is-new' : ''}`}
-                style={{ top: r * ROW, height: ROW, paddingLeft: graphWidth, animationDelay: delay(r) }}
+                className={`graph-row${commit.owner ? ' is-branch' : ''}${dimmed(commit.owner) ? ' is-dim' : ''}${target && target.path === selected ? ' is-selected' : ''}${fresh(commit.hash) ? ' is-new' : ''}`}
+                style={{ top: r * ROW, height: ROW, paddingLeft: graphWidth, animationDelay: delay(r), ['--c' as string]: colorOf(commit.owner) }}
                 onClick={() => target && select(target.path)}
                 title={`${commit.hash}\n${commit.author} · ${new Date(commit.time * 1000).toLocaleString(lang)}`}>
                 <span className="refs">

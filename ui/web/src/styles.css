@@ -592,6 +592,9 @@ kbd {
 .graph-row .subject { font-weight: 450; }
 .graph-row .meta span { width: 110px; text-align: right; }
 .graph-row code { width: 56px; color: var(--muted); }
+.graph-row.is-branch { background: linear-gradient(90deg, color-mix(in srgb, var(--c) 10%, transparent), transparent 60%); }
+.graph-row.is-branch:hover { background: linear-gradient(90deg, color-mix(in srgb, var(--c) 16%, transparent), var(--surface-hover) 60%); }
+.graph-row.is-dim { background: none; }
 .graph-row.is-selected { background: color-mix(in srgb, var(--accent) 10%, transparent); box-shadow: inset 2px 0 0 var(--accent); }
 .ref { border-radius: 5px; font-family: var(--mono); font-size: 11px; padding: 1px 6px; }
 .ref-branch em { font-family: var(--mono); }
