@@ -97,7 +97,7 @@ describe('session history and export', () => {
     assert.equal(r.started.length, 0)
   })
 
-  it('the CSV export neutralises cells a spreadsheet would run as formulas', { todo: 'csvCell (activity.ts:600) quotes only " , and newlines' }, () => {
+  it('the CSV export neutralises cells a spreadsheet would run as formulas', () => {
     const s: AgentSession = {
       id: '1', key: 'pid:1', agent: 'claude', host: 'Ghostty', via: 'terminal', inferred: false, cwd: '/r', repo: '/r',
       branch: '=HYPERLINK("https://example.invalid","x")', github: null, start: 0, end: 60_000, lastSeen: 60_000,

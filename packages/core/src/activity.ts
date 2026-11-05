@@ -598,8 +598,10 @@ export class SessionLog {
 // --- export ---------------------------------------------------------------------------
 
 const csvCell = (v: unknown) => {
-  const s = v === null || v === undefined ? '' : String(v)
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+  let s = v === null || v === undefined ? '' : String(v)
+  // Text that starts like a formula (a branch named =HYPERLINK(…)) would run in a spreadsheet: keep it text.
+  if (typeof v === 'string' && /^[=+\-@\t\r]/.test(s)) s = `'${s}`
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
 
 export function sessionsCsv(sessions: AgentSession[], now = Date.now()): string {
