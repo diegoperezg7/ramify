@@ -283,8 +283,9 @@ describe('web UI', () => {
     })
     const handlers = {
       ...base,
-      commit: async (repo: string, hash: string) => ({
-        ...(await new Engine({ bin: BIN, env }).commit(repo, hash)),
+      // The editor host sends no repository (it has one): the real commit of this test's repository, with two files.
+      commit: async (_repo: string, hash: string) => ({
+        ...(await new Engine({ bin: BIN, env }).commit(REPO, hash)),
         files: [{ file: 'first.txt', status: 'A', add: '1', del: '0' }, { file: 'second.txt', status: 'A', add: '1', del: '0' }],
       }),
       // The first file's diff comes back after the second file is opened, but before the second file's diff.
