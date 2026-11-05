@@ -154,7 +154,7 @@ describe('merging generated files', () => {
 })
 
 describe('setup undo', () => {
-  it('removing a block whose end line the user deleted keeps the rest of the file', { todo: 'withoutBlock (setup.ts:57) skips to the end of the file' }, () => {
+  it('removing a block whose end line the user deleted keeps the rest of the file', () => {
     const text = ['export A=1', '# >>> ramify >>>', 'export PATH=x', 'alias ll="ls -l"', 'export B=2'].join('\n')
     const out = withoutBlock(text, '# >>> ramify >>>', '# <<< ramify <<<')
     assert.match(out, /export B=2/)

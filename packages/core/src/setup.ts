@@ -55,14 +55,16 @@ async function must(p: ReturnType<SetupRun>, what: string) {
 
 /** Remove a marked block (begin..end lines) from a text. */
 export function withoutBlock(text: string, begin: string, end: string): string {
-  const out: string[] = []
-  let skip = false
-  for (const line of text.split('\n')) {
-    if (line === begin) { skip = true; continue }
-    if (skip) { if (line === end) skip = false; continue }
-    out.push(line)
-  }
-  return out.join('\n').replace(/\n{3,}/g, '\n\n')
+  const lines = text.split('\n')
+  const same = (line: string, mark: string) => line.replace(/\r$/, '') === mark // CRLF files too
+  const from = lines.findIndex((l) => same(l, begin))
+  const to = from < 0 ? -1 : lines.findIndex((l, i) => i > from && same(l, end))
+  // No block, or one whose end line is gone: leave the file as it is rather than cut the user's lines after it.
+  if (to < 0) return text
+  const out = [...lines.slice(0, from), ...lines.slice(to + 1)]
+  // The blank line that set the block apart goes with it; the user's own blank lines elsewhere stay.
+  if (from > 0 && out[from - 1]?.trim() === '' && out[from]?.trim() === '') out.splice(from, 1)
+  return out.join('\n')
 }
 
 function appendBlock(file: string, begin: string, body: string, end: string) {
