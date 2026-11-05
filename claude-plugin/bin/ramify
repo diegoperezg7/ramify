@@ -313,16 +313,22 @@ create() {
   mkdir -p "$ROOT/$repo"
   wt="$(cd "$ROOT/$repo" && abspwd)/$slug"
 
+  local add
   if git -C "$main" show-ref --verify --quiet "refs/heads/$branch"; then
     [ -n "$from" ] && log "${Y}branch $branch already exists; ignoring -f $from${N}"
-    git -C "$main" worktree add "$wt" "$branch" >&2
+    add=("$wt" "$branch")
   elif [ -z "$from" ] && git -C "$main" show-ref --verify --quiet "refs/remotes/origin/$branch"; then
-    git -C "$main" worktree add --track -b "$branch" "$wt" "origin/$branch" >&2
+    add=(--track -b "$branch" "$wt" "origin/$branch")
   else
     base=$(git rev-parse --verify --quiet "${from:-HEAD}^{commit}") \
       || die "base '${from:-HEAD}' does not exist (does the repository have a commit?)"
-    git -C "$main" worktree add -b "$branch" "$wt" "$base" >&2
+    add=(-b "$branch" "$wt" "$base")
   fi
+  # Several git worktree add at once in one repository can fail (git reads .git/worktrees/<name> while another
+  # one is writing its own): ramify runs them one at a time, under the same lock as the ports.
+  port_lock
+  git -C "$main" worktree add "${add[@]}" >&2 || { port_unlock; die "git worktree add failed for $branch"; }
+  port_unlock
 
   copy_included "$main" "$wt"
   # Choosing a port and writing it down is one step: two worktrees made at once must not both pick the same block.
