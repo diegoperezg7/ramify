@@ -88,7 +88,7 @@ describe('session history and export', () => {
   const live = (key: string, start: number): LiveSession & Resolved =>
     ({ key, agent: 'claude', host: 'Ghostty', via: 'terminal', inferred: false, cwd: '/r', start, state: 'idle', repo: '/r', branch: 'main', github: null })
 
-  it('a session the user closed stays closed after "clear history"', { todo: 'SessionLog.clear (activity.ts:577) drops the record closedByUser needs' }, () => {
+  it('a session the user closed stays closed after "clear history"', () => {
     const log = new SessionLog()
     log.update([live('pid:7', 1000)], 2000)
     assert.ok(log.close(log.sessions[0].id, 3000))

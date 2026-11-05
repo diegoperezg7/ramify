@@ -505,6 +505,8 @@ export class SessionLog {
   private open = new Map<string, AgentSession>()
   /** Sessions open when the app last stopped: resumed if the first scan still sees them. */
   private resumable: Map<string, AgentSession> | null = new Map()
+  /** Keys in the last scan: a closed session whose process still runs is what keeps it from opening again. */
+  private live = new Set<string>()
 
   constructor(saved: AgentSession[] = [], now = Date.now()) {
     // Until proven otherwise, they ended when they were last seen.
@@ -552,6 +554,7 @@ export class SessionLog {
       started.push(s)
     }
     this.resumable = null
+    this.live = seen
     for (const [key, s] of this.open) {
       if (seen.has(key)) continue
       s.end = s.via === 'ide' ? s.lastSeen : now
@@ -575,9 +578,14 @@ export class SessionLog {
     return s
   }
 
-  /** Forget every finished session (the ones still running stay). */
+  /** Forget every finished session (the ones still running stay, and the last one the user closed of a process still running). */
   clear() {
-    this.sessions = this.sessions.filter((s) => s.end === null)
+    // The last closed session of a process still running stays too: without it the next scan opens it again.
+    const keep = new Map<string, AgentSession>()
+    for (const s of this.sessions) {
+      if (s.end !== null && s.key && this.live.has(s.key) && (keep.get(s.key)?.start ?? -1) < s.start) keep.set(s.key, s)
+    }
+    this.sessions = this.sessions.filter((s) => s.end === null || (s.key && keep.get(s.key) === s))
   }
 
   /** Newest first, capped. */
