@@ -8,7 +8,8 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { after, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { SessionLog, sessionsCsv, claudeContext, type LiveSession, type Resolved } from '../src/activity.ts'
+import { SessionLog, sessionsCsv, claudeContext, parsePs, type LiveSession, type Resolved } from '../src/activity.ts'
+import { agentOf } from '../src/projects.ts'
 import { Engine, riskyGitConfig } from '../src/engine.ts'
 import { withoutBlock } from '../src/setup.ts'
 import type { AgentSession } from '../src/types.ts'
@@ -222,6 +223,15 @@ describe('merging generated files with accented names', () => {
     writeFileSync(join(wt, 'dist', 'café.txt'), 'branch\n'); git(wt, 'commit', '-qam', 'branch output')
     writeFileSync(join(R, 'dist', 'café.txt'), 'base\n'); git(R, 'commit', '-qam', 'base output')
     assert.match(await own.merge(R, wt), /regenerated: dist\/café\.txt/)
+  })
+})
+
+describe('process list', () => {
+  it('reads an agent whose path has a space in it', () => {
+    const exe = '/Users/x/My Tools/claude'
+    const procs = parsePs(`  42     1  05:00 ${exe} --model opus\n`, (p) => p === exe)
+    assert.equal(procs.get(42)?.exe, exe)
+    assert.equal(agentOf(procs.get(42)!.exe, procs.get(42)!.args), 'claude')
   })
 })
 

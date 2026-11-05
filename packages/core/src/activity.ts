@@ -3,7 +3,7 @@ import { closeSync, existsSync, fstatSync, openSync, readdirSync, readFileSync, 
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AI_APP_LIST, EDITORS, TERMINALS } from './catalog.ts'
-import { agentOf } from './projects.ts'
+import { agentOf, exeOf } from './projects.ts'
 import type { AgentSession, SessionState, SessionVia } from './types.ts'
 
 // Every AI session on this machine, wherever it runs:
@@ -56,11 +56,11 @@ export function parseEtime(s: string): number {
   return (Number(m[1] ?? 0) * 24 + Number(m[2] ?? 0)) * 3600 + Number(m[3]) * 60 + Number(m[4])
 }
 
-export function parsePs(stdout: string): Map<number, Proc> {
+export function parsePs(stdout: string, exists?: (p: string) => boolean): Map<number, Proc> {
   const procs = new Map<number, Proc>()
   for (const line of stdout.split('\n')) {
     const m = /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/.exec(line)
-    if (m) procs.set(Number(m[1]), { pid: Number(m[1]), ppid: Number(m[2]), elapsed: parseEtime(m[3]), exe: m[4].split(/\s+/)[0], args: m[4] })
+    if (m) procs.set(Number(m[1]), { pid: Number(m[1]), ppid: Number(m[2]), elapsed: parseEtime(m[3]), exe: exeOf(m[4], exists), args: m[4] })
   }
   return procs
 }
