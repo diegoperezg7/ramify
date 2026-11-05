@@ -21,7 +21,14 @@ export function activate(ctx: vscode.ExtensionContext) {
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50)
   status.command = 'ramify.open'
   ctx.subscriptions.push(status)
+  // One refresh at a time: with a slow repository, calls every 5 s would pile up and answer out of order.
+  let refreshing = false
   const refreshStatus = async () => {
+    if (refreshing) return
+    refreshing = true
+    try { await showStatus() } finally { refreshing = false }
+  }
+  const showStatus = async () => {
     const repo = await repoOf()
     if (!repo) { status.hide(); return }
     try {
