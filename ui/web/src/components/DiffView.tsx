@@ -8,8 +8,10 @@ const MAX_DIFF = 400_000
 
 const SIGN = { add: '+', del: '−', ctx: ' ', hunk: '', meta: '' }
 
-export function DiffView() {
-  const diff = useStore((s) => s.diff)
+/** A diff: the open worktree file's from the store, or the one passed in (a commit's file). */
+export function DiffView({ diff: given }: { diff?: string | null } = {}) {
+  const stored = useStore((s) => s.diff)
+  const diff = given === undefined ? stored : given
   const t = useStore((s) => s.t)
   // null: still loading. '' or no rows: git has no text to show (binary file, new folder, permissions only).
   if (diff === null) return <DiffSkeleton />

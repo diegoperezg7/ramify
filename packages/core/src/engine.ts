@@ -4,9 +4,11 @@ import { homedir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import { EDITORS, launchBin } from './catalog.ts'
 import { windowsAppPath } from './tools.ts'
-import type { BranchHealth, Commit, Created, CreateRequest, Detail, FileChange, Health, PullRequest, RepoInfo, State, Timeline, TimelineBranch, TimelineCommit, Worktree } from './types.ts'
+import type { BranchHealth, Commit, CommitDetail, Created, CreateRequest, Detail, FileChange, Health, PullRequest, RepoInfo, State, Timeline, TimelineBranch, TimelineCommit, Worktree } from './types.ts'
 
 const MAX_COMMITS = 300
+/** Branches without a worktree drawn in the graph (worktree branches are always drawn). */
+const MAX_LOCAL_BRANCHES = 30
 const MAX_DIFF = 400_000
 export const IDES = ['xcode', 'cursor', 'code', 'zed', 'idea', 'Finder']
 
@@ -240,12 +242,19 @@ export class Engine {
 
   async state(repo: string): Promise<State> {
     const [wts, base] = await Promise.all([this.worktrees(repo), this.base(repo)])
-    const branches = wts.map((w) => w.branch).filter(Boolean)
+    // Local branches too, not only the ones with a worktree: any repository shows its branches side by side.
+    // The most recently committed ones only, so a repository with hundreds of branches stays fast on every refresh.
+    const local = (await this.git(repo, 'for-each-ref', '--sort=-committerdate', `--count=${MAX_LOCAL_BRANCHES}`, '--format=%(refname:short)', 'refs/heads')).split('\n').filter(Boolean)
+    const branches = [...new Set([...wts.map((w) => w.branch).filter(Boolean), ...local])]
     const owner = new Map<string, string>()
-    await Promise.all(wts.filter((w) => !w.main && w.branch).map(async (w) => {
-      const hashes = (await this.git(repo, 'rev-list', `${base}..${w.branch}`)).split('\n').filter(Boolean)
-      for (const h of hashes) if (!owner.has(h)) owner.set(h, w.branch)
-    }))
+    const own = async (names: string[]) => {
+      const found = await Promise.all(names.map(async (b) => [b, (await this.git(repo, 'rev-list', `${base}..${b}`)).split('\n').filter(Boolean)] as const))
+      for (const [b, hashes] of found) for (const h of hashes) if (!owner.has(h)) owner.set(h, b)
+    }
+    // A worktree's branch owns its commits first; other branches take only the commits left.
+    const wtBranches = wts.filter((w) => !w.main && w.branch).map((w) => w.branch)
+    await own(wtBranches)
+    await own(local.filter((b) => b !== base && !wtBranches.includes(b)))
     const commits: Commit[] = []
     if (branches.length) {
       const log = await this.git(repo, 'log', '--date-order', `-n${MAX_COMMITS}`,
@@ -332,6 +341,56 @@ export class Engine {
     const out = untracked
       ? (await this.run('git', ['-C', path, 'diff', '--no-ext-diff', '--no-textconv', '--no-index', '--', '/dev/null', file])).stdout
       : await this.git(path, 'diff', '--no-ext-diff', '--no-textconv', mb, '--', file)
+    return out.slice(0, MAX_DIFF)
+  }
+
+  /** A commit id from the UI, checked to be a commit of this repository: its full hash and parents. */
+  private async commitRef(repo: string, hash: string): Promise<{ hash: string; parents: string[] }> {
+    if (!/^[0-9a-f]{4,64}$/i.test(hash)) throw new EngineError('invalid commit')
+    const line = (await this.run('git', ['-C', repo, 'rev-list', '--parents', '-n', '1', `${hash}^{commit}`, '--'])).stdout.trim()
+    if (!line) throw new EngineError('unknown commit')
+    const [full, ...parents] = line.split(' ')
+    return { hash: full, parents }
+  }
+
+  /** What diff-tree compares for a commit: its first parent (a merge shows what it brought in), or nothing (the first commit). */
+  private static treeRange(c: { hash: string; parents: string[] }): string[] {
+    return c.parents.length ? [c.parents[0], c.hash] : ['--root', c.hash]
+  }
+
+  async commit(repo: string, hash: string): Promise<CommitDetail> {
+    const c = await this.commitRef(repo, hash)
+    const [author, ct, subject, ...body] = (await this.git(repo, 'show', '-s', '--format=%an%x1f%ct%x1f%s%x1f%b', c.hash, '--')).split('\x1f')
+    const range = Engine.treeRange(c)
+    const files = new Map<string, FileChange>()
+    // -z: paths with spaces, accents or renames come through verbatim.
+    const numstat = (await this.git(repo, 'diff-tree', '-r', '-z', '-M', '--no-commit-id', '--numstat', ...range, '--')).split('\0')
+    for (let i = 0; i < numstat.length; i++) {
+      const rec = numstat[i]
+      if (!rec) continue
+      const [add, del, name] = rec.split('\t')
+      let file = name
+      if (name === '') { i += 2; file = numstat[i] } // rename: "add\tdel\t" then old\0new\0
+      if (file) files.set(file, { file, status: 'M', add, del, uncommitted: false })
+    }
+    const nameStatus = (await this.git(repo, 'diff-tree', '-r', '-z', '-M', '--no-commit-id', '--name-status', ...range, '--')).split('\0')
+    for (let i = 0; i < nameStatus.length; i++) {
+      const st = nameStatus[i]
+      if (!st) continue
+      let file = nameStatus[++i]
+      if (st[0] === 'R' || st[0] === 'C') file = nameStatus[++i]
+      const f = file && files.get(file)
+      if (f) f.status = st[0]
+    }
+    return {
+      hash: c.hash, parents: c.parents, author, time: Number(ct), subject, body: body.join('\x1f').trim(),
+      files: [...files.values()].sort((a, b) => a.file.localeCompare(b.file)),
+    }
+  }
+
+  async commitDiff(repo: string, hash: string, file: string): Promise<string> {
+    const c = await this.commitRef(repo, hash)
+    const out = await this.git(repo, 'diff-tree', '-p', '-M', '--no-commit-id', '--no-ext-diff', '--no-textconv', ...Engine.treeRange(c), '--', file)
     return out.slice(0, MAX_DIFF)
   }
 

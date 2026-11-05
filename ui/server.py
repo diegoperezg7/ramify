@@ -146,6 +146,61 @@ class Dashboard:
             text = git(path, "diff", mb, "--", file, check=False)
         return text[:MAX_DIFF]
 
+    def commit_ref(self, hash_):
+        """A commit id from the UI, checked to be a commit here: (full hash, parents)."""
+        if not (4 <= len(hash_) <= 64 and all(ch in "0123456789abcdefABCDEF" for ch in hash_)):
+            raise ValueError("invalid commit")
+        line = git(self.main, "rev-list", "--parents", "-n", "1", hash_ + "^{commit}", "--", check=False).strip()
+        if not line:
+            raise LookupError("unknown commit")
+        full, *parents = line.split(" ")
+        return full, parents
+
+    @staticmethod
+    def tree_range(full, parents):
+        # A merge shows what it brought in (against its first parent); the first commit, everything.
+        return [parents[0], full] if parents else ["--root", full]
+
+    def commit(self, hash_):
+        full, parents = self.commit_ref(hash_)
+        author, ct, subject, *body = git(self.main, "show", "-s", "--format=%an%x1f%ct%x1f%s%x1f%b", full, "--").split("\x1f")
+        rng = self.tree_range(full, parents)
+        files = {}
+        recs = git(self.main, "diff-tree", "-r", "-z", "-M", "--no-commit-id", "--numstat", *rng, "--").split("\0")
+        i = 0
+        while i < len(recs):
+            rec = recs[i]
+            if rec:
+                add, dele, name = rec.split("\t", 2)
+                if name == "":  # rename: "add\tdel\t" then old\0new\0
+                    i += 2
+                    name = recs[i] if i < len(recs) else ""
+                if name:
+                    files[name] = {"file": name, "status": "M", "add": add, "del": dele, "uncommitted": False}
+            i += 1
+        recs = git(self.main, "diff-tree", "-r", "-z", "-M", "--no-commit-id", "--name-status", *rng, "--").split("\0")
+        i = 0
+        while i < len(recs):
+            st = recs[i]
+            if st:
+                i += 1
+                if st[0] in "RC":
+                    i += 1
+                name = recs[i] if i < len(recs) else ""
+                if name in files:
+                    files[name]["status"] = st[0]
+            i += 1
+        return {
+            "hash": full, "parents": parents, "author": author, "time": int(ct), "subject": subject,
+            "body": "\x1f".join(body).strip(), "files": sorted(files.values(), key=lambda f: f["file"]),
+        }
+
+    def commit_diff(self, hash_, file):
+        full, parents = self.commit_ref(hash_)
+        text = git(self.main, "diff-tree", "-p", "-M", "--no-commit-id", "--no-ext-diff", "--no-textconv",
+                   *self.tree_range(full, parents), "--", file, check=False)
+        return text[:MAX_DIFF]
+
     def find(self, path):
         """Validate a worktree path with one `git worktree list` (no process scan)."""
         cur = None
@@ -245,6 +300,10 @@ def make_handler(dash, token, port):
                         return self.send(200, dash.worktree(q.get("path", "")))
                     if url.path == "/api/diff":
                         return self.send(200, {"diff": dash.diff(q.get("path", ""), q.get("file", ""))})
+                    if url.path == "/api/commit":
+                        return self.send(200, dash.commit(q.get("hash", "")))
+                    if url.path == "/api/commit-diff":
+                        return self.send(200, {"diff": dash.commit_diff(q.get("hash", ""), q.get("file", ""))})
                     return self.send(404, {"error": "not found"})
                 except (LookupError, ValueError) as e:
                     return self.send(400, {"error": str(e)})

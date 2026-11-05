@@ -57,6 +57,19 @@ describe('engine', () => {
     assert.equal(s.commits.find((c) => c.subject === 'init')?.owner, null)
   })
 
+  it('shows branches without a worktree too, each owning its commits', async () => {
+    sh(REPO, 'branch', 'spike/plain', 'main')
+    sh(REPO, 'checkout', '-q', 'spike/plain')
+    writeFileSync(join(REPO, 'p.txt'), 'p\n')
+    sh(REPO, 'add', '.')
+    sh(REPO, 'commit', '-qm', 'plain work')
+    sh(REPO, 'checkout', '-q', 'main')
+    const s = await engine.state(REPO)
+    assert.equal(s.commits.find((c) => c.subject === 'plain work')?.owner, 'spike/plain')
+    assert.equal(s.commits.find((c) => c.subject === 'work')?.owner, 'feat/x')
+    sh(REPO, 'branch', '-D', 'spike/plain')
+  })
+
   it('lists files and diffs of a worktree', async () => {
     const wt = P(ROOT, 'shop', 'feat-x')
     writeFileSync(join(wt, 'c.txt'), 'new\n')
@@ -71,6 +84,26 @@ describe('engine', () => {
     rmSync(join(wt, 'c.txt'))
     await engine.merge(REPO, wt)
     assert.match(sh(REPO, 'log', '-1', '--format=%s'), /Merge branch 'feat\/x'/)
+  })
+
+  it('opens a commit from the graph: its files, the diff of each, and its parents', async () => {
+    const work = sh(REPO, 'log', '-1', '--format=%H', '--grep=^work$', '--all').trim()
+    const c = await engine.commit(REPO, work.slice(0, 7))
+    assert.equal(c.hash, work)
+    assert.equal(c.subject, 'work')
+    assert.equal(c.author, 't')
+    assert.deepEqual(c.files.map((f) => [f.file, f.status, f.add, f.del]), [['b.txt', 'A', '1', '0']])
+    assert.match(await engine.commitDiff(REPO, work, 'b.txt'), /^\+b$/m)
+    // A merge shows what it brought in, against its first parent.
+    const merge = await engine.commit(REPO, sh(REPO, 'rev-parse', 'HEAD').trim())
+    assert.equal(merge.parents.length, 2)
+    assert.deepEqual(merge.files.map((f) => f.file), ['b.txt'])
+    // The first commit of the repository: no parents, every file added.
+    const root = await engine.commit(REPO, sh(REPO, 'rev-list', '--max-parents=0', 'HEAD').trim())
+    assert.deepEqual(root.parents, [])
+    assert.deepEqual(root.files.map((f) => [f.file, f.status]), [['a.txt', 'A']])
+    await assert.rejects(engine.commit(REPO, 'HEAD; rm -rf /'), EngineError)
+    await assert.rejects(engine.commit(REPO, 'deadbeefdeadbeef'), EngineError)
   })
 
   it('a merge whose only conflicts are generated files rebuilds them with the project script', async () => {

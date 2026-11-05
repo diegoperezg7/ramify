@@ -35,6 +35,7 @@ ${B}Usage${N}
   ramify ui [--port N]          live web dashboard (needs python3)
   ramify app                    open this repository in the desktop app
   ramify graph [-n N]           branch graph of every worktree
+  ramify who [path...]          other worktrees changing these files (exit 1 if any)
   ramify path <name>            print a worktree path
   ramify rm <name> [--force]    remove a worktree (never deletes unmerged commits)
   ramify prune                  remove clean, merged worktrees
@@ -327,6 +328,71 @@ EOF
 
 json_str() { printf '"%s"' "$(printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\000-\037')"; }
 
+# Agents running in a worktree folder, comma separated (at most 3): $1 the active_agents output, $2 the folder,
+# $3 the agent recorded in its .worktree.env (a node/bun/python process there counts as that agent).
+agents_in() {
+  printf '%s\n' "$1" | awk -F'\t' -v p="$2" '$1 == p || index($1, p "/") == 1 { print $2 }' \
+    | awk -v a="$3" -v known="$AGENT_NAMES" '
+        BEGIN { n = split(known, k, " "); for (i = 1; i <= n; i++) ok[k[i]] = 1 }
+        ok[$0] { print; next }
+        a != "" && ($0 == "node" || $0 == "bun" || $0 ~ /^[Pp]ython/) { print a }' \
+    | sort -u | head -3 | paste -sd, - || true
+}
+
+# Files a checkout changes: committed since it forked from the base, uncommitted and untracked, one per line.
+touched_files() {
+  local at="$1" base="$2" mb
+  mb=$(git -C "$at" merge-base "$base" HEAD 2>/dev/null) || mb=HEAD
+  { git -C "$at" diff --name-only "$mb" 2>/dev/null; git -C "$at" ls-files --others --exclude-standard 2>/dev/null; } | sort -u
+}
+
+# `ramify who [path...]`: which other worktrees of this repository change these files or folders (paths relative to
+# the repository root, or absolute). Without paths, the files this worktree changes. Exit 1 when another one does.
+cmd_who() {
+  local main base here procs line cur="" branch="" agent active p rel hit=0 mine theirs f
+  main=$(main_checkout "$PWD")
+  base=$(default_branch "$main"); [ -n "$base" ] || base=HEAD
+  here=$(git rev-parse --show-toplevel 2>/dev/null) || here=$PWD
+  here=$(cd "$here" && abspwd)
+  if [ $# -gt 0 ]; then
+    mine=""
+    for p in "$@"; do
+      case "$p" in
+        "$here"/*) rel=${p#"$here"/} ;;
+        /*|[A-Za-z]:*) rel=$p ;;
+        *) rel=$(git rev-parse --show-prefix 2>/dev/null)$p ;;
+      esac
+      mine="$mine${rel%/}"$'\n'
+    done
+  else
+    mine=$(touched_files "$here" "$base")
+  fi
+  [ -n "$mine" ] || { log "nothing to check: no paths given and no changes here"; return 0; }
+  procs=$(active_agents)
+  while IFS= read -r line; do
+    case "$line" in
+      "worktree "*) cur=${line#worktree }; branch="" ;;
+      "branch "*) branch=${line#branch refs/heads/} ;;
+      "")
+        if [ -n "$cur" ] && [ -d "$cur" ] && [ "$(cd "$cur" && abspwd)" != "$here" ]; then
+          theirs=$(touched_files "$cur" "$base")
+          if [ -n "$theirs" ]; then
+            agent=$(env_get "$cur" WT_AGENT)
+            if [ -n "$(agents_in "$procs" "$cur" "$agent")" ]; then active=working; else active=idle; fi
+            # A path given matches a file of theirs that is that path or inside it (a folder).
+            while IFS= read -r f; do
+              printf '%s\n' "$mine" | awk -v f="$f" '$0 == f || index(f, $0 "/") == 1 || $0 == "." { found = 1 } END { exit !found }' || continue
+              hit=1
+              printf '%s\t%s\t%s\t%s\n' "${branch:-(detached)}" "${agent:--}" "$active" "$f"
+            done <<< "$theirs"
+          fi
+        fi
+        cur="" ;;
+    esac
+  done < <(git -C "$main" worktree list --porcelain; echo)
+  [ "$hit" = 0 ] || return 1
+}
+
 cmd_ls() {
   local json=0 main base line cur="" branch="" dirty commits sync port agent name active procs c1 c2 first=1 run
   [ "${1:-}" = --json ] && json=1
@@ -350,12 +416,7 @@ cmd_ls() {
           if ! git -C "$cur" rev-parse -q --verify '@{u}' >/dev/null 2>&1; then sync=local
           else sync=$(git -C "$cur" rev-list --count '@{u}..HEAD'); [ "$sync" = 0 ] && sync=pushed || sync="+$sync"; fi
           port=$(env_get "$cur" PORT); agent=$(env_get "$cur" WT_AGENT)
-          active=$(printf '%s\n' "$procs" | awk -F'\t' -v p="$cur" '$1 == p || index($1, p "/") == 1 { print $2 }' \
-            | awk -v a="$agent" -v known="$AGENT_NAMES" '
-                BEGIN { n = split(known, k, " "); for (i = 1; i <= n; i++) ok[k[i]] = 1 }
-                ok[$0] { print; next }
-                a != "" && ($0 == "node" || $0 == "bun" || $0 ~ /^[Pp]ython/) { print a }' \
-            | sort -u | head -3 | paste -sd, - || true)
+          active=$(agents_in "$procs" "$cur" "$agent")
           if [ "$json" = 1 ]; then
             [ "$first" = 1 ] || printf ','; first=0
             run=""
@@ -579,7 +640,9 @@ cmd_hook() {
       # A session that opens on the shared branch learns to take a worktree of its own before changing files.
       cwd=$(printf '%s' "$input" | jq -r '.cwd // empty')
       branch=$(shared_branch_at "${cwd:-$PWD}") || exit 0
-      jq -n --arg b "$branch" '{hookSpecificOutput: {hookEventName: "SessionStart", additionalContext:
+      # additionalContext reaches only Claude; systemMessage is the line the user sees.
+      jq -n --arg b "$branch" '{systemMessage: ("ramify: this session is on " + $b + ", the shared branch. Changes will go to a branch and folder of their own."),
+        hookSpecificOutput: {hookEventName: "SessionStart", additionalContext:
         ("This session starts in the main checkout on " + $b + ", the shared branch other agents and the user work from. "
         + "Before you change any file, call the EnterWorktree tool with a short conventional name for the task, such as "
         + "feat-login or fix-cart-total: ramify creates a branch and a folder of its own, with the ignored files, dependencies "
@@ -631,7 +694,17 @@ install_instructions() {
            "$HOME/.config/opencode/AGENTS.md" "$HOME/.copilot/copilot-instructions.md" \
            "$HOME/.config/amp/AGENTS.md"; do
     [ -d "$(dirname "$f")" ] || continue
-    if grep -qE '\((ramify|agent-wt)\)' "$f" 2>/dev/null; then log "${D}= $f${N}"; continue; fi
+    if grep -qE '^## .*\((ramify|agent-wt)\)' "$f" 2>/dev/null; then
+      # Already there: replace it when the snippet changed (a newer ramify), leave it otherwise.
+      awk '/^## .*\((ramify|agent-wt)\)/ { on = 1; print; next } on && (/^$/ || /^#/) { exit } on { print }' "$f" \
+        | cmp -s - "$snippet" && { log "${D}= $f${N}"; continue; }
+      cp "$f" "$f.bak-ramify"
+      awk '/^## .*\((ramify|agent-wt)\)/ { skip = 1; next } skip && (/^$/ || /^#/) { skip = 0 } !skip { print }' "$f.bak-ramify" \
+        | awk '{ l[NR] = $0 } END { n = NR; while (n > 0 && l[n] == "") n--; for (i = 1; i <= n; i++) print l[i] }' > "$f"
+      { [ -s "$f" ] && printf '\n'; cat "$snippet"; } >> "$f"
+      log "${G}~${N} $f"
+      continue
+    fi
     [ -f "$f" ] && cp "$f" "$f.bak-ramify"
     { [ -s "$f" ] && printf '\n'; cat "$snippet"; } >> "$f"
     log "${G}+${N} $f"
@@ -808,6 +881,7 @@ case "$sub" in
     launch "$wt" "$agent" "$ide" "$prompt" "$tmux" "$@" ;;
   ls|list) cmd_ls "$@" ;;
   graph) cmd_graph "$@" ;;
+  who) cmd_who "$@" ;;
   ui) cmd_ui "$@" ;;
   app) cmd_app ;;
   path)

@@ -12,10 +12,12 @@ const PAD = 18
 // it must never be narrower than that label, even with a single lane.
 const GRAPH_MIN = 76
 
-export function Graph() {
+/** `onPick`: what a click on a commit does instead of opening it beside the graph (the editor's side bar opens the dashboard). */
+export function Graph({ onPick }: { onPick?: (hash: string) => void } = {}) {
   const state = useStore((s) => s.state)!
   const selected = useStore((s) => s.selected)
-  const select = useStore((s) => s.select)
+  const openCommit = useStore((s) => s.commit)
+  const selectCommit = useStore((s) => s.selectCommit)
   const lang = useStore((s) => s.lang)
   const t = useStore((s) => s.t)
   const ROW = useStore((s) => (s.density === 'compact' ? 28 : 36))
@@ -33,7 +35,12 @@ export function Graph() {
     seen.current = new Set([...g.rows.map((r) => r.commit.hash), ...g.edges.map((e) => e.id)])
   }, [g])
 
-  const colorOf = (owner: string | null) => (owner ? agentVar(byBranch.get(owner)?.agent) : 'var(--lane-base)')
+  // A worktree's branch takes its agent's colour; a branch without one, a neutral lane apart from the base.
+  const colorOf = (owner: string | null) => {
+    if (!owner) return 'var(--lane-base)'
+    const w = byBranch.get(owner)
+    return w ? agentVar(w.agent) : 'var(--lane-branch)'
+  }
   const dimmed = (owner: string | null) => selectedBranch !== null && owner !== null && owner !== selectedBranch
   const x = (col: number) => PAD + col * LANE
   const y = (row: number) => row * ROW + ROW / 2
@@ -45,6 +52,14 @@ export function Graph() {
     if (w.main || !w.running.length) continue
     const tip = g.rows.find((r) => r.commit.refs.some((ref) => cleanRef(ref) === w.branch))
     if (tip) liveTips.set(tip.commit.hash, agentVar(w.agent))
+  }
+
+  // Uncommitted work of every worktree, shown on the tip of its branch.
+  const pending = new Map<string, { count: number; color: string }>()
+  for (const w of state.worktrees) {
+    if (!w.changes || !w.branch) continue
+    const tip = g.rows.find((r) => r.commit.refs.some((ref) => cleanRef(ref) === w.branch))
+    if (tip) pending.set(tip.commit.hash, { count: w.changes, color: w.main ? 'var(--lane-base)' : agentVar(w.agent) })
   }
 
   const agents = [...new Set(state.worktrees.filter((w) => !w.main && w.agent).map((w) => w.agent))]
@@ -87,6 +102,10 @@ export function Graph() {
               return <circle key={`live-${commit.hash}`} className="node-live" cx={x(col)} cy={y(r)} r={6} fill={liveTips.get(commit.hash)} opacity={0.4} />
             })}
             {g.rows.map(({ commit, col }, r) => {
+              const p = pending.get(commit.hash)
+              return p ? <circle key={`pending-${commit.hash}`} className="node-pending" cx={x(col)} cy={y(r)} r={10} stroke={p.color} /> : null
+            })}
+            {g.rows.map(({ commit, col }, r) => {
               const merge = commit.parents.length > 1
               return (
                 <circle key={commit.hash} cx={x(col)} cy={y(r)} r={merge ? 4.5 : 6}
@@ -104,12 +123,18 @@ export function Graph() {
             const target = wt ?? tipWt
             return (
               <button key={commit.hash} type="button"
-                className={`graph-row${commit.owner ? ' is-branch' : ''}${dimmed(commit.owner) ? ' is-dim' : ''}${target && target.path === selected ? ' is-selected' : ''}${fresh(commit.hash) ? ' is-new' : ''}`}
+                className={`graph-row${commit.owner ? ' is-branch' : ''}${dimmed(commit.owner) ? ' is-dim' : ''}${openCommit === commit.hash || (!openCommit && target && target.path === selected) ? ' is-selected' : ''}${fresh(commit.hash) ? ' is-new' : ''}`}
                 style={{ top: r * ROW, height: ROW, paddingLeft: graphWidth, animationDelay: delay(r), ['--c' as string]: colorOf(commit.owner) }}
-                onClick={() => target && select(target.path)}
+                aria-pressed={openCommit === commit.hash}
+                onClick={() => (onPick ? onPick(commit.hash) : selectCommit(openCommit === commit.hash ? null : commit.hash))}
                 title={`${commit.hash}\n${commit.author} · ${new Date(commit.time * 1000).toLocaleString(lang)}`}>
                 <span className="refs">
                   {commit.refs.map((ref) => <RefPill key={ref} raw={ref} byBranch={byBranch} />)}
+                  {pending.has(commit.hash) && (
+                    <span className="ref ref-pending" style={{ ['--c' as string]: pending.get(commit.hash)!.color }}>
+                      +{pending.get(commit.hash)!.count} {t('uncommittedShort')}
+                    </span>
+                  )}
                 </span>
                 <span className="subject">{commit.subject}</span>
                 <span className="meta">
@@ -147,5 +172,6 @@ function RefPill({ raw, byBranch }: { raw: string; byBranch: Map<string, Worktre
   if (/^(origin|upstream)\//.test(ref)) {
     return <span className="ref ref-remote"><Cloud size={11} aria-hidden="true" />{ref}</span>
   }
-  return <span className="ref">{ref}</span>
+  // A local branch without a worktree.
+  return <span className={`ref ref-branch${head ? ' is-head' : ''}`} style={{ ['--c' as string]: 'var(--lane-branch)' }}><span className="dot" />{ref}</span>
 }

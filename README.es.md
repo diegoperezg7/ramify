@@ -261,6 +261,7 @@ ramify open fix/cart -a gemini                  # reabrir un worktree con otro a
 
 ramify ls                                       # todos los worktrees de un vistazo
 ramify graph                                    # grafo de ramas con el agente de cada una
+ramify who src/cart.ts src/pay/                 # otros worktrees que cambian estos archivos (sale con 1 si hay)
 ramify ui                                       # panel web en el navegador
 ramify app                                      # abre este repo en la app de escritorio
 ramify rm fix/cart                              # se niega si algo se perdería
@@ -340,6 +341,12 @@ Registra Ramify como hooks `WorktreeCreate` y `WorktreeRemove` de Claude Code (c
 `/batch`, los workflows y los subagentes con `isolation: worktree` crean sus worktrees con Ramify,
 con la misma estructura, puertos y preparación que el resto de agentes. Claude Code conserva los
 worktrees de los subagentes al terminar, así que conviene lanzar `ramify prune` de vez en cuando.
+
+**Antes de editar, comprueba que nadie más lo hace.** `ramify who <archivos o carpetas>` lista los otros worktrees
+del repositorio que los cambian (con commit, sin commitear o nuevos), uno por línea como `rama, agente, working|idle,
+archivo`, y sale con 1 si hay alguno; sin rutas comprueba los archivos que cambia el worktree actual. La skill
+`coordinar` del plugin lo ejecuta antes de un cambio y, si hay solape, te avisa y puede escribir a la otra sesión de
+Claude Code (`ListAgents` / `SendMessage`) en lugar de editar los mismos archivos.
 
 ### Seguridad
 

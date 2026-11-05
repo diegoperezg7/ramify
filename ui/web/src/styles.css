@@ -29,6 +29,8 @@
   --agent-5: #e87ba4;
   --agent-6: #008300;
   --agent-other: #8e86a8;
+  /* A branch without an agent's worktree: neutral, but apart from the base lane. */
+  --lane-branch: #5c5670;
   --radius: 12px;
   --font: 'Inter Variable', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --brand-font: 'Sora', var(--font);
@@ -69,6 +71,7 @@
     --agent-5: #d55181;
     --agent-6: #008300;
     --agent-other: #8f87ad;
+    --lane-branch: #c4bedb;
   }
 }
 
@@ -102,6 +105,7 @@
   --agent-5: #d55181;
   --agent-6: #008300;
   --agent-other: #8f87ad;
+  --lane-branch: #c4bedb;
 }
 
 * { box-sizing: border-box; }
@@ -1326,3 +1330,43 @@ kbd {
 @media (prefers-color-scheme: dark) { :root:not([data-theme='light']) .app::before, :root:not([data-theme='light']) .app::after { opacity: 0.6; } }
 /* A narrow window has almost no side margin: no lanes there. */
 .app.is-sm::before, .app.is-sm::after { display: none; }
+
+/* Uncommitted work of every worktree, on the tip of its branch (Git Graph shows it only for the open checkout). */
+.graph-row .ref-pending { border-style: dashed; border-color: color-mix(in srgb, var(--c) 70%, transparent); background: transparent; color: var(--text); }
+.node-pending { fill: none; stroke-width: 2; stroke-dasharray: 3 3; }
+
+/* A commit opened from the graph: what it says, where it comes from (walk back through its parents), its files. */
+.commit-pane .commit-subject { color: var(--text); }
+.commit-hash { display: inline-flex; align-items: center; gap: 4px; margin-left: 4px; padding: 1px 6px; border: 1px solid var(--border); border-radius: 5px; background: transparent; color: var(--muted); cursor: pointer; font: inherit; font-weight: 500; }
+.commit-hash:hover { color: var(--text); border-color: var(--border-strong); }
+.commit-hash code { font-family: var(--code); font-size: 11px; }
+.commit-body { margin: 0; padding: 12px 16px 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 13px; color: var(--text-2); }
+.commit-links { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 16px 4px; }
+button.ref { cursor: pointer; font: inherit; font-size: 11px; display: inline-flex; align-items: center; gap: 4px; }
+.commit-parents { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.commit-parent { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 2px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); color: var(--text-2); cursor: pointer; font: inherit; font-size: 12px; }
+.commit-parent:hover { border-color: var(--accent-ring); color: var(--text); }
+.commit-parent code { font-family: var(--code); font-size: 11px; color: var(--muted); }
+.commit-parent span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 26ch; }
+.commit-note { margin: 0; padding: 0 16px 4px; }
+/* Medium width: a commit sits beside the graph (the worktree list steps aside), so the history can be walked click by click. */
+.app.is-md .layout.has-commit { grid-template-columns: minmax(0, 1fr) clamp(340px, 44%, 480px); }
+.app.is-md .layout.has-commit .list-pane { display: none; }
+.app.is-md .layout.has-commit .graph-pane { display: flex; }
+
+/* The editor's side bar: repository, the dashboard a click away, and the branch tree in a narrow column. */
+.side-app { height: 100vh; padding: 0; }
+.side { display: flex; flex-direction: column; gap: 10px; height: 100%; min-height: 0; padding: 10px 8px 8px; }
+.side-head { display: flex; flex-direction: column; gap: 8px; }
+.side-repo { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.side-repo b { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.side-live { color: var(--good); }
+.side-actions { display: flex; gap: 6px; }
+.side-actions .btn-primary { flex: 1; justify-content: center; }
+.side-hint { margin: 0; }
+.side .graph-pane { flex: 1; min-height: 0; }
+.side .graph-pane .pane-head .legend { display: none; }
+/* In the side bar the branch names are the point: keep them (the narrow graph hides them), the subject takes what is left. */
+@container graph (max-width: 400px) {
+  .side .graph-row .refs { display: inline-flex; flex: none; max-width: 58%; overflow: hidden; }
+}

@@ -148,6 +148,12 @@ check "claude hooks added, other settings kept" \
 "$AW" install instructions 2>/dev/null
 check "instructions installed once per agent" '[ "$(grep -c "(ramify)" "$HOME/.codex/AGENTS.md")" = 1 ] && [ "$(grep -c "(ramify)" "$HOME/.claude/CLAUDE.md")" = 1 ]'
 check "agents without a config dir are skipped" '[ ! -e "$HOME/.gemini" ]'
+printf '# Mine\nkeep me\n\n## Worktrees (ramify)\nold rule\n\n## After\nstays\n' > "$HOME/.codex/AGENTS.md"
+"$AW" install instructions 2>/dev/null
+check "an older ramify section is replaced, the rest kept" '! grep -q "old rule" "$HOME/.codex/AGENTS.md" && grep -q "ramify who" "$HOME/.codex/AGENTS.md" && grep -qx "keep me" "$HOME/.codex/AGENTS.md" && grep -qx "stays" "$HOME/.codex/AGENTS.md" && [ "$(grep -c "(ramify)" "$HOME/.codex/AGENTS.md")" = 1 ]'
+cp "$HOME/.codex/AGENTS.md" "$T/agents-before"
+"$AW" install instructions 2>/dev/null
+check "an up-to-date section is left as it is" 'cmp -s "$T/agents-before" "$HOME/.codex/AGENTS.md"'
 
 echo "one branch per agent from the terminal"
 cd "$T/demo" || exit 1
@@ -180,6 +186,7 @@ cd "$T/demo" || exit 1
 git checkout -q main
 ss=$(printf '{"cwd":"%s"}' "$T/demo" | "$AW" hook session-start 2>/dev/null)
 check "session start on the shared branch points to EnterWorktree" 'printf "%s" "$ss" | jq -e ".hookSpecificOutput.additionalContext | contains(\"EnterWorktree\")" >/dev/null'
+check "session start on the shared branch shows the user a warning" 'printf "%s" "$ss" | jq -e ".systemMessage | contains(\"shared branch\")" >/dev/null'
 g=$(printf '{"cwd":"%s","tool_name":"Write","tool_input":{"file_path":"%s/new.txt"}}' "$T/demo" "$T/demo" | "$AW" hook guard 2>/dev/null)
 check "an edit on the shared branch is denied with the way out" 'printf "%s" "$g" | jq -e ".hookSpecificOutput.permissionDecision == \"deny\" and (.hookSpecificOutput.permissionDecisionReason | contains(\"EnterWorktree\"))" >/dev/null'
 p1=$(printf '{"name":"feat-login","cwd":"%s"}' "$T/demo" | "$AW" hook create 2>/dev/null | tail -1)
@@ -215,6 +222,21 @@ check "git config ramify.allowMain lets this repository commit on main" '[ -z "$
 git config --unset ramify.allowMain
 g=$(printf '{"cwd":"%s","tool_name":"Write","tool_input":{"file_path":"%s/x.txt"}}' "$T/demo" "$T/demo" | RAMIFY_ALLOW_MAIN=1 "$AW" hook guard 2>/dev/null)
 check "RAMIFY_ALLOW_MAIN lets one session edit on main" '[ -z "$g" ]'
+
+echo "who changes these files"
+echo "login" > "$p1/a.txt"; mkdir -p "$p1/src"; echo x > "$p1/src/new.ts"
+check "who names the worktree changing a file" '[ "$(cd "$p2" && "$AW" who a.txt | cut -f1,4)" = "$(printf "feat/login\ta.txt")" ]'
+check "who exits 1 on an overlap" '! (cd "$p2" && "$AW" who a.txt >/dev/null)'
+w=$(cd "$p2" && "$AW" who src/)
+check "who matches files inside a folder, untracked ones included" 'printf "%s" "$w" | grep -q "src/new.ts"'
+w=$(cd "$p2" && "$AW" who "$p2/a.txt")
+check "who takes absolute paths" 'printf "%s" "$w" | grep -q "^feat/login"'
+check "who is quiet and exits 0 when nobody else changes them" '[ -z "$(cd "$p2" && "$AW" who other.txt)" ]'
+check "who does not report the worktree asking" '(cd "$p1" && "$AW" who a.txt >/dev/null)'
+echo "cart" > "$p2/a.txt"
+w=$(cd "$p2" && "$AW" who)
+check "who without paths checks the files this worktree changes" 'printf "%s" "$w" | grep -q "a.txt"'
+git -C "$p1" checkout -q -- a.txt; rm -rf "$p1/src"; git -C "$p2" checkout -q -- a.txt
 
 echo "move work off main"
 cd "$T/demo" || exit 1

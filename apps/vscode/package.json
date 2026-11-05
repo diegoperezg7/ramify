@@ -12,7 +12,20 @@
   "keywords": ["git", "worktree", "agents", "claude", "codex"],
   "main": "./dist/extension.cjs",
   "activationEvents": ["onStartupFinished"],
+  "capabilities": {
+    "untrustedWorkspaces": { "supported": false, "description": "Ramify runs git and the project's setup scripts in this folder, so it needs a trusted workspace." }
+  },
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        { "id": "ramify", "title": "Ramify", "icon": "media/activity.svg" }
+      ]
+    },
+    "views": {
+      "ramify": [
+        { "type": "webview", "id": "ramify.home", "name": "Branches" }
+      ]
+    },
     "commands": [
       { "command": "ramify.open", "title": "Ramify: Open dashboard", "icon": "$(git-branch)" },
       { "command": "ramify.new", "title": "Ramify: New worktree" }

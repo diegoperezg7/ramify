@@ -267,6 +267,7 @@ ramify open fix/cart -a gemini                  # reopen an existing worktree wi
 
 ramify ls                                       # every worktree at a glance
 ramify graph                                    # branch graph with the agent on each branch
+ramify who src/cart.ts src/pay/                 # other worktrees changing these files (exit 1 if any)
 ramify ui                                       # live web dashboard in the browser
 ramify app                                      # open this repository in the desktop app
 ramify rm fix/cart                              # refuses if anything would be lost
@@ -346,6 +347,12 @@ of `~/.claude/settings.json`). From then on `claude --worktree`, background sess
 workflows and subagents with `isolation: worktree` all create their worktrees through Ramify,
 with the same layout, ports and setup as every other agent. Claude Code keeps subagent worktrees
 after they finish, so run `ramify prune` now and then.
+
+**Before editing, check nobody else is.** `ramify who <files or folders>` lists the other worktrees of the
+repository that change them (committed, uncommitted or new), one per line as `branch, agent, working|idle, file`,
+and exits 1 when there are any; without paths it checks the files the current worktree changes. The plugin's
+`coordinar` skill runs it before a change and, on an overlap, tells you and can message the other Claude Code
+session (`ListAgents` / `SendMessage`) instead of editing the same files.
 
 ### Safety
 
