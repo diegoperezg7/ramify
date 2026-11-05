@@ -29,7 +29,17 @@ export interface LiveSession {
   pid?: number
   /** What the agent is doing, when it says so (Claude Code does). */
   state?: SessionState
+  /** Claude Code: the conversation's id, and its subagents in the middle of a turn. */
+  sessionId?: string
+  subagents?: Subagent[]
+  /** Claude Code teammate in a pane of its own: the lead's conversation, its name and type. Never kept in the history. */
+  parentSessionId?: string
+  agentName?: string
+  agentType?: string | null
 }
+
+/** A subagent working inside a Claude Code session (it has no process of its own). */
+export interface Subagent { id: string; agentType: string; description: string; cwd: string | null }
 
 function run(cmd: string, args: string[], env?: NodeJS.ProcessEnv): Promise<{ code: number; stdout: string }> {
   return new Promise((resolve) => {
@@ -217,16 +227,19 @@ export async function scanSessions(env?: NodeJS.ProcessEnv, now = Date.now()): P
   const sessions: LiveSession[] = []
 
   const agents: { proc: Proc; agent: string }[] = []
+  const teammates: { proc: Proc; mate: NonNullable<ReturnType<typeof teammateOf>> }[] = []
   for (const proc of procs.values()) {
     if (proc.pid === process.pid || isHelper(proc.args) || /\/AnthropicClaude\//i.test(proc.exe)) continue
     const agent = agentOf(proc.exe, proc.args)
-    if (agent) agents.push({ proc, agent })
+    if (agent) { agents.push({ proc, agent }); continue }
+    const mate = teammateOf(proc.exe, proc.args)
+    if (mate) teammates.push({ proc, mate })
   }
   // A direct child of the same agent is part of that session (wrappers, re-execs).
   const agentByPid = new Map(agents.map((a) => [a.proc.pid, a.agent]))
   const top = agents.filter(({ proc, agent }) => agentByPid.get(proc.ppid) !== agent)
 
-  const needTmux = !WIN && top.some(({ proc }) => {
+  const needTmux = !WIN && [...top, ...teammates].some(({ proc }) => {
     for (let p = proc.ppid, i = 0; p > 1 && i < 40; i++) { const x = procs.get(p); if (!x) break; if (isTmux(x.args)) return true; p = x.ppid }
     return false
   })
@@ -234,8 +247,9 @@ export async function scanSessions(env?: NodeJS.ProcessEnv, now = Date.now()): P
 
   const cwds = new Map<number, string>()
   // Windows has no lsof: the folder of a process is not readable from outside it.
-  if (top.length && !WIN) {
-    const lsof = await run('lsof', ['-a', '-d', 'cwd', '-p', top.map((a) => a.proc.pid).join(','), '-Fpn'], env)
+  const cwdPids = [...top, ...teammates].map((a) => a.proc.pid)
+  if (cwdPids.length && !WIN) {
+    const lsof = await run('lsof', ['-a', '-d', 'cwd', '-p', cwdPids.join(','), '-Fpn'], env)
     let pid = 0
     for (const line of lsof.stdout.split('\n')) {
       if (line.startsWith('p')) pid = Number(line.slice(1))
@@ -262,14 +276,26 @@ export async function scanSessions(env?: NodeJS.ProcessEnv, now = Date.now()): P
     const start = Math.round((now - proc.elapsed * 1000) / 1000) * 1000
     let cwd = cwds.get(proc.pid) ?? null
     let state: SessionState | undefined
+    let claude: Pick<LiveSession, 'sessionId' | 'subagents'> = {}
     if (agent === 'claude') {
       const ctx = claudeContext(proc.pid)
       if (ctx?.cwd) cwd = ctx.cwd
       state = ctx?.state
+      if (ctx?.sessionId) claude = { sessionId: ctx.sessionId, subagents: ctx.transcript ? claudeSubagents(ctx.transcript, start) : [] }
     } else if (rollouts.has(proc.pid)) {
       cwd = lastCwd(rollouts.get(proc.pid)!) ?? cwd
     }
-    sessions.push({ key: `pid:${proc.pid}`, agent, host, via, inferred: false, cwd: cwd === '/' ? null : cwd, start, pid: proc.pid, state })
+    sessions.push({ key: `pid:${proc.pid}`, agent, host, via, inferred: false, cwd: cwd === '/' ? null : cwd, start, pid: proc.pid, state, ...claude })
+  }
+
+  for (const { proc, mate } of teammates) {
+    const { host, via } = hostOf(proc.pid, procs, tmux)
+    const cwd = cwds.get(proc.pid) ?? null
+    sessions.push({
+      key: `pid:${proc.pid}`, agent: 'claude', host, via, inferred: false, cwd: cwd === '/' ? null : cwd,
+      start: Math.round((now - proc.elapsed * 1000) / 1000) * 1000, pid: proc.pid,
+      parentSessionId: mate.parentSessionId, agentName: mate.name, agentType: mate.agentType,
+    })
   }
 
   for (const proc of procs.values()) {
@@ -339,14 +365,15 @@ function readLastCwd(file: string, bytes: number): string | null {
 
 const transcriptCache = new Map<string, string>()
 const missingSince = new Map<string, number>()
-/** Claude Code: ~/.claude/sessions/<pid>.json → session id and status → its transcript's latest cwd. */
-export function claudeContext(pid: number, home = homedir()): { cwd: string | null; state?: SessionState } | null {
+/** Claude Code: ~/.claude/sessions/<pid>.json → session id and status → its transcript and that transcript's latest cwd. */
+export function claudeContext(pid: number, home = homedir()): { cwd: string | null; state?: SessionState; sessionId?: string; transcript?: string } | null {
   let info: { sessionId?: string; status?: string; cwd?: string }
   try { info = JSON.parse(readFileSync(join(home, '.claude', 'sessions', `${pid}.json`), 'utf8')) } catch { return null }
   const state: SessionState | undefined = info.status === 'busy' ? 'working' : info.status === 'idle' ? 'idle' : info.status === 'waiting' ? 'waiting' : undefined
   let cwd: string | null = null
+  let file: string | undefined
   if (info.sessionId) {
-    let file = transcriptCache.get(info.sessionId)
+    file = transcriptCache.get(info.sessionId)
     const missing = missingSince.get(info.sessionId)
     // A brand-new session has no transcript yet: look again at most every 30 s, not on every scan.
     if ((!file || !existsSync(file)) && !(missing && Date.now() - missing < 30_000)) {
@@ -362,7 +389,80 @@ export function claudeContext(pid: number, home = homedir()): { cwd: string | nu
     }
     if (file) cwd = lastCwd(file)
   }
-  return { cwd: cwd ?? info.cwd ?? null, state }
+  return { cwd: cwd ?? info.cwd ?? null, state, sessionId: info.sessionId, transcript: file }
+}
+
+/**
+ * A Claude Code teammate in a pane of its own (agent teams, split panes): the versioned binary, started with the
+ * lead's conversation id. Its process name is the version, not "claude", so agentOf does not see it.
+ */
+export function teammateOf(exe: string, args: string): { name: string; parentSessionId: string; agentType: string | null } | null {
+  if (!/\/claude\/versions\/[^/]+$/.test(exe)) return null
+  const arg = (flag: string) => new RegExp(`(?:^|\\s)${flag}\\s+(\\S+)`).exec(args)?.[1] ?? null
+  const parentSessionId = arg('--parent-session-id')
+  const name = arg('--agent-name')
+  return parentSessionId && name ? { name, parentSessionId, agentType: arg('--agent-type') } : null
+}
+
+const metaCache = new Map<string, { mtime: number; meta: { finished?: unknown; agentType?: unknown; description?: unknown } | null }>()
+/**
+ * Subagents of a Claude Code session in the middle of a turn. Each one keeps <transcript>/subagents/agent-<id>.meta.json,
+ * whose `finished` is true between its turns and absent while it works. Files older than `since` (the session's start)
+ * belong to an earlier run of a resumed conversation, which may have stopped mid-turn.
+ */
+export function claudeSubagents(transcript: string, since = 0): Subagent[] {
+  const dir = join(transcript.replace(/\.jsonl$/, ''), 'subagents')
+  let names: string[]
+  try { names = readdirSync(dir).filter((f) => /^agent-[\w-]+\.meta\.json$/.test(f)) } catch { return [] }
+  const out: Subagent[] = []
+  for (const name of names) {
+    const file = join(dir, name)
+    const mtime = (() => { try { return statSync(file).mtimeMs } catch { return 0 } })()
+    if (!mtime || mtime < since) continue
+    let hit = metaCache.get(file)
+    if (hit?.mtime !== mtime) {
+      try { hit = { mtime, meta: JSON.parse(readFileSync(file, 'utf8')) } } catch { hit = { mtime, meta: null } }
+      metaCache.set(file, hit)
+    }
+    const meta = hit.meta
+    if (!meta || meta.finished === true) continue
+    const id = name.slice('agent-'.length, -'.meta.json'.length)
+    out.push({
+      id, agentType: typeof meta.agentType === 'string' ? meta.agentType : 'agent',
+      description: typeof meta.description === 'string' ? meta.description : '', cwd: lastCwd(join(dir, `agent-${id}.jsonl`)),
+    })
+  }
+  return out
+}
+
+// --- Codex threads --------------------------------------------------------------------
+// The ChatGPT app runs Codex in-process: its threads (and the subagents they spawn) are only in Codex's state
+// database. Read it read-only, with the SQLite built into Node (loaded at run time: hosts without it read nothing).
+
+export interface CodexThread { id: string; cwd: string; branch: string | null; name: string | null; parentId: string | null; updatedAt: number }
+
+interface SqliteDb { prepare(sql: string): { all(...params: unknown[]): unknown[] }; close(): void }
+const sqlite = () => (process as unknown as { getBuiltinModule?: (id: string) => unknown }).getBuiltinModule?.('node:sqlite') as
+  { DatabaseSync: new (path: string, opts: { readOnly: boolean }) => SqliteDb } | undefined
+
+/** Codex threads changed since `since` (ms), newest first: folder, branch, nickname or role, and the thread that spawned it. */
+export function codexThreads(since: number, home = homedir(), file = join(home, '.codex', 'state_5.sqlite')): CodexThread[] {
+  const mod = sqlite()
+  if (!mod || !existsSync(file)) return []
+  let db: SqliteDb | null = null
+  try {
+    db = new mod.DatabaseSync(file, { readOnly: true })
+    const rows = db.prepare(`
+      select t.id as id, t.cwd as cwd, t.git_branch as branch, coalesce(t.agent_nickname, t.agent_role) as name,
+             e.parent_thread_id as parentId, coalesce(t.updated_at_ms, t.updated_at * 1000) as updatedAt
+      from threads t left join thread_spawn_edges e on e.child_thread_id = t.id
+      where t.archived = 0 and coalesce(t.updated_at_ms, t.updated_at * 1000) >= ?
+      order by updatedAt desc limit 20`).all(since) as CodexThread[]
+    return rows.map((r) => ({ id: String(r.id), cwd: String(r.cwd), branch: r.branch ?? null, name: r.name ?? null, parentId: r.parentId ?? null, updatedAt: Number(r.updatedAt) }))
+  } catch {
+    // Locked, or a schema of another Codex version: nothing rather than an error on every scan.
+    return []
+  } finally { db?.close() }
 }
 
 // --- history ------------------------------------------------------------------------

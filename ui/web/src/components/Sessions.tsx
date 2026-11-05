@@ -1,9 +1,9 @@
-import { AppWindow, Code2, Download, FolderGit2, GitBranch, GitPullRequest, MoreHorizontal, SquareTerminal, Trash2, Upload, X } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { AppWindow, Bot, Code2, Download, FolderGit2, GitBranch, GitPullRequest, MoreHorizontal, SquareTerminal, Trash2, Upload, Users, X } from 'lucide-react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { bridge } from '../bridge'
 import { isActive } from '../logic'
 import { useStore } from '../store'
-import type { AgentSession } from '../types'
+import type { AgentChild, AgentSession } from '../types'
 import { AgentBadge } from './AgentBadge'
 import { Dialog } from './Dialog'
 import { BrandIcon, hasBrand } from './BrandIcon'
@@ -32,6 +32,13 @@ function ViaIcon({ via, host }: { via: AgentSession['via']; host?: string }) {
   return <SquareTerminal size={13} />
 }
 
+function ChildIcon({ kind }: { kind: AgentChild['kind'] }) {
+  if (kind === 'teammate') return <Users size={13} />
+  if (kind === 'worktree') return <GitBranch size={13} />
+  if (kind === 'codex') return <AppWindow size={13} />
+  return <Bot size={13} />
+}
+
 export function Sessions() {
   const sessions = useStore((s) => s.sessions)
   const repos = useStore((s) => s.repos)
@@ -44,6 +51,7 @@ export function Sessions() {
   const [clearing, setClearing] = useState(false)
   const [moving, setMoving] = useState<{ repo: string; agent: string } | null>(null)
   const refreshSessions = useStore((s) => s.refreshSessions)
+  const children = useStore((s) => s.children)
   const [closing, setClosing] = useState<string | null>(null)
   const closeSession = async (key: string, ids: string[]) => {
     setClosing(key)
@@ -56,12 +64,12 @@ export function Sessions() {
   const active = useMemo(() => live.filter(isActive).length, [live])
   // Identical sessions (same agent, same place, same folder) read as one card with a count.
   const groups = useMemo(() => {
-    const m = new Map<string, { s: AgentSession; n: number; ids: string[] }>()
+    const m = new Map<string, { s: AgentSession; n: number; ids: string[]; keys: string[] }>()
     for (const s of [...live].sort((a, b) => a.start - b.start)) {
       const k = [s.agent, s.host, s.via, s.cwd, s.branch, s.state].join('\u0000')
       const g = m.get(k)
-      if (g) { g.n++; g.ids.push(s.id) }
-      else m.set(k, { s, n: 1, ids: [s.id] })
+      if (g) { g.n++; g.ids.push(s.id); g.keys.push(s.key ?? '') }
+      else m.set(k, { s, n: 1, ids: [s.id], keys: [s.key ?? ''] })
     }
     // Real conversations first, then inferred ones; busiest first.
     return [...m.values()].sort((a, b) => Number(a.s.inferred) - Number(b.s.inferred) || Number(!!b.s.repo) - Number(!!a.s.repo) || a.s.start - b.s.start)
@@ -127,11 +135,11 @@ export function Sessions() {
 
   // Live sessions by repository: one card per place, one row per agent (identical sessions folded with ×n).
   const liveByRepo = useMemo(() => {
-    const cards = new Map<string, { key: string; repo: string | null; github: string | null; title: string; rows: { s: AgentSession; n: number; ids: string[] }[] }>()
-    for (const { s, n, ids } of groups) {
+    const cards = new Map<string, { key: string; repo: string | null; github: string | null; title: string; rows: { s: AgentSession; n: number; ids: string[]; keys: string[] }[] }>()
+    for (const { s, n, ids, keys } of groups) {
       const key = s.via === 'app' ? '~apps' : s.repo ?? '~outside'
       const card = cards.get(key) ?? { key, repo: s.repo, github: s.github, title: s.via === 'app' ? t('aiApps') : s.repo ? base(s.repo) : t('outsideRepo'), rows: [] }
-      card.rows.push({ s, n, ids })
+      card.rows.push({ s, n, ids, keys })
       cards.set(key, card)
     }
     const busy = (c: { rows: { s: AgentSession }[] }) => c.rows.some((r) => r.s.state === 'working' || r.s.state === 'waiting')
@@ -163,25 +171,30 @@ export function Sessions() {
     return out.map((c) => c.cards)
   }, [liveByRepo, cols])
 
-  // A session opens its repository on the branch it works on (once the repository's state has loaded).
+  // A session (or its subagent, teammate, worktree) opens its repository on the branch it works on, once the
+  // repository's state has loaded.
   const select = useStore((s) => s.select)
-  const openSession = (s: AgentSession) => {
-    const repo = s.repo
+  const openAt = (repo: string | null, branch: string | null) => {
     if (!repo || !known(repo)) return
     setRepo(repo)
-    if (!s.branch) return
+    if (!branch) return
     // Once: selecting changes the store, which would call the subscription again.
     let stop: (() => void) | null = null
     const pick = () => {
       const st = useStore.getState()
       if (st.repo !== repo || st.state) { stop?.(); stop = null }
       if (st.repo !== repo || !st.state) return st.repo !== repo
-      const w = st.state.worktrees.find((x) => x.branch === s.branch)
+      const w = st.state.worktrees.find((x) => x.branch === branch)
       if (w) select(w.path)
       return true
     }
     if (!pick()) stop = useStore.subscribe(pick)
   }
+  // Rows of a known repository open it on click or Enter/Space; the others are not buttons.
+  const opener = (repo: string | null, branch: string | null) => (known(repo) ? {
+    role: 'button', tabIndex: 0, onClick: () => openAt(repo, branch),
+    onKeyDown: (e: ReactKeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openAt(repo, branch) } },
+  } : {})
 
   return (
     <main className="sessions">
@@ -254,9 +267,10 @@ export function Sessions() {
                     </span>
                   </header>
                   <ul>
-                    {c.rows.map(({ s, n, ids }) => (
-                      <li key={s.id} className={`${s.inferred ? 'is-inferred' : ''}${known(s.repo) ? ' is-open' : ''}`} title={s.cwd ?? undefined}
-                        {...(known(s.repo) ? { role: 'button', tabIndex: 0, onClick: () => openSession(s), onKeyDown: (e: ReactKeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openSession(s) } } } : {})}>
+                    {c.rows.map(({ s, n, ids, keys }) => (
+                      <Fragment key={s.id}>
+                      <li className={`${s.inferred ? 'is-inferred' : ''}${known(s.repo) ? ' is-open' : ''}`} title={s.cwd ?? undefined}
+                        {...opener(s.repo, s.branch)}>
                         <AgentBadge agent={s.agent} size={22} live={s.state === 'working'} />
                         <span className="row-main">
                           <span className="row-top">
@@ -276,6 +290,23 @@ export function Sessions() {
                         <button type="button" className="icon-btn row-close" title={t('closeSession')} aria-label={t('closeSession')}
                           disabled={closing === s.id} onClick={(e) => { e.stopPropagation(); void closeSession(s.id, ids) }} onKeyDown={(e) => e.stopPropagation()}><X size={13} /></button>
                       </li>
+                      {keys.flatMap((k) => children[k] ?? []).map((ch) => (
+                        <li key={`${ch.kind}:${ch.id}`} className={`child-row${known(ch.repo) ? ' is-open' : ''}`} title={ch.cwd ?? undefined} {...opener(ch.repo, ch.branch)}>
+                          <ChildIcon kind={ch.kind} />
+                          <span className="row-main">
+                            <span className="row-top">
+                              <b>{ch.label}</b>
+                              <span className="tag">{t(ch.kind === 'subagent' ? 'childSubagent' : ch.kind === 'teammate' ? 'childTeammate' : ch.kind === 'worktree' ? 'childWorktree' : ch.spawned ? 'childCodexSub' : 'childCodex')}</span>
+                              {ch.working && <span className="state-chip is-working">{t(ch.kind === 'codex' ? 'childRecent' : 'stateWorking')}</span>}
+                            </span>
+                            <span className="row-sub muted">
+                              {ch.description && <span className="child-desc">{ch.description}</span>}
+                              {ch.branch ? <span className="mono">⎇ {ch.branch}</span> : ch.cwd && <span className="mono">{tilde(ch.cwd)}</span>}
+                            </span>
+                          </span>
+                        </li>
+                      ))}
+                      </Fragment>
                     ))}
                   </ul>
                 </article>

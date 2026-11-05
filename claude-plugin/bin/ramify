@@ -394,7 +394,7 @@ cmd_who() {
 }
 
 cmd_ls() {
-  local json=0 main base line cur="" branch="" dirty commits sync port agent name active procs c1 c2 first=1 run
+  local json=0 main base line cur="" branch="" dirty commits sync port agent name active procs c1 c2 first=1 run sess
   [ "${1:-}" = --json ] && json=1
   main=$(main_checkout "$PWD")
   base=$(git -C "$main" branch --show-current)
@@ -424,10 +424,12 @@ cmd_ls() {
               run=$(printf '%s\n' "$active" | tr ',' '\n' | while IFS= read -r x; do json_str "$x"; printf ','; done)
               run=${run%,}
             fi
-            printf '{"name":%s,"path":%s,"branch":%s,"main":%s,"agent":%s,"running":[%s],"changes":%s,"commits":%s,"upstream":%s,"port":%s}' \
+            # The conversation whose subagent made it (ramify hook create records WT_SESSION), when there is one.
+            sess=$(env_get "$cur" WT_SESSION); [ -z "$sess" ] || sess=",\"session\":$(json_str "$sess")"
+            printf '{"name":%s,"path":%s,"branch":%s,"main":%s,"agent":%s,"running":[%s],"changes":%s,"commits":%s,"upstream":%s,"port":%s%s}' \
               "$(json_str "$name")" "$(json_str "$cur")" "$(json_str "$branch")" \
               "$([ "$cur" = "$main" ] && echo true || echo false)" "$(json_str "$agent")" "$run" \
-              "$dirty" "${commits:-0}" "$(json_str "$sync")" "${port:-null}"
+              "$dirty" "${commits:-0}" "$(json_str "$sync")" "${port:-null}" "$sess"
           else
             if [ "$cur" = "$main" ]; then commits=-; fi
             if [ "$dirty" = 0 ]; then c1=$D; else c1=$Y; fi

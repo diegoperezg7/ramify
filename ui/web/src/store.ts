@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { bridge, BridgeError } from './bridge'
 import { dict, format, type Key, type Lang } from './i18n'
-import type { AgentSession, Capabilities, CreateRequest, Detail, RepoInfo, Settings, State } from './types'
+import type { AgentChild, AgentSession, Capabilities, CreateRequest, Detail, RepoInfo, Settings, State } from './types'
 import { MergeError, type MergeProblem } from './logic'
 
 export type Theme = 'system' | 'light' | 'dark'
@@ -45,6 +45,8 @@ interface Store {
   setMergeDone: (d: { branch: string; base: string; rebuilt: boolean } | null) => void
   view: View
   sessions: AgentSession[] | null
+  /** Subagents, teammates, worktrees and Codex threads of the open sessions, by session key. */
+  children: Record<string, AgentChild[]>
   /** Values the "new worktree" form opens with (from a shared-branch warning). */
   createPrefill: { branch: string; agent: string } | null
 
@@ -124,6 +126,7 @@ export const useStore = create<Store>((set, get) => ({
   setMergeDone: (mergeDone) => set({ mergeDone }),
   view: 'repo',
   sessions: null,
+  children: {},
   createPrefill: null,
 
   t: (key, vars) => format(dict[get().lang][key], vars),
@@ -317,7 +320,11 @@ export const useStore = create<Store>((set, get) => ({
     set({ createPrefill: prefill, modal: 'create' })
   },
   refreshSessions: async () => {
-    try { set({ sessions: await bridge.sessions(), conn: 'ok', lastSync: Date.now() }) } catch { set({ conn: 'offline' }) /* keep the last list */ }
+    try {
+      // An older host without agentChildren still shows its sessions.
+      const [sessions, children] = await Promise.all([bridge.sessions(), bridge.agentChildren().catch(() => ({}))])
+      set({ sessions, children, conn: 'ok', lastSync: Date.now() })
+    } catch { set({ conn: 'offline' }) /* keep the last list */ }
   },
 
   toast: (kind, text) => {
