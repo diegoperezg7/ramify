@@ -174,11 +174,11 @@ export async function accessibleRepos(token: string): Promise<{ installations: n
 }
 
 /** Every pull request of a repository (newest first), read with the user's token. */
-export async function pullRequestsWithToken(token: string, slug: string): Promise<{ number: number; url: string; state: 'OPEN' | 'MERGED' | 'CLOSED'; draft: boolean; title: string; branch: string }[]> {
+export async function pullRequestsWithToken(token: string, slug: string): Promise<{ number: number; url: string; state: 'OPEN' | 'MERGED' | 'CLOSED'; draft: boolean; title: string; branch: string; head: string }[]> {
   if (!/^[\w.-]+\/[\w.-]+$/.test(slug)) return []
-  const { data } = await api<{ number: number; html_url: string; state: string; merged_at: string | null; draft: boolean; title: string; head: { ref: string } }[]>(
+  const { data } = await api<{ number: number; html_url: string; state: string; merged_at: string | null; draft: boolean; title: string; head: { ref: string; sha: string } }[]>(
     token, `/repos/${slug}/pulls?state=all&per_page=100&sort=updated&direction=desc`)
-  return data.map((p) => ({ number: p.number, url: p.html_url, state: p.merged_at ? 'MERGED' : p.state === 'open' ? 'OPEN' : 'CLOSED', draft: p.draft, title: p.title, branch: p.head.ref }))
+  return data.map((p) => ({ number: p.number, url: p.html_url, state: p.merged_at ? 'MERGED' : p.state === 'open' ? 'OPEN' : 'CLOSED', draft: p.draft, title: p.title, branch: p.head.ref, head: p.head.sha }))
 }
 
 /** The pull request for `branch`, read with the user's token. */

@@ -114,6 +114,17 @@ check "rm refuses unmerged, unpushed commits" '! "$AW" rm pagos 2>/dev/null'
 "$AW" rm pagos --force 2>/dev/null
 check "rm --force removes the worktree" '[ ! -d "$W/pagos" ]'
 check "rm --force keeps the branch and its commits" 'git log -1 --format=%s pagos | grep -qx work'
+# A squash merge on GitHub: the branch is in no history of main and its remote branch is gone.
+"$AW" new feat/squash --no-launch >/dev/null 2>&1
+git -C "$W/feat-squash" commit -q --allow-empty -m squash-work
+sq=$(git rev-parse feat/squash)
+check "rm still refuses a squash-merged branch it was not told about" '! "$AW" rm feat-squash 2>/dev/null && [ -d "$W/feat-squash" ]'
+check "rm --squashed refuses a short or invented commit" '! "$AW" rm feat-squash --squashed abc 2>/dev/null && [ -d "$W/feat-squash" ]'
+git -C "$W/feat-squash" commit -q --allow-empty -m after-merge
+check "rm --squashed refuses a branch that moved after its pull request" '! "$AW" rm feat-squash --squashed "$sq" 2>/dev/null && [ -d "$W/feat-squash" ]'
+git -C "$W/feat-squash" reset -q --hard "$sq"
+"$AW" rm feat-squash --squashed "$sq" 2>/dev/null
+check "rm --squashed removes the worktree, then deletes the branch (no 'used by worktree')" '[ ! -d "$W/feat-squash" ] && ! git show-ref --quiet refs/heads/feat/squash'
 "$AW" prune 2>/dev/null
 check "prune keeps a fresh worktree that has no work yet" '[ -d "$W/feat-login" ]'
 git -C "$W/feat-login" commit -q --allow-empty -m login && git merge -q --no-edit feat/login

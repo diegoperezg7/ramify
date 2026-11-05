@@ -35,6 +35,8 @@ const engine = new Engine({
   bin, env,
   running: () => new Map([...busyAt].map(([path, e]) => [path, e.agents])),
   paused: () => new Map(live.map((l) => [l.path, l.agents.filter((a) => !(busyAt.get(l.path)?.agents ?? []).includes(a))])),
+  // With the signed-in account when there is one (gh otherwise): tells a squash-merged branch from one with work left.
+  pullRequests: (repo) => repoPullRequests(repo),
 })
 const es = () => app.getLocale().toLowerCase().startsWith('es')
 
@@ -427,6 +429,12 @@ async function careForBranches() {
     let health
     try { health = await engine.health(repo) } catch { continue }
     const name = repo.split('/').pop()
+    // The base behind GitHub: new branches start from an old main, and a merge would land on it. Said once per state.
+    if (config.settings.watchBranches && health.sync?.behind) {
+      const s = health.sync
+      tell(`base:${repo}:${s.behind}:${s.ahead}`, es() ? `${health.base} no está al día` : `${health.base} is out of date`,
+        es() ? `${name}: ${s.behind} commit(s) nuevos en ${s.upstream}. Actualízala desde el centro de control.` : `${name}: ${s.behind} new commit(s) on ${s.upstream}. Update it from the control center.`, { event: 'control' })
+    }
     for (const b of health.branches) {
       if (b.main) continue
       // `running` leaves out agents idle at their prompt: an open session there (or a subagent) still lives in it.

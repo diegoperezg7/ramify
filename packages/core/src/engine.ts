@@ -4,7 +4,7 @@ import { homedir } from 'node:os'
 import { basename, join, resolve } from 'node:path'
 import { EDITORS, launchBin } from './catalog.ts'
 import { windowsAppPath } from './tools.ts'
-import type { BranchHealth, Commit, CommitDetail, Created, CreateRequest, Detail, FileChange, Health, PullRequest, RepoInfo, State, Timeline, TimelineBranch, TimelineCommit, Worktree } from './types.ts'
+import type { BaseSync, BranchHealth, Commit, CommitDetail, Created, CreateRequest, Detail, FileChange, Health, PullRequest, RepoInfo, State, Timeline, TimelineBranch, TimelineCommit, Worktree } from './types.ts'
 
 const MAX_COMMITS = 300
 /** Branches without a worktree drawn in the graph (worktree branches are always drawn). */
@@ -139,28 +139,43 @@ export interface EngineOptions {
    * them running, so they are taken out (unless another session of the same agent is at work there).
    */
   paused?: () => Map<string, string[]>
+  /**
+   * Pull requests of a repository from a host that reads them itself (the desktop app, with the user's token).
+   * Without it, the gh CLI. Used to tell a squash-merged branch apart from one with work left.
+   */
+  pullRequests?: (repo: string) => Promise<PullRequest[]>
 }
 
 interface RunResult { code: number; stdout: string; stderr: string }
+
+/** How often the base is fetched from its remote while Ramify looks at a repository. */
+export const FETCH_EVERY_MS = 5 * 60 * 1000
+/** A fetch that hangs (no network, a server that does not answer) gives up after this. */
+const FETCH_TIMEOUT_MS = 30_000
 
 export class Engine {
   private bin: string
   private env: NodeJS.ProcessEnv
   private runningAgents?: () => Map<string, string[]>
   private pausedAgents?: () => Map<string, string[]>
+  private hostPullRequests?: (repo: string) => Promise<PullRequest[]>
+  private fetchedAt = new Map<string, number>()
+  private prCache = new Map<string, { at: number; prs: Promise<PullRequest[]> }>()
 
   constructor(opts: EngineOptions) {
     this.bin = opts.bin
     this.runningAgents = opts.running
     this.pausedAgents = opts.paused
+    this.hostPullRequests = opts.pullRequests
     this.env = hardenedGitEnv({ ...process.env, ...opts.env, NO_COLOR: '1' })
   }
 
   // --- process helpers -------------------------------------------------------
 
-  private run(cmd: string, args: string[], cwd?: string): Promise<RunResult> {
+  private run(cmd: string, args: string[], cwd?: string, timeout = 0): Promise<RunResult> {
     return new Promise((resolve) => {
-      execFile(cmd, args, { cwd, env: this.env, maxBuffer: 32 * 1024 * 1024 }, (err, stdout, stderr) => {
+      // GIT_TERMINAL_PROMPT=0: a remote asking for a password fails instead of waiting on a terminal nobody sees.
+      execFile(cmd, args, { cwd, env: { ...this.env, GIT_TERMINAL_PROMPT: '0' }, timeout, maxBuffer: 32 * 1024 * 1024 }, (err, stdout, stderr) => {
         const code = err ? (typeof err.code === 'number' ? err.code : 1) : 0
         resolve({ code, stdout: String(stdout), stderr: String(stderr) })
       })
@@ -258,6 +273,72 @@ export class Engine {
 
   private async base(repo: string): Promise<string> {
     return (await this.git(repo, 'branch', '--show-current')).trim() || 'HEAD'
+  }
+
+  // --- the base against GitHub ----------------------------------------------------
+
+  /**
+   * Fetch origin, at most once every FETCH_EVERY_MS unless `now`. Without it the base is compared as it was the
+   * last time someone fetched: a main days behind GitHub, and every branch looks further ahead than it is.
+   * Offline or without access it just stays as it was. Returns whether the fetch went through.
+   */
+  async fetchOrigin(repo: string, now = false): Promise<boolean> {
+    if (!now && Date.now() - (this.fetchedAt.get(repo) ?? 0) < FETCH_EVERY_MS) return false
+    if (!(await this.git(repo, 'remote')).split('\n').includes('origin')) return false
+    this.fetchedAt.set(repo, Date.now())
+    return (await this.run('git', ['-C', repo, 'fetch', '--quiet', '--prune', 'origin'], undefined, FETCH_TIMEOUT_MS)).code === 0
+  }
+
+  /** The remote branch the base tracks (origin/main), or null. */
+  private async upstreamOf(repo: string, base: string): Promise<string | null> {
+    if (base === 'HEAD') return null
+    const r = await this.run('git', ['-C', repo, 'rev-parse', '--abbrev-ref', '--symbolic-full-name', `${base}@{upstream}`])
+    return r.code === 0 && r.stdout.trim() ? r.stdout.trim() : null
+  }
+
+  /** The base against its remote branch, as of the last fetch. Null when it tracks none. */
+  async baseSync(repo: string, base?: string): Promise<BaseSync | null> {
+    base ??= await this.base(repo)
+    const upstream = await this.upstreamOf(repo, base)
+    if (!upstream) return null
+    const [behind, ahead] = (await this.git(repo, 'rev-list', '--left-right', '--count', `${upstream}...${base}`)).trim().split(/\s+/).map(Number)
+    return { upstream, behind: behind || 0, ahead: ahead || 0 }
+  }
+
+  /**
+   * Bring the base up to its remote branch, fast-forward only: a base with commits of its own, or local
+   * changes in the way, is left as it was.
+   */
+  async updateBase(repo: string): Promise<string> {
+    const base = await this.base(repo)
+    await this.fetchOrigin(repo, true)
+    const sync = await this.baseSync(repo, base)
+    if (!sync) throw new EngineError(`${base} tracks no remote branch`)
+    if (!sync.behind) return `${base} is up to date with ${sync.upstream}`
+    if (sync.ahead) throw new EngineError(`${base} has ${sync.ahead} commit(s) that are not on ${sync.upstream} and ${sync.behind} there it does not have: they went different ways, nothing was changed`)
+    const r = await this.run('git', ['-C', repo, 'merge', '--ff-only', '--quiet', sync.upstream])
+    if (r.code !== 0) throw new EngineError(`${base} could not be brought up to ${sync.upstream}, nothing was changed:\n${(r.stderr || r.stdout).trim()}`)
+    return `${base} ← ${sync.upstream} (${sync.behind} commit(s))`
+  }
+
+  /** Pull requests, from the host when it reads them itself, else through gh. Cached a minute per repository. */
+  private prsOf(repo: string, fresh = false): Promise<PullRequest[]> {
+    const hit = this.prCache.get(repo)
+    if (!fresh && hit && Date.now() - hit.at < 60_000) return hit.prs
+    const prs = (this.hostPullRequests ? this.hostPullRequests(repo) : this.pullRequests(repo)).catch(() => [] as PullRequest[])
+    this.prCache.set(repo, { at: Date.now(), prs })
+    return prs
+  }
+
+  /**
+   * The commit of `branch` that a merged pull request had as its head, when that is still the branch's tip:
+   * the branch went in whole, squashed, so nothing on it would be lost. Null otherwise.
+   */
+  private async squashedTip(repo: string, branch: string): Promise<string | null> {
+    const tip = (await this.git(repo, 'rev-parse', '--verify', '--quiet', `refs/heads/${branch}`)).trim()
+    if (!tip) return null
+    const prs = await this.prsOf(repo)
+    return prs.some((p) => p.branch === branch && p.state === 'MERGED' && p.head === tip) ? tip : null
   }
 
   async state(repo: string): Promise<State> {
@@ -436,8 +517,12 @@ export class Engine {
   }
 
   async remove(repo: string, path: string, force: boolean): Promise<string> {
-    if ((await this.find(repo, path)).main) throw new EngineError('that is the main checkout')
-    const r = await this.runBin(['rm', path, ...(force ? ['--force'] : [])], repo)
+    const wt = await this.find(repo, path)
+    if (wt.main) throw new EngineError('that is the main checkout')
+    // Squashed on GitHub: the script cannot see that from git, so it is told the commit the pull request went in at.
+    const inBase = async () => (await this.run('git', ['-C', repo, 'merge-base', '--is-ancestor', wt.branch, await this.base(repo)])).code === 0
+    const squashed = !force && wt.branch && !(await inBase()) ? await this.squashedTip(repo, wt.branch) : null
+    const r = await this.runBin(['rm', path, ...(force ? ['--force'] : squashed ? ['--squashed', squashed] : [])], repo)
     const msg = (r.stderr || r.stdout).trim()
     if (r.code !== 0) throw new EngineError(msg.replace(/^ramify: /, ''))
     return msg
@@ -470,6 +555,12 @@ export class Engine {
     return hit ? { kind: 'files', what: hit.slice(path.length + 1) } : null
   }
 
+  /**
+   * Bring a branch into the base, all the way to GitHub. The base first catches up with its remote branch
+   * (fast-forward only). A branch with an open pull request is merged there, squashed, its remote branch
+   * deleted and the local base brought up to the result. Without one: a merge commit here, then the base is
+   * pushed. A base with no remote branch is merged here only, as before.
+   */
   async merge(repo: string, path: string): Promise<string> {
     const wt = await this.find(repo, path)
     if (wt.main || !wt.branch) throw new EngineError('nothing to merge')
@@ -477,16 +568,56 @@ export class Engine {
       throw new EngineError('the main checkout has uncommitted changes')
     }
     if ((await this.git(path, 'status', '--porcelain')).trim()) throw new EngineError('the worktree has uncommitted changes')
+    const base = await this.base(repo)
+    await this.fetchOrigin(repo, true)
+    const sync = await this.baseSync(repo, base)
+    if (sync?.behind && sync.ahead) {
+      throw new EngineError(`${base} and ${sync.upstream} went different ways (${sync.ahead} commit(s) only here, ${sync.behind} only there): bring them together first, nothing was changed`)
+    }
+    if (sync?.behind) await this.updateBase(repo)
+    const pr = sync ? (await this.prsOf(repo, true)).find((p) => p.branch === wt.branch && p.state === 'OPEN') : undefined
+    if (sync && pr) return this.mergeOnGithub(repo, wt.branch, base, sync.upstream, pr)
     const r = await this.run('git', ['-C', repo, 'merge', '--no-ff', '--no-edit', wt.branch])
-    if (r.code === 0) return r.stdout.trim()
+    if (r.code === 0) return [r.stdout.trim(), await this.pushBase(repo, base, sync)].filter(Boolean).join('\n')
     // -z: names with accents or spaces come through as they are, not quoted and escaped.
     const conflicted = (await this.git(repo, 'diff', '--name-only', '-z', '--diff-filter=U')).split('\0').filter(Boolean)
     const rebuilt = conflicted.length ? await this.rebuildGenerated(repo, conflicted) : null
-    if (rebuilt?.ok) return `merged ${wt.branch}; regenerated: ${conflicted.join(', ')}`
+    if (rebuilt?.ok) return [`merged ${wt.branch}; regenerated: ${conflicted.join(', ')}`, await this.pushBase(repo, base, sync)].filter(Boolean).join('\n')
     await this.run('git', ['-C', repo, 'merge', '--abort'])
     if (rebuilt) throw new EngineError(`generated files could not be rebuilt, nothing was changed:\n${rebuilt.output}`)
     // One `conflict: <path>` line per file, then git's own words: the UI lists the files from these lines.
     throw new EngineError([`merge conflict, nothing was changed:`, ...conflicted.map((f) => `conflict: ${f}`), (r.stdout + r.stderr).trim()].join('\n'))
+  }
+
+  /** Send the base to its remote branch after a local merge. The merge stays either way: a failed push is said, not undone. */
+  private async pushBase(repo: string, base: string, sync: BaseSync | null): Promise<string> {
+    if (!sync) return ''
+    const remote = sync.upstream.split('/')[0]
+    const push = await this.run('git', ['-C', repo, 'push', '--quiet', remote, `refs/heads/${base}:refs/heads/${sync.upstream.slice(remote.length + 1)}`], undefined, 120_000)
+    return push.code === 0 ? `pushed to ${sync.upstream}` : `not pushed to ${sync.upstream}: ${(push.stderr || push.stdout).trim() || 'push failed'}`
+  }
+
+  private async mergeOnGithub(repo: string, branch: string, base: string, upstream: string, pr: PullRequest): Promise<string> {
+    const remote = upstream.split('/')[0]
+    const tip = (await this.git(repo, 'rev-parse', `refs/heads/${branch}`)).trim()
+    // GitHub merges what it has: send the branch first. A branch GitHub has moved on is not overwritten (no force).
+    if (pr.head !== tip) {
+      const push = await this.run('git', ['-C', repo, 'push', '--quiet', remote, `refs/heads/${branch}:refs/heads/${branch}`], undefined, 120_000)
+      if (push.code !== 0) throw new EngineError(`${branch} could not be sent to GitHub, nothing was merged:\n${(push.stderr || push.stdout).trim()}`)
+    }
+    const gh = async (args: string[], what: string) => {
+      const r = await this.run('gh', args, repo, 120_000)
+      if (r.code !== 0) throw new EngineError(`${what}, nothing was merged:\n${(r.stderr || r.stdout).trim() || 'is gh installed and signed in (gh auth login)?'}`)
+    }
+    if (pr.draft) await gh(['pr', 'ready', String(pr.number)], `pull request #${pr.number} could not leave draft`)
+    // --match-head-commit: GitHub merges exactly the commit checked here. No --delete-branch: gh would also delete
+    // the local branch, which its worktree still has checked out ("used by worktree"); that goes with the worktree.
+    await gh(['pr', 'merge', String(pr.number), '--squash', '--match-head-commit', tip], `pull request #${pr.number} could not be merged on GitHub`)
+    this.prCache.delete(repo)
+    const del = await this.run('git', ['-C', repo, 'push', '--quiet', remote, '--delete', branch], undefined, 60_000)
+    const said = [`merged on GitHub: #${pr.number} (squash)`, del.code === 0 ? `${branch} deleted on GitHub` : '']
+    try { said.push(await this.updateBase(repo)) } catch (e) { said.push(`not updated here: ${(e as Error).message}`) }
+    return said.filter(Boolean).join('\n')
   }
 
   /**
@@ -533,6 +664,7 @@ export class Engine {
 
   /** Health of every branch being built: the worktrees, and the main checkout when someone works in it. */
   async health(repo: string): Promise<Health> {
+    await this.fetchOrigin(repo)
     const base = await this.base(repo)
     const wts = await this.worktrees(repo)
     const files = new Map<string, Set<string>>()
@@ -572,8 +704,10 @@ export class Engine {
       out.push({
         path: w.path, branch: w.branch, main: w.main, agent: w.agent, running: w.running,
         ahead, behind, uncommitted: w.changes, added, deleted, files: touched.size, unpushed, lastCommit: last,
-        merged: !w.main && !!w.branch && ahead === 0 && !w.changes && !tipIsBase
-          && (await this.run('git', ['-C', repo, 'merge-base', '--is-ancestor', w.branch, base])).code === 0,
+        merged: !w.main && !!w.branch && !w.changes && !tipIsBase && (
+          (ahead === 0 && (await this.run('git', ['-C', repo, 'merge-base', '--is-ancestor', w.branch, base])).code === 0)
+          // Squashed on GitHub: none of its commits are in the base, but its pull request went in at this very tip.
+          || (ahead > 0 && !!(await this.squashedTip(repo, w.branch)))),
         overlaps: [],
       })
     }
@@ -583,16 +717,16 @@ export class Engine {
       if (!mine || b.main) continue
       b.overlaps = [...files.entries()].filter(([name, theirs]) => name !== b.branch && [...mine].some((f) => theirs.has(f))).map(([name]) => name)
     }
-    return { base, branches: out }
+    return { base, branches: out, sync: await this.baseSync(repo, base) }
   }
 
   /** Pull requests through the gh CLI (the desktop app uses the signed-in account instead when it can). */
   async pullRequests(repo: string): Promise<PullRequest[]> {
-    const r = await this.run('gh', ['pr', 'list', '--state', 'all', '--limit', '100', '--json', 'number,url,state,isDraft,title,headRefName'], repo)
+    const r = await this.run('gh', ['pr', 'list', '--state', 'all', '--limit', '100', '--json', 'number,url,state,isDraft,title,headRefName,headRefOid'], repo)
     if (r.code !== 0) return []
     try {
-      return (JSON.parse(r.stdout) as { number: number; url: string; state: PullRequest['state']; isDraft: boolean; title: string; headRefName: string }[])
-        .map((p) => ({ number: p.number, url: p.url, state: p.state, draft: p.isDraft, title: p.title, branch: p.headRefName }))
+      return (JSON.parse(r.stdout) as { number: number; url: string; state: PullRequest['state']; isDraft: boolean; title: string; headRefName: string; headRefOid: string }[])
+        .map((p) => ({ number: p.number, url: p.url, state: p.state, draft: p.isDraft, title: p.title, branch: p.headRefName, head: p.headRefOid }))
     } catch { return [] }
   }
 
