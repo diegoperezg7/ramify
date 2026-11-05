@@ -12,6 +12,7 @@ import { SessionLog, sessionsCsv, claudeContext, parsePs, remember, type LiveSes
 import { agentOf } from '../src/projects.ts'
 import { Engine, riskyGitConfig } from '../src/engine.ts'
 import { withoutBlock } from '../src/setup.ts'
+import { windowsLaunch } from '../src/terminal.ts'
 import type { AgentSession } from '../src/types.ts'
 
 const ROOT_DIR = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..')
@@ -249,6 +250,19 @@ describe('scanner caches', () => {
     remember(m, 'k6', 60, 4) // used again: newest now
     remember(m, 'k10', 10, 4)
     assert.deepEqual([...m.keys()], ['k8', 'k9', 'k6', 'k10'])
+  })
+})
+
+describe('Windows terminal', () => {
+  it('starts Git Bash without cmd.exe, so & and quotes in the command stay in the command', () => {
+    const command = `ramify open feat -p 'fix "x & calc'`
+    const l = windowsLaunch(command, 'C:/r', 'C:/Program Files/Git/bin/bash.exe', null)
+    assert.equal(l.cmd, 'C:/Program Files/Git/bin/bash.exe')
+    assert.deepEqual(l.args, ['--login', '-i', '-c', `${command}; exec bash --login -i`])
+    assert.equal(l.options.detached, true)
+    const t = windowsLaunch(command, 'C:/r', 'bash.exe', 'C:/wt.exe')
+    assert.equal(t.cmd, 'C:/wt.exe')
+    assert.equal(t.args.at(-1), `${command}\\; exec bash --login -i`)
   })
 })
 
