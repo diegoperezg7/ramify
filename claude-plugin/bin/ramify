@@ -320,6 +320,8 @@ WT_AGENT=$agent
 PORT=$port
 DERIVED_DATA=$ROOT/$repo/.derived-data/$slug
 EOF
+  # The conversation it is for (hook create), recorded before the setup runs: another one looking now sees it taken.
+  [ -z "${CREATE_SESSION:-}" ] || printf 'WT_SESSION=%s\n' "$CREATE_SESSION" >> "$wt/.worktree.env"
   exclude_env_file "$wt"
 
   if [ "$setup" = 1 ] && ! run_project_script "$wt" "$main" setup; then
@@ -628,7 +630,9 @@ cmd_hook() {
       n=1; branch=$base
       while :; do
         slug=$(slugify "$branch"); dir="$ROOT/$repo/$slug"
-        if [ -d "$dir" ]; then
+        if [ -d "$dir" ] && [ -d "$ROOT/$repo/.claims/$slug" ]; then
+          :  # still being made for another conversation (git worktree add, then npm ci…): taken
+        elif [ -d "$dir" ]; then
           owner=$(env_get "$dir" WT_SESSION)
           # A worktree of another repository with the same folder name is taken, whoever made it.
           if of_repo "$dir" "$main" && { [ -z "$session" ] || [ -z "$owner" ] || [ "$owner" = "$session" ]; }; then
@@ -639,9 +643,10 @@ cmd_hook() {
         fi
         n=$((n + 1)); branch="$base-$n"
       done
-      create "$branch" "" 1 claude
-      rmdir "$ROOT/$repo/.claims/$slug" 2>/dev/null || true
-      [ -z "$session" ] || env_set "$CREATED_WT" WT_SESSION "$session"
+      # The claim goes when this ends, also when create stops: a failed name must not stay reserved.
+      # (The path is fixed now: these variables are local and gone by the time the script exits.)
+      trap "rmdir -- $(printf '%q' "$ROOT/$repo/.claims/$slug") 2>/dev/null || true" EXIT
+      CREATE_SESSION=$session create "$branch" "" 1 claude
       printf '%s\n' "$CREATED_WT" ;;
     remove)
       wt=$(printf '%s' "$input" | jq -r '.worktree_path')

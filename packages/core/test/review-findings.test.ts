@@ -2,7 +2,7 @@
 // so it is marked `todo`: the run reports it without failing. Drop the `todo` when its fix lands: the test then
 // guards against the bug coming back.
 import { execFileSync, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -72,6 +72,21 @@ describe('CLI (ramify)', () => {
       assert.match(guard({ tool_name: 'Bash', tool_input: { command } }), /deny/, command)
     }
     assert.match(guard({ tool_name: 'Edit', tool_input: { file_path: join(r, '.git', 'config') } }), /deny/)
+  })
+
+  it('hook create does not hand out a worktree another conversation is still setting up, and frees a failed name', () => {
+    const r = repo()
+    const name = r.split('/').pop()!
+    // Another conversation is midway: its folder exists (git worktree add ran), its claim is still there.
+    mkdirSync(join(T, 'wts', name, '.claims', 'feat-pay'), { recursive: true })
+    mkdirSync(join(T, 'wts', name, 'feat-pay'), { recursive: true })
+    const got = cli(r, ['hook', 'create'], JSON.stringify({ name: 'feat-pay', cwd: r, session_id: 'B' })).stdout.trim().split('\n').pop()!
+    assert.notEqual(got, join(T, 'wts', name, 'feat-pay'))
+    assert.equal(git(got, 'branch', '--show-current').trim(), 'feat/pay-2')
+    assert.match(readFileSync(join(got, '.worktree.env'), 'utf8'), /^WT_SESSION=B$/m)
+    // A name git refuses: create stops, and its claim does not stay behind.
+    cli(r, ['hook', 'create'], JSON.stringify({ name: 'bad..name', cwd: r, session_id: 'C' }))
+    assert.equal(existsSync(join(T, 'wts', name, '.claims', 'worktree-bad..name')), false)
   })
 
   it('ramify move leaves the changes in place when it cannot create the worktree', () => {
