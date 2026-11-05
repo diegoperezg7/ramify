@@ -262,6 +262,22 @@ echo 'export KEEP=1' >> "$HOME/.zshrc"
 SHELL=/bin/zsh "$AW" uninstall shell 2>/dev/null
 check "uninstall shell removes the block and keeps the rest" '! grep -q "ramify" "$HOME/.zshrc" && grep -qx "export KEEP=1" "$HOME/.zshrc"'
 
+echo "tmux"
+if command -v tmux >/dev/null; then
+  # A tmux server of its own (socket under $T, config from the test HOME) that ends sessions left without a client.
+  export TMUX_TMPDIR="$T/tmux"; mkdir -p "$TMUX_TMPDIR"; unset TMUX
+  echo 'set -g destroy-unattached on' > "$HOME/.tmux.conf"
+  mkdir -p "$T/bin-slow"; printf '#!/bin/sh\nsleep 30\n' > "$T/bin-slow/claude"; chmod +x "$T/bin-slow/claude"
+  PATH="$T/bin-slow:$PATH" "$AW" new tmuxkeep -a claude --tmux --no-setup >/dev/null 2>&1
+  sleep 1
+  check "--tmux: the detached agent session survives destroy-unattached" 'tmux has-session -t "=demo_tmuxkeep" 2>/dev/null'
+  check "--tmux: only that session opts out" '[ "$(tmux show -t demo_tmuxkeep -v destroy-unattached)" = off ] && [ "$(tmux show -gv destroy-unattached)" = on ]'
+  tmux kill-server 2>/dev/null
+  unset TMUX_TMPDIR
+else
+  echo "  skip: tmux is not installed"
+fi
+
 echo "secret scan before commit and push"
 if command -v gitleaks >/dev/null; then
   git init -q --bare "$T/sec-origin.git"

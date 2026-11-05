@@ -7,7 +7,8 @@ import { pathToFileURL } from 'node:url'
 import {
   cloneGithub, createHandlers, defaultProjectsDir, dispatch, Engine, EngineError, githubRepos, idesFor, openInTerminal, originSlug,
   accessibleRepos, AuthError, currentUser, hardenedGitEnv, isSafeExternal, normPath, pullRequestsWithToken, riskyGitConfig, sanitizeSettings, strings, installedTools, pollForTokens, publishGithub, pullRequestFor, pullRequestWithToken,
-  refreshTokens, requestDeviceCode, codexThreads, IDE_IDLE_MS, inTempDir, isActive, scanRepos, scanSessions, SessionLog, sessionsCsv, type Resolved, type Tokens,
+  refreshTokens, requestDeviceCode, codexThreads, IDE_IDLE_MS, inTempDir, isActive, scanRepos, workPlace, scanSessions, SessionLog, sessionsCsv, type Resolved, type Tokens,
+  actionWords, agoWords, attentionCount, branchKey, mergeReady, sessionAttention,
   gitBash, setupApply, setupStatus, setupUndo, type SetupContext,
 } from '../../../packages/core/src/index.ts'
 import { GITHUB_APP } from './github-app.ts'
@@ -175,16 +176,26 @@ async function resolveCwd(cwd: string | null): Promise<Resolved & { worktree: st
   return { repo: main, branch: wt?.branch ?? null, github: await cachedSlug(main), worktree: wt?.path ?? null }
 }
 
+/** A session's repository and branch: where its shell is, unless where it edits says better (see workPlace). */
+async function resolveSession(s: { cwd: string | null; wrote?: string | null; before?: string[] }): Promise<Resolved & { worktree: string | null }> {
+  const [at, wrote] = await Promise.all([resolveCwd(s.cwd), s.wrote ? resolveCwd(s.wrote) : null])
+  // Where it was before only matters for a session in a main checkout (it may have come from one of its worktrees).
+  const inMain = !!at.repo && !!at.worktree && normPath(at.repo).toLowerCase() === normPath(at.worktree).toLowerCase()
+  const before = inMain && s.before?.length ? await Promise.all(s.before.map((p) => resolveCwd(p))) : []
+  return workPlace(at, wrote, before)
+}
+
 async function scan(): Promise<Live[]> {
   const ignored = new Set(config.settings.ignored ?? [])
   // Agents in throwaway folders under the system's temp directory (test runs, scripts) are not kept or shown.
   const scanned = (await scanSessions(env)).filter((s) => !ignored.has(s.agent) && !ignored.has(s.host.split(' · ')[0]) && !inTempDir(s.cwd))
   // Teammates in panes of their own belong to their lead's session: shown under it, never kept in the history.
   const seen = scanned.filter((s) => !s.parentSessionId)
-  const sessions = await Promise.all(seen.map(async (s) => ({ ...s, ...(await resolveCwd(s.cwd)) })))
+  const sessions = await Promise.all(seen.map(async (s) => ({ ...s, ...(await resolveSession(s)) })))
   const mates = await Promise.all(scanned.filter((s) => s.parentSessionId).map(async (s) => ({ ...s, ...(await resolveCwd(s.cwd)) })))
   warnSharedBranches(sessions)
   const { started, ended } = sessionLog.update(sessions)
+  markAttention()
   saveSessions(started.length > 0 || ended.length > 0)
   // Sessions the user closed are still in the scan: only the ones open in the log count.
   const open = new Map(sessionLog.sessions.filter((s) => s.end === null && s.key).map((s) => [s.key!, s]))
@@ -309,6 +320,75 @@ function withPrs(list: AgentSession[]): AgentSession[] {
 
 const workingCount = () => [...busyAt.values()].reduce((sum, e) => sum + e.agents.length, 0)
 
+// --- attention -------------------------------------------------------------------
+// Branches ready to merge (from the branch care pass) and, on every scan, why each open session needs the user.
+
+let ready = new Map<string, { repo: string; branch: string; path: string; lastCommit: number | null }>()
+const openSessions = () => sessionLog.sessions.filter((s) => s.end === null)
+function markAttention() {
+  const open = openSessions()
+  const keys = new Set(ready.keys())
+  for (const s of open) {
+    const why = sessionAttention(s, open, keys)
+    if (why.length) s.attention = why
+    else delete s.attention
+  }
+}
+const attentionNow = () => attentionCount(openSessions(), new Set(ready.keys()))
+/** The Dock badge: what needs you, or else the agents at work (the Dock has one colour, so the number says which). */
+function updateDock(working: number) {
+  if (process.platform !== 'darwin') return
+  const need = attentionNow()
+  app.dock?.setBadge(need ? `${need}!` : working ? String(working) : '')
+}
+
+/** Notifications already sent for an event, kept on disk: a restart must not send them again. */
+const notifiedFile = join(app.getPath('userData'), 'notified.json')
+const notified = new Set<string>((() => { try { const v: unknown = JSON.parse(readFileSync(notifiedFile, 'utf8')); return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [] } catch { return [] } })())
+function rememberNotified(key: string) {
+  notified.add(key)
+  // The newest few hundred are enough: a branch that moved on has a new key anyway.
+  const keep = [...notified].slice(-300)
+  try { writeFileSync(notifiedFile, JSON.stringify(keep)) } catch { /* next one retries */ }
+}
+
+/** Asked once, out loud, before the first notification of a ready branch; the answer is kept in the settings. */
+let asking = false
+async function mayNotifyReady(): Promise<boolean> {
+  if (!config.settings.notifications || !Notification.isSupported()) return false
+  if (config.settings.notifyReady !== undefined) return config.settings.notifyReady
+  if (asking || process.env.RAMIFY_SMOKE_TEST) return false
+  asking = true
+  try {
+    const { response } = await dialog.showMessageBox({
+      type: 'question',
+      buttons: es() ? ['Avisarme', 'No, gracias'] : ['Notify me', 'No, thanks'],
+      defaultId: 0, cancelId: 1,
+      message: es() ? '¿Te aviso cuando una rama esté lista para mergear?' : 'Notify you when a branch is ready to merge?',
+      detail: es()
+        ? 'Una notificación del sistema por rama, una sola vez: con commits, sin cambios pendientes, al día con su base y sin agentes trabajando en ella. macOS te pedirá después permiso para mostrar notificaciones de Ramify.'
+        : 'One system notification per branch, once: with commits, nothing pending, up to date with its base and no agent working in it. macOS will then ask you to allow notifications from Ramify.',
+    })
+    config.settings.notifyReady = response === 0
+    writeConfig()
+    return config.settings.notifyReady
+  } finally { asking = false }
+}
+
+async function notifyReady(r: { repo: string; branch: string; path: string; lastCommit: number | null }) {
+  // One per branch and head: new commits after it make it a new event.
+  const key = `ready:${branchKey(r.repo, r.branch)}@${r.lastCommit ?? 0}`
+  if (notified.has(key) || !(await mayNotifyReady())) return
+  rememberNotified(key)
+  const n = new Notification({
+    title: es() ? 'Rama lista para mergear' : 'Branch ready to merge',
+    subtitle: `${r.repo.split('/').pop()} · ${r.branch}`,
+    body: es() ? 'Tiene commits, nada pendiente y está al día. Pulsa para revisarla.' : 'It has commits, nothing pending and is up to date. Click to review it.',
+  })
+  n.on('click', () => focus({ repo: r.repo, path: r.path }))
+  n.show()
+}
+
 let firstScan = true
 let scanning = false
 /** Worktrees whose sessions the user closed, or whose repository they removed: gone, but no agent finished there. */
@@ -323,7 +403,7 @@ async function monitor() {
   firstScan = false
   live = next
   const n = workingCount()
-  if (process.platform === 'darwin') app.dock?.setBadge(n ? String(n) : '')
+  updateDock(n)
   updateTray(n)
   if (config.settings.notifications && Notification.isSupported()) for (const f of finished) void notifyFinished(f)
   if (config.settings.autoDraftPr) for (const f of finished) void draftPrFor(f)
@@ -342,7 +422,7 @@ function tell(key: string, title: string, body: string, payload: Payload) {
 }
 
 async function careForBranches() {
-  if (!config.settings.watchBranches && !config.settings.autoClean) return
+  const nextReady = new Map<string, { repo: string; branch: string; path: string; lastCommit: number | null }>()
   for (const repo of presentRepos()) {
     let health
     try { health = await engine.health(repo) } catch { continue }
@@ -351,6 +431,9 @@ async function careForBranches() {
       if (b.main) continue
       // `running` leaves out agents idle at their prompt: an open session there (or a subagent) still lives in it.
       const occupied = b.running.length > 0 || live.some((l) => l.path === b.path) || busyAt.has(b.path)
+      // Ready to merge: the agent may still be open there, idle at its prompt; only one at work holds it back.
+      if (mergeReady(b, (busyAt.get(b.path)?.agents.length ?? 0) > 0)) nextReady.set(branchKey(repo, b.branch), { repo, branch: b.branch, path: b.path, lastCommit: b.lastCommit })
+      if (!config.settings.watchBranches && !config.settings.autoClean) continue
       if (b.merged && !occupied) {
         if (config.settings.autoClean) {
           // git status does not see a build running there or the files it made (ignored): those stay until asked.
@@ -382,6 +465,11 @@ async function careForBranches() {
       }
     }
   }
+  ready = nextReady
+  markAttention()
+  updateDock(workingCount())
+  updateTray(workingCount())
+  for (const r of ready.values()) await notifyReady(r)
 }
 
 async function repoPullRequests(repo: string): Promise<PullRequest[]> {
@@ -443,31 +531,59 @@ function agentIcon(id: string) {
   return agentIcons.get(id) ?? undefined
 }
 
+/** Why a session needs you, in a few words for the menu. */
+function reasonWords(r: NonNullable<AgentSession['attention']>[number]): string {
+  if (r === 'waiting') return es() ? 'te espera' : 'waiting for you'
+  if (r === 'shared') return es() ? 'comparte rama con otro agente' : 'shares its branch with another agent'
+  if (r === 'main') return es() ? 'trabaja en la rama común' : 'working on the shared branch'
+  return es() ? 'rama lista para mergear' : 'branch ready to merge'
+}
+
+/** What a session is doing now: its last step and when, or its state. */
+function doingWords(s: AgentSession): string {
+  const a = s.glance?.action
+  if (a) return `${actionWords(a, es())} · ${agoWords(Date.now() - a.at, es())}`
+  if (s.state === 'waiting') return es() ? 'Esperando tu respuesta' : 'Waiting for your answer'
+  if (s.state === 'idle') return es() ? 'En pausa' : 'Paused'
+  return es() ? 'Trabajando' : 'Working'
+}
+
 let traySignature = ''
 function updateTray(count: number) {
   if (!config.settings.menuBar) { tray?.destroy(); tray = null; traySignature = ''; return }
-  // Agents in followed repositories that are waiting for an answer (Claude Code reports it).
-  const waitingAt = new Set(sessionLog.sessions
-    .filter((s) => s.end === null && !s.inferred && s.state === 'waiting' && s.repo && config.repos.includes(s.repo))
-    .map((s) => `${s.repo}#${s.branch ?? ''}`))
+  const need = attentionNow()
+  // Open conversations, what needs you first, then the ones at work.
+  const rank = (s: AgentSession) => (s.attention?.length ? 0 : s.state === 'working' ? 1 : 2)
+  const open = openSessions().filter((s) => !s.inferred && s.via !== 'app').sort((a, b) => rank(a) - rank(b) || a.start - b.start)
+  const lines = open.map((s) => {
+    const where = s.repo ? `${s.repo.split('/').pop()}${s.branch ? ` / ${s.branch}` : ''}` : s.cwd ? s.cwd.split('/').pop() || s.cwd : '—'
+    return { s, label: `${where}${s.attention?.length ? `  ·  ${reasonWords(s.attention[0])}` : ''}`, sub: doingWords(s) }
+  })
+  const readyFree = [...ready.values()].filter((r) => !open.some((s) => s.repo === r.repo && s.branch === r.branch))
   // Rebuilding the menu every scan costs work on the main thread: only when what it shows changed.
-  const signature = `${count}|${es()}|${[...waitingAt].join(',')}|${[...busyAt].map(([path, e]) => `${path}:${e.agents.join(',')}`).join(';')}`
+  const signature = `${count}|${need}|${es()}|${lines.map((l) => `${l.s.id}:${l.label}:${l.sub}`).join(';')}|${readyFree.map((r) => branchKey(r.repo, r.branch)).join(',')}`
   if (tray && signature === traySignature) return
   traySignature = signature
   if (!tray) tray = new Tray(trayIcon())
-  tray.setImage(count ? trayBadge(count, waitingAt.size > 0) : trayIcon())
+  // The pill counts what needs you, in amber; with nothing pending, the agents at work, in violet.
+  tray.setImage(need ? trayBadge(need, true) : count ? trayBadge(count, false) : trayIcon())
   tray.setTitle('')
-  const waits = es() ? `${waitingAt.size} te espera(n)` : `${waitingAt.size} waiting for you`
-  tray.setToolTip(count ? `Ramify · ${es() ? `${count} agente(s) trabajando` : `${count} agent(s) working`}${waitingAt.size ? ` · ${waits}` : ''}` : 'Ramify')
+  const working = es() ? `${count} trabajando` : `${count} working`
+  const needs = es() ? `${need} ${need === 1 ? 'requiere' : 'requieren'} tu atención` : `${need} need${need === 1 ? 's' : ''} you`
+  const head = [count ? working : '', need ? needs : ''].filter(Boolean).join('  ·  ') || (es() ? 'Ningún agente trabajando' : 'No agents working')
+  tray.setToolTip(`Ramify · ${head}`)
   const items: Electron.MenuItemConstructorOptions[] = [
-    { label: count ? `${es() ? `${count} agente(s) trabajando` : `${count} agent(s) working`}${waitingAt.size ? `  ·  ${waits}` : ''}` : (es() ? 'Ningún agente trabajando' : 'No agents working'), enabled: false },
-    // One line per agent: its logo, where it works, and whether it waits for you. The name stays as a tooltip.
-    ...[...busyAt].flatMap(([path, l]) => l.agents.map((a) => {
-      const icon = agentIcon(a)
-      const where = `${l.repo.split('/').pop()} / ${l.branch}`
-      const wait = waitingAt.has(`${l.repo}#${l.branch}`) ? (es() ? '  ·  te espera' : '  ·  waiting for you') : ''
-      return { label: `${icon ? '' : `${a}  ·  `}${where}${wait}`, icon, toolTip: a, click: () => focus({ repo: l.repo, path }) }
-    })),
+    { label: head, enabled: false },
+    // One line per conversation: its logo, where it works and why it needs you; below, what it is doing now.
+    ...lines.map(({ s, label, sub }): Electron.MenuItemConstructorOptions => {
+      const icon = agentIcon(s.agent)
+      return { label: `${icon ? '' : `${s.agent}  ·  `}${label}`, sublabel: sub, icon, toolTip: `${s.agent} · ${sub}`, click: () => focus(s.repo ? { repo: s.repo } : { event: 'sessions' }) }
+    }),
+    ...(readyFree.length ? [
+      { type: 'separator' as const },
+      { label: es() ? 'Listas para mergear' : 'Ready to merge', enabled: false },
+      ...readyFree.map((r) => ({ label: `${r.repo.split('/').pop()} / ${r.branch}`, click: () => focus({ repo: r.repo, path: r.path }) })),
+    ] : []),
     { type: 'separator' },
     { label: es() ? 'Abrir Ramify' : 'Open Ramify', click: () => focus() },
     { label: es() ? 'Nuevo agente…' : 'New agent…', click: () => focus({ event: 'new' }) },
@@ -671,6 +787,28 @@ async function cachedInfo(repo: string): Promise<RepoInfo> {
   infoCache.set(repo, { at: Date.now(), info })
   return info
 }
+/** What needs the user in a repository: the first reason of each open session there, then its ready branches no session stands for. */
+function repoAttention(repo: string): NonNullable<RepoInfo['attention']> {
+  const here = openSessions().filter((s) => s.repo === repo)
+  const out: NonNullable<RepoInfo['attention']> = here.flatMap((s) => (s.attention?.length ? [s.attention[0]] : []))
+  for (const r of ready.values()) if (r.repo === repo && !here.some((s) => s.branch === r.branch && s.attention?.length)) out.push('ready')
+  return out
+}
+
+/** The latest commit on any local branch (cached a minute: a commit needs no faster) or AI session in a repository. */
+const commitCache = new Map<string, { at: number; t: number | null }>()
+async function lastActive(repo: string): Promise<number | null> {
+  let hit = commitCache.get(repo)
+  if (!hit || Date.now() - hit.at > 60_000) {
+    let t: number | null = null
+    try { t = Number((await gitOut(['-C', repo, 'for-each-ref', '--sort=-committerdate', '--count=1', '--format=%(committerdate:unix)', 'refs/heads'])).trim()) * 1000 || null } catch { /* no commits */ }
+    hit = { at: Date.now(), t }
+    commitCache.set(repo, hit)
+  }
+  const session = sessionLog.sessions.reduce((m, s) => (s.repo === repo ? Math.max(m, s.end ?? Date.now()) : m), 0)
+  return Math.max(hit.t ?? 0, session) || null
+}
+
 const slugCache = new Map<string, { at: number; slug: string | null }>()
 async function cachedSlug(repo: string): Promise<string | null> {
   const hit = slugCache.get(repo)
@@ -708,6 +846,8 @@ const handlers = {
       ...(await cachedInfo(r)),
       active: [...new Set([...busyAt.values()].filter((e) => e.repo === r).flatMap((e) => e.agents))],
       github: await cachedSlug(r),
+      attention: repoAttention(r),
+      lastActive: await lastActive(r),
     })))
   },
   addRepo: async (): Promise<RepoInfo | null> => {
@@ -923,7 +1063,8 @@ function createWindow() {
       ? { titleBarStyle: 'hiddenInset' as const, trafficLightPosition: { x: 16, y: 18 } }
       : { autoHideMenuBar: true, icon: join(app.isPackaged ? process.resourcesPath : resolve(__dirname, '../resources'), 'tray.png') }),
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#000000' : '#ffffff',
-    webPreferences: { preload: join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true },
+    // 90%: at 100% the interface read as zoomed in, with more scrolling than the content needs. Cmd +/− still adjust it.
+    webPreferences: { preload: join(__dirname, 'preload.cjs'), contextIsolation: true, sandbox: true, zoomFactor: 0.9 },
   })
   win.once('ready-to-show', () => win?.show())
   // Smoke test of a packaged build (npm run smoke): did the interface really render? Exit 0 or 1.

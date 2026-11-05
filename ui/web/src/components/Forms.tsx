@@ -223,6 +223,12 @@ export function SettingsDialog() {
             <input type="checkbox" checked={draft.notifications ?? true} onChange={(e) => setDraft({ ...draft, notifications: e.target.checked })} />
             {t('notifyFinished')}
           </label>
+          {/* Unset until asked: off here, and turning it on is the user's own yes. */}
+          <label className="check">
+            <input type="checkbox" checked={(draft.notifications ?? true) && (draft.notifyReady ?? false)} disabled={draft.notifications === false}
+              onChange={(e) => setDraft({ ...draft, notifyReady: e.target.checked })} />
+            {t('notifyReady')}
+          </label>
           <label className="check">
             <input type="checkbox" checked={draft.menuBar ?? true} onChange={(e) => setDraft({ ...draft, menuBar: e.target.checked })} />
             {t('menuBar')}

@@ -1,6 +1,7 @@
-import { FolderGit2, LayoutDashboard, MessagesSquare, PanelLeftClose, PanelLeftOpen, Plus, Settings, X } from 'lucide-react'
+import { ChevronDown, CircleAlert, FolderGit2, LayoutDashboard, MessagesSquare, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, X } from 'lucide-react'
+import { useState } from 'react'
 import { GithubIcon } from './GithubIcon'
-import { agentVar } from '../agents'
+import { agentName, agentVar } from '../agents'
 import { Logo, Wordmark } from './Logo'
 import { useStore } from '../store'
 import type { RepoInfo } from '../types'
@@ -19,8 +20,22 @@ export function Sidebar() {
   const setView = useStore((s) => s.setView)
   const liveCount = repos.reduce((n, r) => n + (r.active?.length ?? 0), 0)
 
-  const active = repos.filter((r) => r.active?.length).sort((a, b) => a.name.localeCompare(b.name))
-  const rest = repos.filter((r) => !r.active?.length).sort((a, b) => a.name.localeCompare(b.name))
+  const current = useStore((s) => s.repo)
+  const [query, setQuery] = useState('')
+  const [showDormant, setShowDormant] = useState(() => { try { return localStorage.getItem('ramify-side-dormant') === '1' } catch { return false } })
+  const toggleDormant = () => { const v = !showDormant; setShowDormant(v); try { localStorage.setItem('ramify-side-dormant', v ? '1' : '0') } catch { /* storage unavailable */ } }
+
+  // Most recent activity first (a commit on any branch or an AI session); never active ones last, by name.
+  const byActivity = (a: RepoInfo, b: RepoInfo) => (b.lastActive ?? 0) - (a.lastActive ?? 0) || a.name.localeCompare(b.name)
+  const q = query.trim().toLowerCase()
+  const shown = repos.filter((r) => !q || r.name.toLowerCase().includes(q))
+  const active = shown.filter((r) => r.active?.length).sort(byActivity)
+  const rest = shown.filter((r) => !r.active?.length).sort(byActivity)
+  // Quiet for 30 days: folded at the end, unless searched for, open, or something there needs you.
+  const monthAgo = Date.now() - 30 * 86_400_000
+  const dormant = (r: RepoInfo) => !q && r.lastActive !== undefined && (r.lastActive ?? 0) < monthAgo && r.path !== current && !r.attention?.length
+  const awake = rest.filter((r) => !dormant(r))
+  const asleep = rest.filter(dormant)
 
   return (
     <>
@@ -58,7 +73,23 @@ export function Sidebar() {
             </>
           )}
           <span className="sidebar-label">{t('repositories')}</span>
-          <ul className="repo-list">{rest.map((r) => <RepoItem key={r.path} r={r} />)}</ul>
+          {repos.length > 8 && (
+            <label className="side-filter">
+              <Search size={13} />
+              <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} placeholder={t('filterRepos')} aria-label={t('filterRepos')} spellCheck={false} />
+              {query && <button type="button" className="side-filter-clear" onClick={() => setQuery('')} aria-label={t('close')}><X size={12} /></button>}
+            </label>
+          )}
+          <ul className="repo-list">{awake.map((r) => <RepoItem key={r.path} r={r} />)}</ul>
+          {q && shown.length === 0 && <p className="side-empty">{t('noRepoMatch')}</p>}
+          {asleep.length > 0 && (
+            <>
+              <button type="button" className={`side-dormant${showDormant ? ' is-open' : ''}`} onClick={toggleDormant} aria-expanded={showDormant}>
+                <ChevronDown size={13} /><span>{showDormant ? t('dormantHide') : t('dormantShow', { n: asleep.length })}</span>
+              </button>
+              {showDormant && <ul className="repo-list is-dormant">{asleep.map((r) => <RepoItem key={r.path} r={r} />)}</ul>}
+            </>
+          )}
           <button type="button" className="side-btn" onClick={() => addRepo()} title={t('addRepo')}><Plus size={16} /><span>{t('addRepo')}</span></button>
           {caps?.github && (
             <button type="button" className="side-btn" onClick={() => setModal('github')} title={t('github')}><GithubIcon size={16} /><span>{t('github')}</span></button>
@@ -81,11 +112,14 @@ function RepoItem({ r }: { r: RepoInfo }) {
   const view = useStore((s) => s.view)
   const t = useStore((s) => s.t)
   const working = (r.active ?? []).length > 0
+  const need = r.attention ?? []
+  const why = [...new Set(need)].map((x) => t(x === 'waiting' ? 'attnWaiting' : x === 'shared' ? 'attnShared' : x === 'main' ? 'attnMain' : 'attnReady'))
+  const branches = r.worktrees === 1 ? t('repoBranchesOne') : t('repoBranches', { n: r.worktrees })
 
   return (
     <li>
       <button type="button" className={`repo-item${r.path === repo && view !== 'sessions' && view !== 'control' ? ' is-active' : ''}`} onClick={() => setRepo(r.path)}
-        title={`${r.name}\n${r.path}${working ? `\n${r.active!.join(', ')}` : ''}`}>
+        title={[r.name, r.path, working ? r.active!.map(agentName).join(', ') : '', r.worktrees > 0 ? branches : '', ...why].filter(Boolean).join('\n')}>
         <span className="repo-avatar">
           <FolderGit2 size={15} className="repo-icon" />
           <span className="repo-initial">{r.name.slice(0, 2)}</span>
@@ -95,11 +129,12 @@ function RepoItem({ r }: { r: RepoInfo }) {
           <span className="repo-name">{r.name}</span>
           {working && (
             <span className="repo-agents">
-              {r.active!.map((a) => <span key={a} style={{ ['--c' as string]: agentVar(a) }}><span className="dot" />{a}</span>)}
+              {r.active!.map((a) => <span key={a} style={{ ['--c' as string]: agentVar(a) }}><span className="dot" />{agentName(a)}</span>)}
             </span>
           )}
         </span>
-        {r.worktrees > 0 && <span className="repo-count">{r.worktrees}</span>}
+        {need.length > 0 && <span className="repo-attn" role="img" aria-label={why.join(', ')}><CircleAlert size={14} />{need.length > 1 && <b>{need.length}</b>}</span>}
+        {r.worktrees > 0 && <span className="repo-count" aria-label={branches}>{r.worktrees}</span>}
       </button>
       <button type="button" className="repo-remove" onClick={() => removeRepo(r.path)} aria-label={`${t('removeRepo')}: ${r.name}`} title={t('removeRepo')}>
         <X size={13} />

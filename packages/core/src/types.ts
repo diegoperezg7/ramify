@@ -140,6 +140,10 @@ export interface RepoInfo {
   active?: string[]
   /** owner/name on GitHub, when the origin remote points there. */
   github?: string | null
+  /** Desktop: what needs the user here, one reason per session or ready branch (see attention.ts). */
+  attention?: ('waiting' | 'shared' | 'main' | 'ready')[]
+  /** Desktop: the latest commit on any branch or AI session here (ms), null when there is none. */
+  lastActive?: number | null
 }
 
 export interface GithubRepo {
@@ -177,6 +181,8 @@ export interface Settings {
   openAtLogin?: boolean
   /** Desktop: show the agent count in the menu bar. */
   menuBar?: boolean
+  /** Desktop: notify when a branch is ready to merge. Unset until the user is asked; asked once. */
+  notifyReady?: boolean
   /** The first-run introduction has been seen. */
   onboarded?: boolean
   /** Agents or apps (by name) the user does not want tracked. */
@@ -227,6 +233,15 @@ export interface InstalledTools {
 
 export type SessionVia = 'terminal' | 'ide' | 'app'
 export type SessionState = 'working' | 'idle' | 'waiting'
+/** A look into a running conversation (Claude Code transcripts). */
+export interface SessionGlance {
+  /** The last tool it used, on what (a file's name, a command), and when. */
+  action: { tool: string; target: string | null; at: number } | null
+  /** Files its edit tools wrote. */
+  files: number
+  /** Its replies per five minutes over the last hour, oldest first: when it worked and when it waited. */
+  pulse: number[]
+}
 
 /** One AI session seen on this machine: an agent CLI, an IDE's AI chat or a desktop AI app. */
 /** Work an open session runs alongside it, never kept in the history. */
@@ -268,6 +283,12 @@ export interface AgentSession {
   pr?: { number: number; url: string; state: string; title: string } | null
   /** What it is doing right now, when the agent reports it. */
   state?: SessionState
+  /** Claude Code: the task, from the first thing the user asked. Kept in the history. */
+  task?: string | null
+  /** Claude Code, while it runs: its last step, the files it edited and the last hour's activity. Never kept. */
+  glance?: SessionGlance
+  /** While open: why it needs the user, most urgent first (see attention.ts). Never kept. */
+  attention?: ('waiting' | 'shared' | 'main' | 'ready')[]
   start: number
   /** null while it is running. */
   end: number | null

@@ -1,10 +1,10 @@
 import { execFile } from 'node:child_process'
 import { closeSync, existsSync, fstatSync, openSync, readdirSync, readFileSync, readSync, realpathSync, statSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { basename, dirname, isAbsolute, join } from 'node:path'
 import { AI_APP_LIST, EDITORS, TERMINALS } from './catalog.ts'
 import { agentOf, exeOf } from './projects.ts'
-import type { AgentSession, SessionState, SessionVia } from './types.ts'
+import type { AgentSession, SessionGlance, SessionState, SessionVia } from './types.ts'
 
 // Every AI session on this machine, wherever it runs:
 //  - agent CLIs (claude, codex, gemini…) in any terminal, in tmux, or started by an IDE extension;
@@ -25,6 +25,10 @@ export interface LiveSession {
   /** Seen open, not a confirmed conversation (IDE chat, desktop apps). */
   inferred: boolean
   cwd: string | null
+  /** Claude Code: the folder of the last file it edited. It says where the work is better than a `cd` to look around. */
+  wrote?: string | null
+  /** Claude Code: the folders it was in before `cwd`, newest first: where a `cd` came from. */
+  before?: string[]
   start: number
   pid?: number
   /** What the agent is doing, when it says so (Claude Code does). */
@@ -36,6 +40,9 @@ export interface LiveSession {
   parentSessionId?: string
   agentName?: string
   agentType?: string | null
+  /** Claude Code: the task (first request) and a look at what it is doing (see transcriptGlance). */
+  task?: string | null
+  glance?: SessionGlance
 }
 
 /** A subagent working inside a Claude Code session (it has no process of its own). */
@@ -292,12 +299,15 @@ export async function scanSessions(env?: NodeJS.ProcessEnv, now = Date.now()): P
     const start = Math.round((now - proc.elapsed * 1000) / 1000) * 1000
     let cwd = cwds.get(proc.pid) ?? null
     let state: SessionState | undefined
-    let claude: Pick<LiveSession, 'sessionId' | 'subagents'> = {}
+    let claude: Pick<LiveSession, 'sessionId' | 'subagents' | 'wrote' | 'before' | 'task' | 'glance'> = {}
     if (agent === 'claude') {
       const ctx = claudeContext(proc.pid)
       if (ctx?.cwd) cwd = ctx.cwd
+      if (ctx?.wrote) claude.wrote = ctx.wrote
+      if (ctx?.before.length) claude.before = ctx.before
       state = ctx?.state
-      if (ctx?.sessionId) claude = { sessionId: ctx.sessionId, subagents: ctx.transcript ? claudeSubagents(ctx.transcript, start) : [] }
+      if (ctx?.sessionId) claude = { ...claude, sessionId: ctx.sessionId, subagents: ctx.transcript ? claudeSubagents(ctx.transcript, start) : [] }
+      if (ctx?.transcript) claude = { ...claude, ...transcriptGlance(ctx.transcript, now) }
     } else if (rollouts.has(proc.pid)) {
       cwd = lastCwd(rollouts.get(proc.pid)!) ?? cwd
     }
@@ -344,6 +354,25 @@ export function aiAppMain(proc: Proc, procs: Map<number, Proc>, win = WIN): stri
 // session files say where each conversation is: read them (locally, read-only) to find the project.
 
 /**
+ * Where a session works, from where its shell is (`cwd`), where it last edited files (`wrote`) and the folders it was
+ * in before (`before`, newest first), each already resolved to a repository and worktree.
+ * A `cd` from a worktree back to its repository's main checkout, to read or run something there, does not move the
+ * session: it stays on the worktree's branch, unless it also edits the main checkout. A session whose shell is outside
+ * any repository but edits in one belongs to it. Anything else follows the shell, so moving on to work elsewhere
+ * still moves it.
+ */
+export function workPlace<T extends { repo: string | null; worktree: string | null }>(cwd: T, wrote: T | null, before: T[] = []): T {
+  if (!cwd.repo) return wrote?.repo && wrote.worktree ? wrote : cwd
+  const same = (a: string, b: string) => a.replace(/[\\/]+$/, '').toLowerCase() === b.replace(/[\\/]+$/, '').toLowerCase()
+  const inRepo = (p: T | null | undefined): p is T => !!p?.repo && !!p.worktree && same(p.repo, cwd.repo!)
+  const inMain = (p: T) => same(p.worktree!, p.repo!)
+  if (!cwd.worktree || !inMain(cwd)) return cwd
+  if (inRepo(wrote)) return inMain(wrote) ? cwd : wrote
+  const back = before.find((p) => !!p.repo && same(p.repo, cwd.repo!))
+  return inRepo(back) && !inMain(back) ? back : cwd
+}
+
+/**
  * Caches that live as long as the app: one entry per transcript, session or subagent ever seen. A Map keeps the
  * order things went in, so past the cap the oldest go first.
  */
@@ -353,52 +382,221 @@ export function remember<K, V>(map: Map<K, V>, key: K, value: V, max = 500): voi
   for (const old of map.keys()) { if (map.size <= max) break; map.delete(old) }
 }
 
-const cwdCache = new Map<string, { stamp: string; cwd: string | null }>()
+/**
+ * Where a transcript leaves its session: the last "cwd", the folders it was in before that (newest first, each once,
+ * at most BEFORE) and the folder of the last file its edit tools wrote (Claude Code).
+ */
+export type Place = { cwd: string | null; before: string[]; wrote: string | null }
+/** Per transcript: how far it was read (just past its last complete line) and where that left the session. */
+const placeCache = new Map<string, { end: number; place: Place }>()
+const CHUNK = 1024 * 1024
+const MAX_BACK = 32 * 1024 * 1024
+/** Enough of the trail to look past a `cd` or two; reading back stops looking for more after TRAIL_BACK. */
+const BEFORE = 4
+const TRAIL_BACK = 4 * 1024 * 1024
 
-/** Last "cwd" recorded in a JSONL transcript (reads only its tail, and only when the file changed). */
-export function lastCwd(file: string, bytes = 256 * 1024): string | null {
-  let stamp = ''
-  try { const st = statSync(file); stamp = `${st.mtimeMs}:${st.size}` } catch { return null }
-  const hit = cwdCache.get(file)
-  if (hit?.stamp === stamp) return hit.cwd
-  const cwd = readLastCwd(file, bytes)
-  remember(cwdCache, file, { stamp, cwd })
-  return cwd
+/** Last "cwd" recorded in a JSONL transcript. */
+export function lastCwd(file: string): string | null {
+  return lastPlace(file).cwd
 }
 
-function readLastCwd(file: string, bytes: number): string | null {
+/**
+ * Where a transcript leaves its session (see Place). The first look reads back from the end, a chunk at a time, until
+ * it has what it needs (at most MAX_BACK): in a long conversation the last edit can be megabytes back. After that only
+ * what was appended is read, so a transcript is never read twice and a scan every few seconds costs its new lines.
+ */
+export function lastPlace(file: string): Place {
   let fd: number | null = null
   try {
     fd = openSync(file, 'r')
     const size = fstatSync(fd).size
-    const len = Math.min(size, bytes)
-    const buf = Buffer.alloc(len)
-    readSync(fd, buf, 0, len, size - len)
-    const lines = buf.toString('utf8').split('\n')
-    // The first line may be cut by the window: skip it unless the file is read whole.
-    for (let i = lines.length - 1; i >= (len < size ? 1 : 0); i--) {
-      if (!lines[i].includes('"cwd"')) continue
-      try {
-        const entry = JSON.parse(lines[i]) as { cwd?: unknown; payload?: { cwd?: unknown } }
-        // Top-level field (Claude Code) or the payload of a turn (Codex), never text quoted inside a message.
-        const cwd = typeof entry.cwd === 'string' ? entry.cwd : typeof entry.payload?.cwd === 'string' ? entry.payload.cwd : null
-        if (cwd) return cwd
-      } catch { /* not JSON */ }
-    }
-  } catch { /* unreadable */ } finally { if (fd !== null) closeSync(fd) }
+    const hit = placeCache.get(file)
+    if (hit?.end === size) return hit.place
+    // Grown: read the new lines. Shorter than before: rewritten, start over.
+    const next = hit && size > hit.end ? readForward(fd, hit.end, size, hit.place) : readBack(fd, size)
+    remember(placeCache, file, next)
+    return next.place
+  } catch { return { cwd: null, before: [], wrote: null } } finally { if (fd !== null) closeSync(fd) }
+}
+
+const EDIT_TOOLS = new Set(['Edit', 'MultiEdit', 'Write', 'NotebookEdit'])
+/** The folder of the last file an edit tool wrote in a Claude Code transcript line, or null. */
+function wroteIn(entry: { type?: unknown; message?: { content?: unknown } }): string | null {
+  if (entry.type !== 'assistant' || !Array.isArray(entry.message?.content)) return null
+  for (let i = entry.message.content.length - 1; i >= 0; i--) {
+    const c = entry.message.content[i] as { type?: unknown; name?: unknown; input?: { file_path?: unknown; notebook_path?: unknown } }
+    if (c?.type !== 'tool_use' || typeof c.name !== 'string' || !EDIT_TOOLS.has(c.name)) continue
+    const path = typeof c.input?.file_path === 'string' ? c.input.file_path : typeof c.input?.notebook_path === 'string' ? c.input.notebook_path : null
+    if (path && isAbsolute(path)) return dirname(path)
+  }
   return null
+}
+
+/** What one transcript line says: its "cwd" and the folder an edit tool in it wrote. Text quoted in a message never counts. */
+function parseLine(line: string, wantCwd: boolean, wantEdit: boolean): { cwd: string | null; wrote: string | null } | null {
+  wantCwd &&= line.includes('"cwd"')
+  wantEdit &&= line.includes('"tool_use"')
+  if (!wantCwd && !wantEdit) return null
+  try {
+    const entry = JSON.parse(line) as { cwd?: unknown; type?: unknown; payload?: { cwd?: unknown }; message?: { content?: unknown } }
+    // Top-level field (Claude Code) or the payload of a turn (Codex).
+    const cwd = !wantCwd ? null : typeof entry.cwd === 'string' ? entry.cwd : typeof entry.payload?.cwd === 'string' ? entry.payload.cwd : null
+    return { cwd, wrote: wantEdit ? wroteIn(entry) : null }
+  } catch { return null /* not JSON, or a line still being written */ }
+}
+
+function readAt(fd: number, from: number, to: number): Buffer {
+  const buf = Buffer.alloc(to - from)
+  readSync(fd, buf, 0, buf.length, from)
+  return buf
+}
+
+/** The lines appended since `from`, oldest first. A last line without its newline yet is left for the next read. */
+function readForward(fd: number, from: number, to: number, prev: Place): { end: number; place: Place } {
+  const buf = readAt(fd, from, to)
+  const nl = buf.lastIndexOf(10)
+  if (nl < 0) return { end: from, place: prev }
+  const place: Place = { cwd: prev.cwd, before: [...prev.before], wrote: prev.wrote }
+  for (const line of buf.subarray(0, nl).toString('utf8').split('\n')) {
+    const got = parseLine(line, true, true)
+    if (!got) continue
+    if (got.cwd && got.cwd !== place.cwd) {
+      if (place.cwd) place.before = [place.cwd, ...place.before.filter((p) => p !== place.cwd && p !== got.cwd)].slice(0, BEFORE)
+      place.cwd = got.cwd
+    }
+    if (got.wrote) place.wrote = got.wrote
+  }
+  return { end: from + nl + 1, place }
+}
+
+/** From the end backwards, a chunk at a time, until it has what it needs, the file starts or MAX_BACK is read. */
+function readBack(fd: number, size: number): { end: number; place: Place } {
+  const place: Place = { cwd: null, before: [], wrote: null }
+  const enough = (read: number) => !!place.cwd && !!place.wrote && (place.before.length >= BEFORE || read >= TRAIL_BACK)
+  let end = 0
+  let pos = size
+  let carry = Buffer.alloc(0)
+  let last = true
+  while (pos > 0 && size - pos < MAX_BACK && !enough(size - pos)) {
+    const start = Math.max(0, pos - CHUNK)
+    let data = Buffer.concat([readAt(fd, start, pos), carry])
+    if (last) {
+      // Lines are only read whole: a last one still being written waits for the next read.
+      const nl = data.lastIndexOf(10)
+      end = nl < 0 ? start : start + nl + 1
+      data = data.subarray(0, Math.max(0, nl))
+      last = false
+    }
+    // The first line of a chunk may start in the chunk before: it is kept and read with that one.
+    const cut = start === 0 ? -1 : data.indexOf(10)
+    carry = start === 0 ? Buffer.alloc(0) : data.subarray(0, cut < 0 ? data.length : cut)
+    const lines = start > 0 && cut < 0 ? [] : data.subarray(cut + 1).toString('utf8').split('\n')
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const trail = size - pos < TRAIL_BACK && place.before.length < BEFORE
+      const got = parseLine(lines[i], !place.cwd || trail, !place.wrote)
+      if (!got) continue
+      if (got.cwd && !place.cwd) place.cwd = got.cwd
+      else if (got.cwd && got.cwd !== place.cwd && !place.before.includes(got.cwd) && place.before.length < BEFORE) place.before.push(got.cwd)
+      if (got.wrote && !place.wrote) place.wrote = got.wrote
+    }
+    pos = start
+  }
+  return { end, place }
+}
+
+/**
+ * What a Claude Code transcript says about its session, for its card: the task (the first thing the user asked, read
+ * from the head of the file) and, from its lines, the last tool used, the files edited and the replies per five
+ * minutes of the last hour. The first look reads up to GLANCE_BACK from the end; after that only the new lines.
+ */
+type GlanceState = { end: number; task: string | null; action: SessionGlance['action']; files: Set<string>; times: number[] }
+const glanceCache = new Map<string, GlanceState>()
+const GLANCE_BACK = 16 * 1024 * 1024
+const TASK_HEAD = 512 * 1024
+const HOUR = 3_600_000
+const PULSE = 12
+
+/** The text of a user's request, or null for tool results, commands, reminders and other lines the app writes. */
+function requestIn(entry: { type?: unknown; isMeta?: unknown; message?: { content?: unknown } }): string | null {
+  if (entry.type !== 'user' || entry.isMeta) return null
+  const c = entry.message?.content
+  const text = typeof c === 'string' ? c : Array.isArray(c) ? c.map((x: { type?: unknown; text?: unknown }) => (x?.type === 'text' && typeof x.text === 'string' ? x.text : '')).join(' ') : ''
+  const clean = text.replace(/\s+/g, ' ').trim()
+  if (!clean || clean.startsWith('<') || clean.startsWith('Caveat:') || clean.startsWith('[Request interrupted')) return null
+  return clean.length > 160 ? `${clean.slice(0, 159)}…` : clean
+}
+
+/** What a tool call works on, short: a file's name, the first line of a command, a pattern, a query. */
+function targetOf(input: Record<string, unknown> | undefined): string | null {
+  if (!input) return null
+  const str = (k: string) => (typeof input[k] === 'string' && (input[k] as string).trim() ? (input[k] as string).trim() : null)
+  const file = str('file_path') ?? str('notebook_path') ?? str('path')
+  if (file) return basename(file)
+  const text = str('command') ?? str('pattern') ?? str('query') ?? str('url') ?? str('description') ?? str('subagent_type')
+  if (!text) return null
+  const line = text.split('\n')[0]
+  return line.length > 60 ? `${line.slice(0, 59)}…` : line
+}
+
+function readGlanceLines(g: GlanceState, text: string) {
+  for (const line of text.split('\n')) {
+    if (!line.includes('"assistant"')) continue
+    let entry: { type?: unknown; timestamp?: unknown; message?: { content?: unknown } }
+    try { entry = JSON.parse(line) } catch { continue }
+    if (entry.type !== 'assistant') continue
+    const at = typeof entry.timestamp === 'string' ? Date.parse(entry.timestamp) : NaN
+    if (!Number.isNaN(at)) g.times.push(at)
+    if (!Array.isArray(entry.message?.content)) continue
+    for (const c of entry.message.content as { type?: unknown; name?: unknown; input?: Record<string, unknown> }[]) {
+      if (c?.type !== 'tool_use' || typeof c.name !== 'string') continue
+      g.action = { tool: c.name, target: targetOf(c.input), at: Number.isNaN(at) ? 0 : at }
+      const path = typeof c.input?.file_path === 'string' ? c.input.file_path : typeof c.input?.notebook_path === 'string' ? c.input.notebook_path : null
+      if (EDIT_TOOLS.has(c.name) && path) g.files.add(path)
+    }
+  }
+}
+
+export function transcriptGlance(file: string, now = Date.now()): { task: string | null; glance: SessionGlance } {
+  let fd: number | null = null
+  let g = glanceCache.get(file)
+  try {
+    fd = openSync(file, 'r')
+    const size = fstatSync(fd).size
+    if (!g || size < g.end) {
+      g = { end: 0, task: null, action: null, files: new Set(), times: [] }
+      // The task: the first request in the head of the file.
+      for (const line of readAt(fd, 0, Math.min(size, TASK_HEAD)).toString('utf8').split('\n')) {
+        if (!line.includes('"user"')) continue
+        try { g.task = requestIn(JSON.parse(line)) } catch { continue }
+        if (g.task) break
+      }
+      g.end = Math.max(0, size - GLANCE_BACK)
+      // Started mid-file: the first line is cut, skip it.
+      if (g.end > 0) { const nl = readAt(fd, g.end, Math.min(size, g.end + CHUNK)).indexOf(10); g.end = nl < 0 ? size : g.end + nl + 1 }
+    }
+    if (size > g.end) {
+      const buf = readAt(fd, g.end, size)
+      const nl = buf.lastIndexOf(10)
+      if (nl >= 0) { readGlanceLines(g, buf.subarray(0, nl).toString('utf8')); g.end += nl + 1 }
+    }
+    g.times = g.times.filter((t) => t > now - HOUR)
+    remember(glanceCache, file, g)
+  } catch { /* unreadable: what was known */ } finally { if (fd !== null) closeSync(fd) }
+  const pulse = new Array<number>(PULSE).fill(0)
+  for (const t of g?.times ?? []) pulse[Math.min(PULSE - 1, Math.max(0, Math.floor((t - (now - HOUR)) / (HOUR / PULSE))))]++
+  return { task: g?.task ?? null, glance: { action: g?.action ?? null, files: g?.files.size ?? 0, pulse } }
 }
 
 const transcriptCache = new Map<string, string>()
 const missingSince = new Map<string, number>()
 /** Claude Code: ~/.claude/sessions/<pid>.json → session id and status → its transcript and that transcript's latest cwd. */
-export function claudeContext(pid: number, home = homedir()): { cwd: string | null; state?: SessionState; sessionId?: string; transcript?: string } | null {
+export function claudeContext(pid: number, home = homedir()): { cwd: string | null; before: string[]; wrote: string | null; state?: SessionState; sessionId?: string; transcript?: string } | null {
   let info: { sessionId?: string; status?: string; cwd?: string }
   try { info = JSON.parse(readFileSync(join(home, '.claude', 'sessions', `${pid}.json`), 'utf8')) } catch { return null }
   // A session id names a file in ~/.claude/projects: anything with path parts would read from elsewhere.
   if (typeof info.sessionId !== 'string' || !/^[\w-]+$/.test(info.sessionId)) info.sessionId = undefined
   const state: SessionState | undefined = info.status === 'busy' ? 'working' : info.status === 'idle' ? 'idle' : info.status === 'waiting' ? 'waiting' : undefined
-  let cwd: string | null = null
+  let place: Place = { cwd: null, before: [], wrote: null }
   let file: string | undefined
   if (info.sessionId) {
     file = transcriptCache.get(info.sessionId)
@@ -415,9 +613,9 @@ export function claudeContext(pid: number, home = homedir()): { cwd: string | nu
       if (file && existsSync(file)) missingSince.delete(info.sessionId)
       else remember(missingSince, info.sessionId, Date.now())
     }
-    if (file) cwd = lastCwd(file)
+    if (file) place = lastPlace(file)
   }
-  return { cwd: cwd ?? info.cwd ?? null, state, sessionId: info.sessionId, transcript: file }
+  return { cwd: place.cwd ?? info.cwd ?? null, before: place.before, wrote: place.wrote, state, sessionId: info.sessionId, transcript: file }
 }
 
 /**
@@ -523,6 +721,8 @@ export class SessionLog {
     this.sessions = saved.map((s) => {
       if (s.end !== null) return s
       const closed = { ...s, end: Math.min(s.lastSeen, now) }
+      delete closed.glance
+      delete closed.attention
       if (s.key) this.resumable!.set(s.key, closed)
       return closed
     })
@@ -553,11 +753,14 @@ export class SessionLog {
         if (l.cwd && (l.cwd !== cur.cwd || l.repo !== cur.repo)) Object.assign(cur, { cwd: l.cwd, repo: l.repo, branch: l.branch, github: l.github })
         else if (l.repo && l.branch !== cur.branch) cur.branch = l.branch
         cur.state = l.state
+        if (l.task) cur.task = l.task
+        if (l.glance) cur.glance = l.glance
         continue
       }
       const s: AgentSession = {
         id: `${l.key}:${l.start}`, key: l.key, agent: l.agent, host: l.host, via: l.via, inferred: l.inferred,
         cwd: l.cwd, repo: l.repo, branch: l.branch, github: l.github, start: l.start, end: null, lastSeen, state: l.state,
+        ...(l.task ? { task: l.task } : {}), ...(l.glance ? { glance: l.glance } : {}),
       }
       this.open.set(l.key, s)
       this.sessions.push(s)
@@ -569,6 +772,8 @@ export class SessionLog {
       if (seen.has(key)) continue
       s.end = s.via === 'ide' ? s.lastSeen : now
       delete s.state
+      delete s.glance
+      delete s.attention
       this.open.delete(key)
       ended.push(s)
     }
@@ -584,6 +789,8 @@ export class SessionLog {
     if (!s) return null
     s.end = now
     delete s.state
+    delete s.glance
+    delete s.attention
     if (s.key) this.open.delete(s.key)
     return s
   }

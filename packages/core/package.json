@@ -5,7 +5,7 @@
   "type": "module",
   "main": "src/index.ts",
   "scripts": {
-    "test": "node --test test/engine.test.ts test/activity.test.ts test/github-auth.test.ts test/host.test.ts test/timeline.test.ts test/control.test.ts test/ui-logic.test.ts test/setup.test.ts test/review-findings.test.ts",
+    "test": "node --test test/engine.test.ts test/activity.test.ts test/attention.test.ts test/github-auth.test.ts test/host.test.ts test/timeline.test.ts test/control.test.ts test/ui-logic.test.ts test/setup.test.ts test/review-findings.test.ts",
     "typecheck": "tsc -p .",
     "test:e2e": "node --test --test-concurrency=1 test/ui.e2e.ts"
   },

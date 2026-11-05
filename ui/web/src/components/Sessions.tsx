@@ -1,16 +1,22 @@
-import { AppWindow, Bot, Code2, Download, FolderGit2, GitBranch, GitPullRequest, MoreHorizontal, SquareTerminal, Trash2, Upload, Users, X } from 'lucide-react'
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { AppWindow, Bot, CircleAlert, Code2, Download, FileText, FolderGit2, GitBranch, GitPullRequest, MoreHorizontal, Pencil, Search, SquareTerminal, Trash2, Upload, Users, Wrench, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { bridge } from '../bridge'
-import { isActive } from '../logic'
+import { agentName } from '../agents'
+import { relTime } from '../i18n'
+import { isActive, unionMs } from '../logic'
 import { useStore } from '../store'
-import type { AgentChild, AgentSession } from '../types'
+import type { AgentChild, AgentSession, BranchHealth } from '../types'
 import { AgentBadge } from './AgentBadge'
 import { Dialog } from './Dialog'
 import { BrandIcon, hasBrand } from './BrandIcon'
 import { GithubIcon } from './GithubIcon'
+import { ActivityStrip, FillGrid, RepoWeek } from './SessionsInsights'
 import { Bar, SessionsSkeleton } from './Skeletons'
 
 type Range = 'today' | 'week' | 'all'
+
+/** Why a session needs you (the desktop app decides it, see core/attention.ts), as text keys. */
+const ATTN = { waiting: 'attnWaiting', shared: 'attnShared', main: 'attnMain', ready: 'attnReady' } as const
 
 const base = (p: string | null) => (p ? p.split('/').filter(Boolean).pop() ?? p : '')
 /** ['claude', 'claude', 'codex'] → "claude ×2, codex" */
@@ -58,6 +64,7 @@ export function Sessions() {
     try { for (const id of ids) await bridge.closeSession(id); await refreshSessions() } catch (e) { toast('error', (e as Error).message) } finally { setClosing(null) }
   }
   const now = Date.now()
+  const known = (repo: string | null) => !!repo && repos.some((r) => r.path === repo)
 
   const live = useMemo(() => (sessions ?? []).filter((s) => s.end === null), [sessions])
   // Running now: open and not idle at its prompt.
@@ -124,53 +131,65 @@ export function Sessions() {
     return [...seen.keys()]
   }, [sessions])
 
-  const fmt = new Intl.DateTimeFormat(lang, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })
   const exportAs = async (format: 'csv' | 'json') => {
     try {
       const { message } = await bridge.exportSessions(format)
       if (message) toast('ok', t('exported', { path: message }))
     } catch (e) { toast('error', (e as Error).message) }
   }
-  const known = (repo: string | null) => !!repo && repos.some((r) => r.path === repo)
 
-  // Live sessions by repository: one card per place, one row per agent (identical sessions folded with ×n).
-  const liveByRepo = useMemo(() => {
-    const cards = new Map<string, { key: string; repo: string | null; github: string | null; title: string; rows: { s: AgentSession; n: number; ids: string[]; keys: string[] }[] }>()
-    for (const { s, n, ids, keys } of groups) {
-      const key = s.via === 'app' ? '~apps' : s.repo ?? '~outside'
-      const card = cards.get(key) ?? { key, repo: s.repo, github: s.github, title: s.via === 'app' ? t('aiApps') : s.repo ? base(s.repo) : t('outsideRepo'), rows: [] }
-      card.rows.push({ s, n, ids, keys })
-      cards.set(key, card)
+  // A card per live session: repositories before the rest, busy before paused, then oldest first.
+  const liveCards = useMemo(() => {
+    const busy = (x: AgentSession) => Number(x.state === 'working' || x.state === 'waiting')
+    const outside = (x: AgentSession) => Number(x.via === 'app') * 2 + Number(!x.repo)
+    return [...groups].sort((a, b) => Number(a.s.inferred) - Number(b.s.inferred) || outside(a.s) - outside(b.s) || busy(b.s) - busy(a.s) || a.s.start - b.s.start)
+  }, [groups])
+  // Finished sessions of a minute or more (shorter ones still count in the figures), by the day they started.
+  const done = useMemo(() => history.filter((s) => s.end !== null && s.end - s.start >= 60_000), [history])
+  const shown = useMemo(() => done.slice(0, 400), [done])
+  const days = useMemo(() => {
+    const out: { day: number; list: AgentSession[]; ms: number }[] = []
+    for (const s of shown) {
+      const day = new Date(s.start).setHours(0, 0, 0, 0)
+      const last = out[out.length - 1]
+      if (last?.day === day) last.list.push(s)
+      else out.push({ day, list: [s], ms: 0 })
     }
-    const busy = (c: { rows: { s: AgentSession }[] }) => c.rows.some((r) => r.s.state === 'working' || r.s.state === 'waiting')
-    return [...cards.values()].sort((a, b) => Number(a.key.startsWith('~')) - Number(b.key.startsWith('~')) || Number(busy(b)) - Number(busy(a)) || a.title.localeCompare(b.title))
-  }, [groups, t])
+    for (const d of out) d.ms = unionMs(d.list.filter((s) => s.via !== 'app').map((s) => [s.start, s.end ?? now] as [number, number]))
+    return out
+  }, [shown, now])
+  const today = new Date(now).setHours(0, 0, 0, 0)
+  const rtf = new Intl.RelativeTimeFormat(lang, { numeric: 'auto' })
+  const dayFmt = new Intl.DateTimeFormat(lang, { weekday: 'long', day: 'numeric', month: 'long' })
+  const clockFmt = new Intl.DateTimeFormat(lang, { hour: '2-digit', minute: '2-digit' })
+  const dayTitle = (day: number) => {
+    const ago = Math.round((today - day) / 86_400_000)
+    const text = ago <= 1 ? rtf.format(-ago, 'day') : dayFmt.format(day)
+    return text.charAt(0).toUpperCase() + text.slice(1)
+  }
 
-  // Cards fill columns of equal height (the shortest column takes the next card), so no column ends
-  // in a hole. The repositories not on GitHub yet go below, on their own: a long card among short ones
-  // left the space under the short ones empty.
-  const [cols, setCols] = useState(2)
-  const observer = useRef<ResizeObserver | null>(null)
-  const gridRef = useCallback((el: HTMLDivElement | null) => {
-    observer.current?.disconnect()
-    if (!el) return
-    observer.current = new ResizeObserver(([e]) => setCols(Math.max(1, Math.floor((e.contentRect.width + 12) / 372))))
-    observer.current.observe(el)
-  }, [])
+  // Branch health of the repositories with an open session, for the commits and changes on each card.
+  const liveRepos = [...new Set(live.map((s) => s.repo).filter((r): r is string => !!r && known(r)))].sort().join('\n')
+  const [health, setHealth] = useState<Map<string, BranchHealth>>(new Map())
+  useEffect(() => {
+    if (!liveRepos) return
+    let alive = true
+    const load = async () => {
+      const out = new Map<string, BranchHealth>()
+      for (const repo of liveRepos.split('\n')) {
+        try { for (const b of (await bridge.health(repo)).branches) out.set(`${repo}#${b.branch}`, b) } catch { /* unreadable: no facts */ }
+      }
+      if (alive) setHealth(out)
+    }
+    void load()
+    const id = setInterval(() => { if (!document.hidden) void load() }, 15_000)
+    return () => { alive = false; clearInterval(id) }
+  }, [liveRepos])
+
   // Not on GitHub: the first few, the rest behind "show more" so the card does not outgrow the others.
   const UNPUB = 3
   const [allUnpub, setAllUnpub] = useState(false)
   const shownUnpub = allUnpub ? unpublished : unpublished.slice(0, UNPUB)
-  const columns = useMemo(() => {
-    const out = Array.from({ length: Math.max(1, Math.min(cols, liveByRepo.length)) }, () => ({ h: 0, cards: [] as typeof liveByRepo }))
-    for (const c of liveByRepo) {
-      const col = out.reduce((a, b) => (b.h < a.h ? b : a))
-      col.cards.push(c)
-      col.h += 1.2 + c.rows.length
-    }
-    return out.map((c) => c.cards)
-  }, [liveByRepo, cols])
-
   // A session (or its subagent, teammate, worktree) opens its repository on the branch it works on, once the
   // repository's state has loaded.
   const select = useStore((s) => s.select)
@@ -223,7 +242,7 @@ export function Sessions() {
         <span><b>{history.length}</b> {t('sumSessions')}</span>
         <span><b>{duration(stats.time)}</b> {t('sumTime')}</span>
         <span><b>{stats.projects}</b> {t('sumRepos')}</span>
-        {stats.top !== '—' && <span>{t('sumTop')} <AgentBadge agent={stats.top} size={16} /> <b>{stats.top}</b></span>}
+        {stats.top !== '—' && <span>{t('sumTop')} <AgentBadge agent={stats.top} size={16} /> <b>{agentName(stats.top)}</b></span>}
       </p>}
 
       {sessions === null ? (
@@ -253,67 +272,77 @@ export function Sessions() {
 
           <section className="sessions-section">
             {live.length === 0 && <p className="muted small">{sessions.length ? t('sessionsNoneLive') : t('sessionsNone')}</p>}
-            <div className="repo-cards" ref={gridRef}>
-              {columns.map((col, i) => (
-              <div key={i} className="repo-col">
-              {col.map((c) => (
-                <article key={c.key} className="repo-card">
-                  <header>
-                    {c.key === '~apps' ? <AppWindow size={15} /> : <FolderGit2 size={15} />}
-                    <b title={c.repo ?? undefined}>{c.title}</b>
-                    <span className="repo-card-actions">
-                      {c.github && <a className="icon-link" href={`https://github.com/${c.github}`} target="_blank" rel="noreferrer" title={c.github}><GithubIcon size={14} /></a>}
-                      {known(c.repo) && <button type="button" className="link" onClick={() => c.repo && setRepo(c.repo)}>{t('openRepo')}</button>}
-                    </span>
-                  </header>
-                  <ul>
-                    {c.rows.map(({ s, n, ids, keys }) => (
-                      <Fragment key={s.id}>
-                      <li className={`${s.inferred ? 'is-inferred' : ''}${known(s.repo) ? ' is-open' : ''}`} title={s.cwd ?? undefined}
-                        {...opener(s.repo, s.branch)}>
-                        <AgentBadge agent={s.agent} size={22} live={s.state === 'working'} />
-                        <span className="row-main">
-                          <span className="row-top">
-                            <b>{s.agent}</b>
-                            {n > 1 && <span className="live-count">×{n}</span>}
-                            {s.state && <span className={`state-chip is-${s.state}`}>{t(s.state === 'working' ? 'stateWorking' : s.state === 'waiting' ? 'stateWaiting' : 'stateIdle')}</span>}
-                            {s.inferred && <span className="tag" title={t('inferredHint')}>{t('inferred')}</span>}
-                          </span>
-                          <span className="row-sub muted">
-                            <ViaIcon via={s.via} host={s.host} />{s.host}
-                            {s.branch && <span className="mono">⎇ {s.branch}</span>}
-                            {!s.repo && s.cwd && <span className="mono">{tilde(s.cwd)}</span>}
-                            {s.pr && <a className="tag" href={s.pr.url} target="_blank" rel="noreferrer" title={s.pr.title} onClick={(e) => e.stopPropagation()}><GitPullRequest size={11} />#{s.pr.number}</a>}
-                          </span>
-                        </span>
-                        <span className="row-time mono">{duration(now - s.start)}</span>
+            {groups.length > 0 && (
+              // A card per session, rows filled edge to edge: the width carries them, not a long list.
+              <FillGrid n={liveCards.length} min={320} max={3}>
+                {liveCards.map(({ s, n, ids, keys }) => {
+                  const kids = keys.flatMap((k) => children[k] ?? [])
+                  const b = s.repo && s.branch ? health.get(`${s.repo}#${s.branch}`) : undefined
+                  return (
+                    <article key={s.id} className={`sess-card${s.inferred ? ' is-inferred' : ''}${known(s.repo) ? ' is-open' : ''}${s.state ? ` is-${s.state}` : ''}`}
+                      title={s.cwd ?? undefined} {...opener(s.repo, s.branch)}>
+                      <div className="sess-card-top">
+                        <AgentBadge agent={s.agent} size={24} live={s.state === 'working'} />
+                        <b>{agentName(s.agent)}</b>
+                        {n > 1 && <span className="live-count">×{n}</span>}
+                        {s.state && <span className={`state-chip is-${s.state}`}>{t(s.state === 'working' ? 'stateWorking' : s.state === 'waiting' ? 'stateWaiting' : 'stateIdle')}</span>}
+                        {s.inferred && <span className="tag" title={t('inferredHint')}>{t('inferred')}</span>}
+                        {!!s.attention?.length && (
+                          <span className="sess-attn" role="img" aria-label={s.attention.map((r) => t(ATTN[r])).join(', ')} title={s.attention.map((r) => t(ATTN[r])).join(' · ')}><CircleAlert size={15} /></span>
+                        )}
+                        <span className="sess-card-time mono">{duration(now - s.start)}</span>
                         <button type="button" className="icon-btn row-close" title={t('closeSession')} aria-label={t('closeSession')}
                           disabled={closing === s.id} onClick={(e) => { e.stopPropagation(); void closeSession(s.id, ids) }} onKeyDown={(e) => e.stopPropagation()}><X size={13} /></button>
-                      </li>
-                      {keys.flatMap((k) => children[k] ?? []).map((ch) => (
-                        <li key={`${ch.kind}:${ch.id}`} className={`child-row${known(ch.repo) ? ' is-open' : ''}`} title={ch.cwd ?? undefined} {...opener(ch.repo, ch.branch)}>
-                          <ChildIcon kind={ch.kind} />
-                          <span className="row-main">
-                            <span className="row-top">
+                      </div>
+                      <Place s={s} />
+                      {s.task && <p className="sess-card-task" title={s.task}>{s.task}</p>}
+                      {s.glance && (s.glance.action || s.glance.pulse.some(Boolean)) && (
+                        <div className="sess-card-now">
+                          {s.glance.action && (
+                            <span className="sess-card-action" title={s.glance.action.target ?? undefined}>
+                              <ActionIcon tool={s.glance.action.tool} />
+                              <span>{actionText(t, s.glance.action)}</span>
+                              {s.glance.action.at > 0 && <span className="muted">· {relTime(lang, Math.floor(s.glance.action.at / 1000), Math.floor(now / 1000))}</span>}
+                            </span>
+                          )}
+                          <span className="sess-card-pulse"><small>{t('pulseLabel')}</small><Pulse values={s.glance.pulse} label={t('pulseLabel')} /></span>
+                        </div>
+                      )}
+                      <div className="sess-card-foot">
+                      <div className="sess-card-meta">
+                        <span><ViaIcon via={s.via} host={s.host} />{s.host}</span>
+                        <span>{t('ccStarted', { when: relTime(lang, Math.floor(s.start / 1000), Math.floor(now / 1000)) })}</span>
+                        <Links s={s} />
+                      </div>
+                      {((b && (b.ahead > 0 || b.uncommitted > 0 || b.added + b.deleted > 0 || b.main)) || !!s.glance?.files) && (
+                        <div className="cc-facts">
+                          {!!s.glance?.files && <span className="chip">{t(s.glance.files === 1 ? 'filesEditedOne' : 'filesEdited', { n: s.glance.files })}</span>}
+                          {b && b.ahead > 0 && <span className="chip">{b.ahead === 1 ? t('ccAheadOne') : t('ccAhead', { n: b.ahead })}</span>}
+                          {b && b.uncommitted > 0 && <span className="chip chip-warn">{t('ccUncommitted', { n: b.uncommitted })}</span>}
+                          {b && b.added + b.deleted > 0 && <span className="chip cc-size"><ins>+{b.added}</ins> <del>−{b.deleted}</del></span>}
+                          {b?.main && s.state !== 'idle' && <span className="chip chip-warn">{t('ccOnMain')}</span>}
+                        </div>
+                      )}
+                      {kids.length > 0 && (
+                        <ul className="sess-card-kids">
+                          {kids.map((ch) => (
+                            <li key={`${ch.kind}:${ch.id}`} className={known(ch.repo) ? 'is-open' : ''} title={ch.description ?? ch.cwd ?? undefined}
+                              {...opener(ch.repo, ch.branch)} onClick={(e) => { e.stopPropagation(); openAt(ch.repo, ch.branch) }}>
+                              <ChildIcon kind={ch.kind} />
                               <b>{ch.label}</b>
                               <span className="tag">{t(ch.kind === 'subagent' ? 'childSubagent' : ch.kind === 'teammate' ? 'childTeammate' : ch.kind === 'worktree' ? 'childWorktree' : ch.spawned ? 'childCodexSub' : 'childCodex')}</span>
                               {ch.working && <span className="state-chip is-working">{t(ch.kind === 'codex' ? 'childRecent' : 'stateWorking')}</span>}
-                            </span>
-                            <span className="row-sub muted">
-                              {ch.description && <span className="child-desc">{ch.description}</span>}
-                              {ch.branch ? <span className="mono">⎇ {ch.branch}</span> : ch.cwd && <span className="mono">{tilde(ch.cwd)}</span>}
-                            </span>
-                          </span>
-                        </li>
-                      ))}
-                      </Fragment>
-                    ))}
-                  </ul>
-                </article>
-              ))}
-              </div>
-              ))}
-            </div>
+                              {ch.branch && ch.branch !== ch.label && <span className="mono muted">⎇ {ch.branch}</span>}
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      </div>
+                    </article>
+                  )
+                })}
+              </FillGrid>
+            )}
             {unpublished.length > 0 && (
                 <article key="~unpublished" className="repo-card unpub-card">
                   <header><Upload size={15} /><b>{t('notOnGithub')}</b></header>
@@ -334,33 +363,39 @@ export function Sessions() {
             )}
           </section>
 
+          {/* The days and, beside their figures, the repositories: one block whose chart takes the height, no gaps. */}
+          <ActivityStrip sessions={sessions} days={range === 'all' ? 30 : 7} now={now}>
+            <RepoWeek sessions={sessions} now={now} onOpen={(r) => openAt(r, null)} />
+          </ActivityStrip>
+
           <section className="sessions-section">
             <h2 className="pane-kicker">{t('sessionsHistory')}</h2>
-            <div className="hist" role="table">
-              <div className="hist-row hist-head" role="row">
-                <span role="columnheader">{t('colAgent')}</span><span role="columnheader">{t('colWhere')}</span>
-                <span role="columnheader">{t('colProject')}</span><span role="columnheader">{t('colStart')}</span>
-                <span role="columnheader">{t('colDuration')}</span><span role="columnheader">GitHub</span>
+            {/* Finished sessions only (the open ones are the cards above), smaller cards, as many across as fit. */}
+            {done.length === 0 ? <p className="muted small">{t(sessions.length ? 'historyNoneDone' : 'sessionsNone')}</p> : days.map((d) => (
+              <div key={d.day} className="sess-day">
+                <h3 className="sess-day-head"><b>{dayTitle(d.day)}</b><span className="muted">{d.list.length} · {duration(d.ms)}</span></h3>
+                <FillGrid n={d.list.length} min={250} max={4} className="is-compact">
+                  {d.list.map((s) => (
+                    <article key={s.id} className={`sess-card${known(s.repo) ? ' is-open' : ''}`} title={s.cwd ?? undefined} {...opener(s.repo, s.branch)}>
+                      <div className="sess-card-top">
+                        <AgentBadge agent={s.agent} size={18} />
+                        <b>{agentName(s.agent)}</b>
+                        {s.inferred && <span className="tag" title={t('inferredHint')}>{t('inferred')}</span>}
+                        <span className="sess-card-time mono">{duration((s.end ?? now) - s.start)}</span>
+                      </div>
+                      <Place s={s} />
+                      {s.task && <p className="sess-card-task is-one" title={s.task}>{s.task}</p>}
+                      <div className="sess-card-meta sess-card-foot">
+                        <span className="mono">{clockFmt.format(s.start)}</span>
+                        <span><ViaIcon via={s.via} host={s.host} />{s.host}</span>
+                        <Links s={s} />
+                      </div>
+                    </article>
+                  ))}
+                </FillGrid>
               </div>
-              {history.slice(0, 400).map((s) => (
-                <div key={s.id} className={`hist-row${s.end === null ? ' is-live' : ''}`} role="row">
-                  <span className="hist-agent"><AgentBadge agent={s.agent} size={18} live={s.end === null} />{s.agent}</span>
-                  <span className="hist-where"><ViaIcon via={s.via} host={s.host} />{s.host}{s.inferred && <span className="tag" title={t('inferredHint')}>{t('inferred')}</span>}</span>
-                  <span className="hist-project" title={s.cwd ?? undefined}>
-                    {s.repo ? <>{known(s.repo) ? <button type="button" className="link" onClick={() => setRepo(s.repo!)}>{base(s.repo)}</button> : base(s.repo)}
-                      {s.branch && <span className="mono muted"> ⎇ {s.branch}</span>}</> : <span className="muted">{s.cwd ? (tilde(s.cwd) === '~' ? '~' : base(s.cwd)) : '—'}</span>}
-                  </span>
-                  <span className="mono muted">{fmt.format(s.start)}</span>
-                  <span className="mono">{duration((s.end ?? now) - s.start)}</span>
-                  <span className="hist-gh">
-                    {s.github ? <a href={`https://github.com/${s.github}`} target="_blank" rel="noreferrer" title={s.github}><GithubIcon size={13} /></a> : <span className="muted">—</span>}
-                    {s.pr && <a className="tag" href={s.pr.url} target="_blank" rel="noreferrer" title={s.pr.title}><GitPullRequest size={11} />#{s.pr.number}</a>}
-                  </span>
-                </div>
-              ))}
-              {history.length > 400 && <p className="muted small hist-empty">{t('historyCapped', { n: 400, total: history.length })}</p>}
-              {history.length === 0 && <p className="muted small hist-empty">{t('sessionsNone')}</p>}
-            </div>
+            ))}
+            {done.length > 400 && <p className="muted small">{t('historyCapped', { n: 400, total: done.length })}</p>}
           </section>
         </>
       )}
@@ -386,6 +421,60 @@ export function Sessions() {
         </Dialog>
       )}
     </main>
+  )
+}
+
+/** The last step of a session in words: "Editing Sessions.tsx", "Running npm test". */
+function actionText(t: ReturnType<typeof useStore.getState>['t'], a: { tool: string; target: string | null }): string {
+  const target = a.target ?? ''
+  if (/^(Edit|MultiEdit|Write|NotebookEdit)$/.test(a.tool)) return t('actEdit', { target })
+  if (a.tool === 'Read') return t('actRead', { target })
+  if (a.tool === 'Bash') return t('actRun', { target })
+  if (a.tool === 'Grep' || a.tool === 'Glob') return t('actSearch', { target })
+  if (a.tool === 'Task' || a.tool === 'Agent') return t('actAgent')
+  if (a.tool === 'WebFetch' || a.tool === 'WebSearch') return t('actWeb')
+  if (a.tool === 'TodoWrite') return t('actTodo')
+  return t('actOther', { tool: a.tool.replace(/^mcp__[^_]+__/, '') })
+}
+
+function ActionIcon({ tool }: { tool: string }) {
+  if (/^(Edit|MultiEdit|Write|NotebookEdit)$/.test(tool)) return <Pencil size={13} />
+  if (tool === 'Bash') return <SquareTerminal size={13} />
+  if (tool === 'Read') return <FileText size={13} />
+  if (tool === 'Grep' || tool === 'Glob' || tool === 'WebSearch' || tool === 'WebFetch') return <Search size={13} />
+  if (tool === 'Task' || tool === 'Agent') return <Bot size={13} />
+  return <Wrench size={13} />
+}
+
+/** The last hour in five-minute slots: how much the agent replied in each, the newest on the right. */
+function Pulse({ values, label }: { values: number[]; label: string }) {
+  const max = Math.max(1, ...values)
+  return (
+    <span className="pulse-bars" role="img" aria-label={label} title={label}>
+      {values.map((v, i) => <i key={i} className={v ? '' : 'is-zero'} style={{ height: v ? `${Math.max(18, (v / max) * 100)}%` : undefined }} />)}
+    </span>
+  )
+}
+
+/** Where a session works: the repository and its branch, or the folder outside one, or the AI app. */
+function Place({ s }: { s: AgentSession }) {
+  const t = useStore((st) => st.t)
+  return (
+    <div className="sess-card-place">
+      {s.via === 'app' ? <AppWindow size={14} /> : <FolderGit2 size={14} />}
+      {s.repo ? <b>{base(s.repo)}</b> : s.via === 'app' ? <span className="muted">{t('aiApps')}</span> : s.cwd && tilde(s.cwd) !== '~' ? <><b>{base(s.cwd)}</b><span className="muted">{t('outsideRepo')}</span></> : <span className="muted">{t('outsideRepo')}</span>}
+      {s.repo && s.branch && <span className="mono muted">⎇ {s.branch}</span>}
+    </div>
+  )
+}
+
+/** GitHub and the pull request, when there are; links that do not open the card. */
+function Links({ s }: { s: AgentSession }) {
+  return (
+    <>
+      {s.github && <a className="icon-link" href={`https://github.com/${s.github}`} target="_blank" rel="noreferrer" title={s.github} onClick={(e) => e.stopPropagation()}><GithubIcon size={13} /></a>}
+      {s.pr && <a className="tag" href={s.pr.url} target="_blank" rel="noreferrer" title={s.pr.title} onClick={(e) => e.stopPropagation()}><GitPullRequest size={11} />#{s.pr.number}</a>}
+    </>
   )
 }
 
