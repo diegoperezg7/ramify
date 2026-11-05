@@ -198,7 +198,7 @@ instalar esas piezas, compilar desde el código o saber cómo funciona por dentr
 
 ## Estado
 
-**Versión 0.7.5.** App de escritorio para macOS (Apple silicon) y Windows (x64), extensión de VS Code / Cursor,
+**Versión 0.7.6.** App de escritorio para macOS (Apple silicon) y Windows (x64), extensión de VS Code / Cursor,
 CLI y plugin de Claude Code, todo compilado desde este repositorio.
 
 - **Probado:** 131 tests del núcleo, 10 tests de la interfaz en un navegador real y 103 del CLI en cada push; la batería
