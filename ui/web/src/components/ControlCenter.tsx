@@ -8,7 +8,7 @@ import { Dialog } from './Dialog'
 import { GithubIcon } from './GithubIcon'
 import { ActivityCharts, DayPanel, NowPanel } from './Dashboard'
 import { HEAT_DAYS, Heatmap } from './Heatmap'
-import { friendlyMerge, MergeError, nextAction, type Action } from '../logic'
+import { friendlyMerge, mergeWords, MergeError, nextAction, type Action } from '../logic'
 
 /** Pull requests of ~400 changed lines or more are hard to review: say so. */
 const BIG = 400
@@ -180,6 +180,12 @@ export function ControlCenter() {
         <section key={board.repo} className="repo-card cc-board">
           <header className="cc-clickable" onClick={(e) => { if (!fromControl(e)) setRepo(board.repo) }}>
             <FolderGit2 size={15} /><b>{board.name}</b><span className="muted small">⎇ {board.health.base}</span>
+            {/* The base against GitHub (after the last fetch): behind means every branch here is compared with an old base. */}
+            {!!board.health.sync?.behind && <span className="chip chip-warn" title={board.health.sync.upstream}>{t('ccBaseBehind', { n: board.health.sync.behind, upstream: board.health.sync.upstream })}</span>}
+            {!!board.health.sync?.behind && !board.health.sync.ahead && (
+              <button type="button" className="link" disabled={busy.has(board.repo)} onClick={() => void run(board.repo, () => bridge.updateBase(board.repo))}>{t('ccUpdateBase', { base: board.health.base })}</button>
+            )}
+            {!!board.health.sync?.ahead && <span className="chip" title={board.health.sync.upstream}>{t('ccBaseAhead', { n: board.health.sync.ahead, upstream: board.health.sync.upstream })}</span>}
             <span className="repo-card-actions">
               {board.github && <a className="icon-link" href={`https://github.com/${board.github}`} target="_blank" rel="noreferrer" title={board.github}><GithubIcon size={14} /></a>}
               <button type="button" className="link" onClick={() => setRepo(board.repo)}>{t('openRepo')}</button>
@@ -250,7 +256,7 @@ export function ControlCenter() {
             const key = b.path
             if (action === 'move') void run(key, () => bridge.moveToBranch(board.repo, b.running[0] || b.agent || 'claude'))
             if (action === 'pr') void run(key, () => bridge.openPr(board.repo, b.path))
-            if (action === 'merge') void run(key, () => friendlyMerge(() => bridge.merge(board.repo, b.path), { branch: b.branch, base: board.health.base, path: b.path }, t('mergedOk', { branch: b.branch, base: board.health.base }), t('mergedRebuilt', { branch: b.branch, base: board.health.base }))
+            if (action === 'merge') void run(key, () => friendlyMerge(() => bridge.merge(board.repo, b.path), { branch: b.branch, base: board.health.base, path: b.path }, t('mergedOk', { branch: b.branch, base: board.health.base }), t('mergedRebuilt', { branch: b.branch, base: board.health.base }), mergeWords(t, b.branch, board.health.base))
               .then((r) => { setMergeDone({ branch: b.branch, base: board.health.base, rebuilt: r.rebuilt }); return r }))
             if (action === 'remove') void run(key, () => bridge.remove(board.repo, b.path, false))
           }}>

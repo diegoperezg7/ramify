@@ -134,6 +134,14 @@ describe('merge notification', () => {
     assert.deepEqual(await friendlyMerge(async () => ({ message: ' a.ts | 3 ++-\n 1 file changed' }), ctx, 'ok', 'rebuilt'), { message: 'ok', rebuilt: false })
     assert.deepEqual(await friendlyMerge(async () => ({ message: 'merged feat/x; regenerated: ui/dist/index.html' }), ctx, 'ok', 'rebuilt'), { message: 'rebuilt', rebuilt: true })
   })
+  it('says when it went in on GitHub, when main here stayed behind, and when main was not pushed', async () => {
+    const words = { github: (n: string) => `gh #${n}`, githubStale: (n: string, why: string) => `gh #${n}, stale: ${why}`, notPushed: (why: string) => `not pushed: ${why}` }
+    const merged = async (message: string) => (await friendlyMerge(async () => ({ message }), ctx, 'ok', 'rebuilt', words)).message
+    assert.equal(await merged('merged on GitHub: #12 (squash)\nfeat/x deleted on GitHub\nmain ← origin/main (1 commit(s))'), 'gh #12')
+    assert.equal(await merged('merged on GitHub: #12 (squash)\nnot updated here: local changes in the way'), 'gh #12, stale: local changes in the way')
+    assert.equal(await merged('Merge made by the ort strategy.\nnot pushed to origin/main: rejected (protected branch)'), 'not pushed: rejected (protected branch)')
+    assert.equal(await merged('Merge made by the ort strategy.\npushed to origin/main'), 'ok')
+  })
   it('turns a failed merge into the reason and the files, for a dialog', async () => {
     const conflict = 'merge conflict, nothing was changed:\nconflict: src/a.ts\nconflict: README.md\nCONFLICT (content): Merge conflict in src/a.ts'
     await assert.rejects(friendlyMerge(async () => { throw new Error(conflict) }, ctx, 'ok', 'rebuilt'),

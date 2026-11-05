@@ -196,11 +196,30 @@ export class MergeError extends Error {
  * Merge with a short message on success (a different one when generated files were rebuilt along the way)
  * and a MergeError, with its reason, on failure.
  */
-export async function friendlyMerge(merge: () => Promise<unknown>, ctx: { branch: string; base: string; path: string }, ok: string, okRebuilt: string): Promise<{ message: string; rebuilt: boolean }> {
+/** What a merge did beyond this machine, in the words for the user. Each takes what the engine said. */
+export interface MergeWords {
+  github: (pr: string) => string
+  githubStale: (pr: string, why: string) => string
+  notPushed: (why: string) => string
+}
+
+export const mergeWords = (t: (key: 'mergedGithub' | 'mergedGithubStale' | 'mergedNotPushed', vars: Record<string, string>) => string, branch: string, base: string): MergeWords => ({
+  github: (n) => t('mergedGithub', { n, branch, base }),
+  githubStale: (n, why) => t('mergedGithubStale', { n, branch, base, why }),
+  notPushed: (why) => t('mergedNotPushed', { branch, base, why }),
+})
+
+export async function friendlyMerge(merge: () => Promise<unknown>, ctx: { branch: string; base: string; path: string }, ok: string, okRebuilt: string, words?: MergeWords): Promise<{ message: string; rebuilt: boolean }> {
   let out: unknown
   try { out = await merge() } catch (e) { throw new MergeError(mergeProblem((e as Error).message, ctx)) }
   const said = typeof out === 'string' ? out : (out as { message?: string } | undefined)?.message ?? ''
   const rebuilt = /regenerated: /.test(said)
+  // The engine's lines: "merged on GitHub: #12 (squash)", "not updated here: …", "not pushed to origin/main: …".
+  const pr = /^merged on GitHub: #(\d+)/m.exec(said)?.[1]
+  const stale = /^not updated here: (.*)$/m.exec(said)?.[1]
+  const unpushed = /^not pushed to \S+: ([\s\S]*)$/m.exec(said)?.[1]?.trim()
+  if (words && pr) return { message: stale ? words.githubStale(pr, stale) : words.github(pr), rebuilt }
+  if (words && unpushed) return { message: words.notPushed(unpushed), rebuilt }
   return { message: rebuilt ? okRebuilt : ok, rebuilt }
 }
 

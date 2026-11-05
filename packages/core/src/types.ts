@@ -109,15 +109,26 @@ export interface BranchHealth {
   /** Commits not pushed to its upstream; null when it has no upstream. */
   unpushed: number | null
   lastCommit: number | null
-  /** Everything it had is in the base already. */
+  /** Everything it had is in the base already, by history or through its merged (squashed) pull request. */
   merged: boolean
   /** Other branches that change some of the same files. */
   overlaps: string[]
 }
 
-export interface Health { base: string; branches: BranchHealth[] }
+/** The base against its remote branch (main against origin/main), after the last fetch. */
+export interface BaseSync {
+  /** The remote branch it tracks, e.g. origin/main. */
+  upstream: string
+  /** Commits on the remote the local base does not have. */
+  behind: number
+  /** Local commits on the base that are not on the remote. */
+  ahead: number
+}
 
-export interface PullRequest { number: number; url: string; state: 'OPEN' | 'MERGED' | 'CLOSED'; draft: boolean; title: string; branch: string }
+export interface Health { base: string; branches: BranchHealth[]; /** Null when the base tracks no remote branch. */ sync?: BaseSync | null }
+
+/** head: the commit the pull request points at (its branch's tip on GitHub), when known. */
+export interface PullRequest { number: number; url: string; state: 'OPEN' | 'MERGED' | 'CLOSED'; draft: boolean; title: string; branch: string; head?: string }
 
 export interface CreateRequest {
   branch: string
@@ -356,6 +367,8 @@ export interface Bridge {
   pullRequests(repo: string): Promise<PullRequest[]>
   /** Bring the base's new commits into a worktree's branch (merge; aborted on conflict). */
   updateFromBase(repo: string, path: string): Promise<{ message: string }>
+  /** Bring the base up to its remote branch (main ← origin/main), fast-forward only. */
+  updateBase(repo: string): Promise<{ message: string }>
   /** Push a worktree's branch and open a draft pull request for it. */
   openPr(repo: string, path: string): Promise<{ message: string }>
   /** Commits per day (unix day start → count) across all branches, for the last `days` days. */

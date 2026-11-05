@@ -511,8 +511,10 @@ cmd_graph() {
 }
 
 # Remove a worktree. Never deletes a branch with unmerged commits: it is kept.
+# squashed: the commit a merged pull request had as its head (the caller asked GitHub). A squash merge leaves
+# the branch out of the base's history, so the branch goes too, but only while its tip is still that commit.
 remove_wt() {
-  local main="$1" wt="$2" force="$3" branch
+  local main="$1" wt="$2" force="$3" squashed="${4:-}" branch
   [ -n "$wt" ] && [ -d "$wt" ] || die "no such worktree: '$wt'"
   [ "$wt" != "$main" ] || die "that is the main checkout"
   branch=$(git -C "$wt" branch --show-current 2>/dev/null || true)
@@ -530,7 +532,10 @@ remove_wt() {
         die "detached HEAD with commits on no branch in $wt (create a branch for them, or use --force)"
       fi
     fi
-    if [ -n "$branch" ] && ! git -C "$main" merge-base --is-ancestor "$branch" HEAD \
+    if [ -n "$squashed" ] && [ "$(git -C "$main" rev-parse --verify --quiet "refs/heads/$branch")" != "$squashed" ]; then
+      die "branch $branch has moved since its pull request was merged (--force removes the worktree and keeps the branch)"
+    fi
+    if [ -n "$branch" ] && [ -z "$squashed" ] && ! git -C "$main" merge-base --is-ancestor "$branch" HEAD \
        && [ "$(git -C "$wt" rev-list --count '@{u}..HEAD' 2>/dev/null || echo x)" != 0 ]; then
       die "branch $branch has commits that are neither merged nor pushed (--force removes the worktree and keeps the branch)"
     fi
@@ -539,8 +544,11 @@ remove_wt() {
   if [ "$force" = 1 ]; then git -C "$main" worktree remove --force "$wt" >&2
   else git -C "$main" worktree remove "$wt" >&2; fi
   rm -rf "$ROOT/$(basename "$main")/.derived-data/$(basename "$wt")"
+  # The worktree goes first: git refuses to delete a branch still checked out in one.
   if [ -n "$branch" ]; then
-    if git -C "$main" merge-base --is-ancestor "$branch" HEAD; then
+    if [ -n "$squashed" ] && [ "$force" != 1 ]; then
+      git -C "$main" branch -D "$branch" >/dev/null 2>&1 && log "${D}branch $branch deleted (its pull request was merged)${N}"
+    elif git -C "$main" merge-base --is-ancestor "$branch" HEAD; then
       git -C "$main" branch -d "$branch" >/dev/null 2>&1 && log "${D}branch $branch deleted (already merged)${N}"
     else
       log "${Y}branch $branch kept (has commits not in $(git -C "$main" branch --show-current))${N}"
@@ -996,10 +1004,14 @@ case "$sub" in
     main=$(main_checkout "$PWD"); find_wt "$main" "$1" ;;
   rm|remove)
     [ $# -gt 0 ] || { usage; exit 1; }
-    force=0; [ "${2:-}" = --force ] && force=1
+    force=0; squashed=""
+    case "${2:-}" in
+      --force) force=1 ;;
+      --squashed) [[ "${3:-}" =~ ^[0-9a-f]{40}$ ]] || die "--squashed needs the full commit of the merged pull request"; squashed=$3 ;;
+    esac
     main=$(main_checkout "$PWD")
     wt=$(find_wt "$main" "$1")
-    remove_wt "$main" "$wt" "$force" ;;
+    remove_wt "$main" "$wt" "$force" "$squashed" ;;
   prune) cmd_prune ;;
   hook) cmd_hook "$@" ;;
   run) cmd_run "$@" ;;

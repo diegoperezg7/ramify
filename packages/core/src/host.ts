@@ -56,6 +56,7 @@ export function createHandlers(o: HostOptions): Handlers {
     health: async (r: string) => engine.health(await repo(r)),
     pullRequests: async (r: string) => engine.pullRequests(await repo(r)),
     updateFromBase: async (r: string, path: string) => { strings(path); return { message: await engine.updateFromBase(await repo(r), path) } },
+    updateBase: async (r: string) => ({ message: await engine.updateBase(await repo(r)) }),
     openPr: async (r: string, path: string) => { strings(path); return { message: await engine.openPr(await repo(r), path) } },
     commitDays: async (r: string, days: number) => {
       if (typeof days !== 'number' || !Number.isInteger(days) || days < 1 || days > 400) throw new Error('bad arguments')
