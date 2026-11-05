@@ -674,6 +674,7 @@ cmd_hook() {
       done
       # The claim goes when this ends, also when create stops: a failed name must not stay reserved.
       # (The path is fixed now: these variables are local and gone by the time the script exits.)
+      # shellcheck disable=SC2064
       trap "rmdir -- $(printf '%q' "$ROOT/$repo/.claims/$slug") 2>/dev/null || true" EXIT
       CREATE_SESSION=$session create "$branch" "" 1 claude
       printf '%s\n' "$CREATED_WT" ;;
