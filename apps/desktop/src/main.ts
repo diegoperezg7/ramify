@@ -297,12 +297,15 @@ const workingCount = () => [...busyAt.values()].reduce((sum, e) => sum + e.agent
 
 let firstScan = true
 let scanning = false
+/** Worktrees whose sessions the user closed, or whose repository they removed: gone, but no agent finished there. */
+const dismissed = new Set<string>()
 async function monitor() {
   if (scanning) return
   scanning = true
   let next: Live[]
   try { next = await scan() } catch { return } finally { scanning = false }
-  const finished = firstScan ? [] : live.filter((l) => !next.some((n) => n.path === l.path))
+  const finished = firstScan ? [] : live.filter((l) => !next.some((n) => n.path === l.path) && !dismissed.has(l.path))
+  dismissed.clear()
   firstScan = false
   live = next
   const n = workingCount()
@@ -688,7 +691,11 @@ const handlers = {
     return addPath(res.filePaths[0])
   },
   addRepoPath: (path: string) => { strings(path); return addPath(path) },
-  removeRepo: (path: string) => { strings(path); config.repos = config.repos.filter((r) => r !== path); writeConfig() },
+  removeRepo: (path: string) => {
+    strings(path)
+    for (const l of live) if (l.repo === path) dismissed.add(l.path)
+    config.repos = config.repos.filter((r) => r !== path); writeConfig()
+  },
   github: (refresh?: boolean) => listGithub(!!refresh),
   cloneRepo: async (nameWithOwner: string): Promise<RepoInfo> => {
     strings(nameWithOwner)
@@ -709,7 +716,10 @@ const handlers = {
   agentChildren: async () => children,
   closeSession: async (id: string) => {
     strings(id)
-    if (!sessionLog.close(id)) throw new EngineError('unknown session')
+    const closed = sessionLog.close(id)
+    if (!closed) throw new EngineError('unknown session')
+    const at = await resolveCwd(closed.cwd)
+    if (at.worktree) dismissed.add(at.worktree)
     saveSessions(true)
     await monitor()
   },
