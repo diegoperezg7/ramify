@@ -66,11 +66,12 @@ muestra en el centro de control. Cuando uno termina, revisa sus cambios y lléva
 
 ### Ver quién está trabajando ahora mismo
 
-<img src="docs/app-control.png" alt="Centro de control: cinco agentes trabajando ahora, cada uno con su proyecto, su rama, cuánto lleva y qué ha cambiado">
+<img src="docs/app-control.png" alt="Centro de control: seis agentes trabajando ahora, cada uno con su proyecto, su rama, cuánto lleva y qué ha cambiado; uno marcado porque te necesita">
 
 Una tarjeta por cada asistente trabajando: cuál es, en qué proyecto y rama, desde cuándo y qué ha cambiado hasta
-ahora. Si no hay nadie trabajando, te enseña dónde y con qué asistentes trabajaste por última vez. Si uno empieza a
-cambiar la versión principal de tu proyecto, aparece un aviso con un botón para llevarlo a su propia rama.
+ahora. El que se ha parado a preguntarte algo lo dice. Si no hay nadie trabajando, te enseña dónde y con qué
+asistentes trabajaste por última vez. Si uno empieza a cambiar la versión principal de tu proyecto, aparece un aviso
+con un botón para llevarlo a su propia rama.
 
 ### Ver cuánto y cuándo trabajan tus asistentes
 
@@ -81,19 +82,30 @@ por día de cada asistente y cualquier día hora a hora: quién trabajó cuándo
 
 ### Tu historial de un vistazo, y cualquier día al detalle
 
-<img src="docs/app-heatmap.png" alt="Un año de commits en una cuadrícula, la racha actual y el día con más commits, y un día abierto con sus commits por proyecto y sus sesiones de IA">
+<img src="docs/app-heatmap.png" alt="Un año de commits en una cuadrícula, la racha actual y el día con más commits, y un día abierto: sus cifras, los commits hora a hora, un carril por proyecto con sus commits y sus sesiones de IA, y los commits de cada proyecto">
 
 Un año de trabajo en una cuadrícula de cuadraditos, tu racha actual y tu día con más trabajo. Pulsa cualquier
-cuadradito para abrir ese día: qué se guardó en cada proyecto y qué asistentes trabajaron en él.
+cuadradito para abrir ese día: cuánto se guardó y a qué horas, un carril por proyecto con sus commits y los
+asistentes que trabajaron en él, y qué se guardó en cada uno.
 
 ### Todas las conversaciones de IA de tu ordenador
 
-<img src="docs/app-sessions.png" alt="Sesiones de IA: cada agente trabajando ahora con su terminal, proyecto y rama, y el historial de sesiones anteriores">
+<img src="docs/app-sessions.png" alt="Sesiones de IA: una tarjeta por agente trabajando ahora con su tarea, su último paso, su actividad en la última hora, los archivos que ha editado y los commits y cambios de su rama, y uno que te necesita">
 
-Asistentes en cualquier terminal, el chat de tu editor y las apps de IA de escritorio, encontrados solos. Bajo cada
-uno, los agentes que ha lanzado y la rama en la que trabaja cada uno: subagentes de Claude Code en plena tarea,
-compañeros de un equipo de agentes en su propio panel, worktrees que ha creado un subagente y los hilos de Codex de la
-app de ChatGPT. Un historial de cada sesión (dónde, en qué proyecto y cuánto tiempo), exportable a una hoja de cálculo.
+Asistentes en cualquier terminal, el chat de tu editor y las apps de IA de escritorio, encontrados solos. Una tarjeta
+por conversación: qué se le pidió, su último paso, cuánto ha trabajado en la última hora, los archivos que ha editado
+y qué tiene su rama. Dentro de cada una, los agentes que ha lanzado y la rama en la que trabaja cada uno: subagentes de
+Claude Code en plena tarea, compañeros de un equipo de agentes en su propio panel, worktrees que ha creado un subagente
+y los hilos de Codex de la app de ChatGPT. Debajo, las horas con IA por día, los proyectos de la semana y un historial
+de cada sesión agrupado por días, exportable a una hoja de cálculo.
+
+### Saber cuándo te necesita un asistente
+
+La barra de menús cuenta en ámbar los asistentes que te necesitan: uno esperando una respuesta, dos trabajando en la
+misma rama, uno cambiando la versión principal directamente o uno que terminó en una rama lista para llevar al
+proyecto. En violeta, los que están trabajando; ábrela para ver qué hace cada uno. El Dock muestra la misma cuenta, la
+barra lateral marca los proyectos con algo que mirar y una notificación te avisa una sola vez cuando una rama está
+lista (Ramify te pregunta antes y puedes quitarla en Ajustes).
 
 ### Ver exactamente qué ha cambiado cada asistente
 
@@ -156,6 +168,7 @@ Cualquier otro agente también funciona: Ramify lanza el comando que le digas.
 | Rama nueva para un agente | Copiar `.env`, instalar dependencias, buscar un puerto libre… | Un comando o un clic |
 | Qué hace cada agente | Ir saltando entre pestañas de terminal | Una pantalla, en vivo, detectado solo |
 | Un agente trabajando en `main` | Te enteras después | Un aviso y una rama con un clic |
+| Un agente esperando una respuesta | Lo ves al cambiar de pestaña | Una cuenta en ámbar en la barra de menús |
 | Qué cambió cada agente | `git diff` en cada carpeta | Diff estilo GitHub por rama |
 | Las ramas del mes pasado | Olvidadas | Una línea de tiempo, mergeadas incluidas |
 
