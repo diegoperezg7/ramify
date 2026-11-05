@@ -447,7 +447,8 @@ export class Engine {
     if ((await this.git(path, 'status', '--porcelain')).trim()) throw new EngineError('the worktree has uncommitted changes')
     const r = await this.run('git', ['-C', repo, 'merge', '--no-ff', '--no-edit', wt.branch])
     if (r.code === 0) return r.stdout.trim()
-    const conflicted = (await this.git(repo, 'diff', '--name-only', '--diff-filter=U')).split('\n').map((f) => f.trim()).filter(Boolean)
+    // -z: names with accents or spaces come through as they are, not quoted and escaped.
+    const conflicted = (await this.git(repo, 'diff', '--name-only', '-z', '--diff-filter=U')).split('\0').filter(Boolean)
     const rebuilt = conflicted.length ? await this.rebuildGenerated(repo, conflicted) : null
     if (rebuilt?.ok) return `merged ${wt.branch}; regenerated: ${conflicted.join(', ')}`
     await this.run('git', ['-C', repo, 'merge', '--abort'])
@@ -467,11 +468,13 @@ export class Engine {
     // Mid-merge, the working tree already holds what the branch brought: only the script and the attributes the
     // base had are trusted, never ones the branch being merged adds or changes.
     if ((await this.run('git', ['-C', repo, 'diff', '--cached', '--quiet', 'HEAD', '--', '.worktree/merge.sh', '.gitattributes'])).code !== 0) return null
-    const attrs = await this.git(repo, 'check-attr', 'ramify-generated', '--', ...files)
-    const generated = new Set(attrs.split('\n').filter((l) => l.endsWith(': ramify-generated: set')).map((l) => l.slice(0, -': ramify-generated: set'.length)))
+    // -z: path, attribute, value, each ended by NUL, with the path as it is (no quoting of accents).
+    const attrs = (await this.git(repo, 'check-attr', '-z', 'ramify-generated', '--', ...files)).split('\0')
+    const generated = new Set<string>()
+    for (let i = 0; i + 2 < attrs.length; i += 3) if (attrs[i + 2] === 'set') generated.add(attrs[i])
     if (!files.every((f) => generated.has(f))) return null
     // Either side will do: the script rebuilds them anyway. (A file deleted on one side has no "theirs": fine.)
-    await this.run('git', ['-C', repo, 'checkout', '--theirs', '--', ...files])
+    await this.run('git', ['-C', repo, 'checkout', '--theirs', '--', ...files.map((f) => `:(literal)${f}`)])
     const tail = (out: string) => out.trim().split('\n').slice(-12).join('\n')
     const s = await this.run(WIN ? gitBash(this.env) : 'bash', [WIN ? script.replace(/\\/g, '/') : script], repo)
     if (s.code !== 0) return { ok: false, output: tail(s.stdout + s.stderr) }

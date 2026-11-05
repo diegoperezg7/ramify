@@ -208,6 +208,23 @@ describe('file names that look like patterns', () => {
   })
 })
 
+describe('merging generated files with accented names', () => {
+  it('rebuilds a generated file whose name has an accent', async () => {
+    const env = { RAMIFY_ROOT: join(T, 'wts-accent'), GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' }
+    const own = new Engine({ bin: BIN, env })
+    const R = repo()
+    git(R, 'config', 'core.autocrlf', 'false')
+    mkdirSync(join(R, 'dist')); writeFileSync(join(R, 'dist', 'café.txt'), 'a\n'); writeFileSync(join(R, 'src.txt'), 'a\n')
+    writeFileSync(join(R, '.gitattributes'), 'dist/** ramify-generated\n')
+    mkdirSync(join(R, '.worktree')); writeFileSync(join(R, '.worktree', 'merge.sh'), '#!/bin/bash\ncp src.txt dist/café.txt\n')
+    git(R, 'add', '.'); git(R, 'commit', '-qm', 'base')
+    const wt = (await own.create(R, { branch: 'feat/x', agent: '' })).path
+    writeFileSync(join(wt, 'dist', 'café.txt'), 'branch\n'); git(wt, 'commit', '-qam', 'branch output')
+    writeFileSync(join(R, 'dist', 'café.txt'), 'base\n'); git(R, 'commit', '-qam', 'base output')
+    assert.match(await own.merge(R, wt), /regenerated: dist\/café\.txt/)
+  })
+})
+
 describe('setup undo', () => {
   it('removing a block whose end line the user deleted keeps the rest of the file', () => {
     const text = ['export A=1', '# >>> ramify >>>', 'export PATH=x', 'alias ll="ls -l"', 'export B=2'].join('\n')
