@@ -89,7 +89,8 @@ export function activate(ctx: vscode.ExtensionContext) {
     panel.webview.html = page(panel.webview)
     const webview = panel.webview
     answer(webview, () => { if (!ready) { ready = true; for (const m of queued.splice(0)) void webview.postMessage(m) } })
-    panel.onDidDispose(() => { panel = undefined; ready = false })
+    // What was waiting for this page goes with it: a closed panel must not replay it in the next one.
+    panel.onDidDispose(() => { panel = undefined; ready = false; queued.length = 0 })
   }
 
   // Activity bar: the branch tree of this repository in the side bar, the dashboard a click away.
