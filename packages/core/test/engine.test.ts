@@ -19,6 +19,8 @@ const env = {
 }
 const sh = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { env: { ...process.env, ...env } }).toString()
 const engine = new Engine({ bin: BIN, env })
+// The script sees agents through lsof, which some systems (the Linux CI runner) do not have.
+const hasLsof = (() => { try { execFileSync('sh', ['-c', 'command -v lsof'], { stdio: 'ignore' }); return true } catch { return false } })()
 
 before(() => {
   sh(T, 'init', '-q', '-b', 'main', REPO)
@@ -57,7 +59,7 @@ describe('engine', () => {
     assert.equal(s.commits.find((c) => c.subject === 'init')?.owner, null)
   })
 
-  it('takes an agent idle at its prompt out of the running ones, even when the script sees its process', { skip: process.platform === 'win32' }, async () => {
+  it('takes an agent idle at its prompt out of the running ones, even when the script sees its process', { skip: process.platform === 'win32' || !hasLsof ? 'needs lsof' : false }, async () => {
     const wt = P(ROOT, 'shop', 'feat-x')
     // A node process working in the worktree: the script takes it for the worktree's agent (claude).
     const proc = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { cwd: wt, stdio: 'ignore' })
