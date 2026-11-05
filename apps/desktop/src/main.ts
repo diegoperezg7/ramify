@@ -135,7 +135,8 @@ async function worktreesOf(repo: string) {
 
 const sessionsFile = join(app.getPath('userData'), 'sessions.json')
 function readSessions(): AgentSession[] {
-  try { return JSON.parse(readFileSync(sessionsFile, 'utf8')) as AgentSession[] } catch { return [] }
+  // Anything but a list (null, an object) would stop the app at every start: start with an empty history instead.
+  try { const saved: unknown = JSON.parse(readFileSync(sessionsFile, 'utf8')); return Array.isArray(saved) ? saved as AgentSession[] : [] } catch { return [] }
 }
 const sessionLog = new SessionLog(readSessions())
 let sessionsWritten = 0
@@ -143,7 +144,12 @@ function saveSessions(force: boolean) {
   // Changes are written at once; "still running" heartbeats at most once a minute.
   if (!force && Date.now() - sessionsWritten < 60_000) return
   sessionLog.prune(5000, config.settings.historyDays ?? 90)
-  try { writeFileSync(sessionsFile, JSON.stringify(sessionLog.sessions)); sessionsWritten = Date.now() } catch { /* next scan retries */ }
+  // Written aside and renamed: a crash or a full disk mid-write leaves the previous history, never a cut file.
+  try {
+    writeFileSync(`${sessionsFile}.tmp`, JSON.stringify(sessionLog.sessions))
+    renameSync(`${sessionsFile}.tmp`, sessionsFile)
+    sessionsWritten = Date.now()
+  } catch { /* next scan retries */ }
 }
 
 async function resolveCwd(cwd: string | null): Promise<Resolved & { worktree: string | null }> {
