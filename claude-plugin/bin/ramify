@@ -416,6 +416,9 @@ cmd_ls() {
           if ! git -C "$cur" rev-parse -q --verify '@{u}' >/dev/null 2>&1; then sync=local
           else sync=$(git -C "$cur" rev-list --count '@{u}..HEAD'); [ "$sync" = 0 ] && sync=pushed || sync="+$sync"; fi
           port=$(env_get "$cur" PORT); agent=$(env_get "$cur" WT_AGENT)
+          # .worktree.env can come from the repository itself (a clone that ships one): a port is digits or nothing,
+          # never text that bash arithmetic or the JSON below would run or splice in.
+          [[ $port =~ ^[0-9]{1,5}$ ]] || port=""
           active=$(agents_in "$procs" "$cur" "$agent")
           if [ "$json" = 1 ]; then
             [ "$first" = 1 ] || printf ','; first=0

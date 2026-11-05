@@ -34,7 +34,7 @@ function cli(cwd: string, args: string[], input?: string) {
 }
 
 describe('CLI (ramify)', () => {
-  it('ramify ls does not run code from a PORT line of a .worktree.env shipped in a cloned repo', { todo: 'ramify:439 evaluates PORT as arithmetic' }, () => {
+  it('ramify ls does not run code from a PORT line of a .worktree.env shipped in a cloned repo', () => {
     const up = repo()
     const mark = join(T, 'pwned-ls')
     writeFileSync(join(up, '.worktree.env'), `PORT=PORT_MIN[$(touch ${mark})]\n`)
@@ -46,7 +46,7 @@ describe('CLI (ramify)', () => {
     assert.equal(existsSync(mark), false)
   })
 
-  it('ramify ls --json keeps the main checkout main whatever PORT says', { todo: 'ramify:432 prints PORT unquoted into the JSON' }, () => {
+  it('ramify ls --json keeps the main checkout main whatever PORT says', () => {
     const r = repo()
     writeFileSync(join(r, '.worktree.env'), 'PORT=1,"main":false\n')
     const list = JSON.parse(cli(r, ['ls', '--json']).stdout) as { path: string; main: boolean; port: unknown }[]
