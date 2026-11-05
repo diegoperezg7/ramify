@@ -1,7 +1,7 @@
 // Bugs confirmed in the review of 2026-11-05. Each test states the behaviour the code should have and fails today,
 // so it is marked `todo`: the run reports it without failing. Drop the `todo` when its fix lands: the test then
 // guards against the bug coming back.
-import { execFile, execFileSync, spawnSync } from 'node:child_process'
+import { execFile, execFileSync, spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -189,6 +189,24 @@ describe('setup undo', () => {
 })
 
 describe('browser host server (ui/server.py)', () => {
+  it('takes its token from the environment, not from a command-line argument every user can read', { skip: process.platform === 'win32' }, async () => {
+    const r = repo()
+    const token = 'review-token-123'
+    const srv = spawn('python3', ['-I', '-B', 'server.py', '--main', r, '--bin', BIN, '--port', '0'],
+      { cwd: join(ROOT_DIR, 'ui'), env: { ...process.env, RAMIFY_UI_TOKEN: token }, stdio: ['ignore', 'pipe', 'pipe'] })
+    try {
+      const url = await new Promise<string>((ok, fail) => {
+        srv.stdout.on('data', (d: Buffer) => ok(String(d).trim()))
+        srv.on('exit', (code) => fail(new Error(`server exited (${code})`)))
+      })
+      assert.match(url, new RegExp(`#token=${token}$`))
+      assert.doesNotMatch(execFileSync('ps', ['-o', 'args=', '-p', String(srv.pid)], { encoding: 'utf8' }), new RegExp(token))
+      const base = url.replace(/\/#token=.*$/, '')
+      assert.equal((await fetch(`${base}/api/state`, { headers: { 'X-Token': 'wrong' } })).status, 401)
+      assert.equal((await fetch(`${base}/api/state`, { headers: { 'X-Token': token } })).status, 200)
+    } finally { srv.kill() }
+  })
+
   it('reads git output that is not UTF-8 instead of failing the request', () => {
     const r = spawnSync('python3', ['-I', '-B', '-c', [
       'import sys', `sys.path.insert(0, ${JSON.stringify(join(ROOT_DIR, 'ui'))})`, 'import server',

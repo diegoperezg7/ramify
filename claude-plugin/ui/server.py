@@ -4,6 +4,7 @@ Started by `ramify ui`. Listens on 127.0.0.1, every API call needs the session
 token, and mutating actions go through the ramify CLI so they keep its safety rules.
 """
 import argparse
+import hmac
 import json
 import mimetypes
 import os
@@ -284,7 +285,7 @@ def make_handler(dash, token, port):
         def guard(self):
             if self.headers.get("Host") not in allowed_hosts:
                 self.send(403, {"error": "bad host"}); return False
-            if self.headers.get("X-Token") != token:
+            if not hmac.compare_digest(self.headers.get("X-Token", "").encode(), token.encode()):
                 self.send(401, {"error": "bad token"}); return False
             return True
 
@@ -346,8 +347,11 @@ def main():
     ap.add_argument("--main", required=True)
     ap.add_argument("--bin", required=True)
     ap.add_argument("--port", type=int, default=0)
-    ap.add_argument("--token", required=True)
+    # The token comes in RAMIFY_UI_TOKEN: a command-line argument is visible to every user of the machine (ps).
+    ap.add_argument("--token", default=os.environ.get("RAMIFY_UI_TOKEN"))
     a = ap.parse_args()
+    if not a.token:
+        ap.error("the token is missing (RAMIFY_UI_TOKEN or --token)")
     if not (DIST / "index.html").is_file():
         sys.exit(f"ramify ui: missing {DIST}/index.html (build it with: cd ui/web && npm ci && npm run build)")
     dash = Dashboard(a.main, a.bin)

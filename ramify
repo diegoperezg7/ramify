@@ -564,7 +564,7 @@ cmd_ui() {
   if [ -f "$SELF_DIR/ui/server.py" ]; then cd "$SELF_DIR/ui"
   elif [ -f "$SELF_DIR/../ui/server.py" ]; then cd "$SELF_DIR/../ui"
   else die "dashboard files not found next to $SELF_DIR"; fi
-  python3 -I server.py --main "$main" --bin "$SELF_DIR/ramify" --port "$port" --token "$token" \
+  RAMIFY_UI_TOKEN=$token python3 -I server.py --main "$main" --bin "$SELF_DIR/ramify" --port "$port" \
     | while IFS= read -r url; do
         log "${B}ramify ui${N}  $url  ${D}(Ctrl-C to stop)${N}"
         if [ "$open_browser" = 1 ]; then
