@@ -1333,22 +1333,37 @@ kbd {
 .merge-done { width: min(440px, calc(100vw - 32px)); }
 .merge-done .mp-head { margin-bottom: 4px; }
 
-/* side branches: thin git lanes down the left and right margins of the window, starting under the top bar, in the
-   logo's colours. They live in the side padding only (never under text or buttons), behind everything, never
-   clickable, fading out downwards; the page background stays pure white or pure black. */
+/* Branches in the window's margins, drawn on one canvas (LivingBranches.tsx): still ones under the top bar, and one
+   more out of the bottom corners for every agent working. Only in the side padding and the strip under the status
+   bar (never under text or buttons), behind everything, never clickable; the page background stays pure white or
+   pure black. A narrow window has almost no margin: no branches there. */
 .app { position: relative; isolation: isolate; }
-.app::before, .app::after {
-  content: ''; position: absolute; top: calc(var(--topbar-h) + 6px); z-index: -1; width: 24px; height: 340px; pointer-events: none;
-  background: url("data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%2224%22 height=%22340%22 viewBox=%220 0 24 340%22 fill=%22none%22 stroke-linecap=%22round%22 stroke-width=%221.6%22%3E%3Cpath d=%22M7 0 V340%22 stroke=%22%23a855f7%22/%3E%3Cpath d=%22M7 26 C7 46 18 40 18 60 V150 C18 170 7 166 7 186%22 stroke=%22%23fb923c%22/%3E%3Cpath d=%22M7 206 C7 226 18 220 18 240 V318%22 stroke=%22%2338bdf8%22/%3E%3Ccircle cx=%227%22 cy=%2212%22 r=%223%22 fill=%22%23a855f7%22/%3E%3Ccircle cx=%2218%22 cy=%2296%22 r=%223%22 fill=%22%23fb923c%22/%3E%3Ccircle cx=%2218%22 cy=%22132%22 r=%223%22 fill=%22%23fb923c%22/%3E%3Ccircle cx=%227%22 cy=%22196%22 r=%223%22 fill=%22%23a855f7%22/%3E%3Ccircle cx=%2218%22 cy=%22272%22 r=%223%22 fill=%22%2338bdf8%22/%3E%3C/svg%3E") no-repeat top left / 24px 340px;
-  -webkit-mask-image: linear-gradient(to bottom, #000 45%, transparent); mask-image: linear-gradient(to bottom, #000 45%, transparent);
-  opacity: 0.5;
+.living-branches { position: absolute; top: 0; left: 0; z-index: -1; pointer-events: none; overflow: visible; }
+.app.is-sm .living-branches { display: none; }
+/* The same strokes and nodes as the branch tree (.edge, .node), a size smaller to fit the margin. */
+.lb-stop { stop-color: var(--lane-base); stop-opacity: 0.6; }
+.lb-stop.is-clear { stop-opacity: 0; }
+.lb-base { fill: none; stroke-width: 2; stroke-linecap: round; }
+.lb-edge { fill: none; stroke: var(--c); stroke-width: 2.2; stroke-linecap: round; }
+.lb-commit { fill: var(--c); stroke: var(--bg); stroke-width: 1.5; transform-box: fill-box; transform-origin: center; }
+.lb-commit.is-base { fill: var(--lane-base); }
+.lb-merge { fill: var(--bg); stroke: var(--c); stroke-width: 1.8; }
+.lb-tip { fill: var(--c); stroke: var(--bg); stroke-width: 1.5; transform-box: fill-box; transform-origin: center; }
+.lb-live { fill: var(--c); opacity: 0; transform-box: fill-box; transform-origin: center; }
+:root[data-theme='dark'] :is(.lb-commit, .lb-tip, .lb-merge) { filter: drop-shadow(0 0 4px rgb(255 255 255 / 0.18)); }
+@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) :is(.lb-commit, .lb-tip, .lb-merge) { filter: drop-shadow(0 0 4px rgb(255 255 255 / 0.18)); } }
+/* An agent's branch: drawn in from the fork, then its commits pop in one by one and the live tip starts to pulse;
+   when the agent stops it all folds back into the base lane. */
+.lb-slot .lb-edge { stroke-dasharray: 1; stroke-dashoffset: 1; transition: stroke-dashoffset 0.6s cubic-bezier(0.4, 0, 0.6, 1) 0.2s; }
+.lb-slot.is-on .lb-edge { stroke-dashoffset: 0; transition: stroke-dashoffset 1.1s cubic-bezier(0.3, 0.7, 0.2, 1); }
+.lb-slot :is(.lb-commit, .lb-tip) { transform: scale(0); transition: transform 0.25s ease-in; }
+.lb-slot.is-on .lb-commit { transform: scale(1); transition: transform 0.45s cubic-bezier(0.3, 1.6, 0.5, 1) var(--d); }
+.lb-slot.is-on .lb-tip { transform: scale(1); transition: transform 0.45s cubic-bezier(0.3, 1.6, 0.5, 1) 1s; }
+.lb-slot.is-on .lb-live { animation: tip-pulse 1.8s ease-out 1.3s infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .lb-slot .lb-edge, .lb-slot.is-on .lb-edge, .lb-slot :is(.lb-commit, .lb-tip), .lb-slot.is-on :is(.lb-commit, .lb-tip) { transition: none; }
+  .lb-slot.is-on .lb-live { animation: none; }
 }
-.app::before { left: max(0px, calc(var(--pad-x) - 26px)); }
-.app::after { right: max(0px, calc(var(--pad-x) - 26px)); transform: scaleX(-1); }
-:root[data-theme='dark'] .app::before, :root[data-theme='dark'] .app::after { opacity: 0.6; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) .app::before, :root:not([data-theme='light']) .app::after { opacity: 0.6; } }
-/* A narrow window has almost no side margin: no lanes there. */
-.app.is-sm::before, .app.is-sm::after { display: none; }
 
 /* Uncommitted work of every worktree, on the tip of its branch (Git Graph shows it only for the open checkout). */
 .graph-row .ref-pending { border-style: dashed; border-color: color-mix(in srgb, var(--c) 70%, transparent); background: transparent; color: var(--text); }
