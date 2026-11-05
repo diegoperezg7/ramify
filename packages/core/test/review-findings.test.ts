@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { after, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { SessionLog, sessionsCsv, claudeContext, type LiveSession, type Resolved } from '../src/activity.ts'
-import { riskyGitConfig } from '../src/engine.ts'
+import { Engine, riskyGitConfig } from '../src/engine.ts'
 import { withoutBlock } from '../src/setup.ts'
 import type { AgentSession } from '../src/types.ts'
 
@@ -130,6 +130,26 @@ describe('git settings of a folder opened from a link', () => {
     assert.notDeepEqual(check('[filter.evil]\n\tclean = touch pwned\n'), [])
     assert.notDeepEqual(check('[include]\n\tpath = ../x.cfg\n', ['x.cfg', '[filter "f"]\n\tclean = touch pwned\n']), [])
     assert.notDeepEqual(check('[commit]\n\tgpgsign = true\n[gpg]\n\tprogram = /tmp/evil\n'), [])
+  })
+})
+
+describe('merging generated files', () => {
+  it('runs only the merge.sh the base has, never one the merged branch brings', async () => {
+    const env = { RAMIFY_ROOT: join(T, 'wts-merge'), GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' }
+    const own = new Engine({ bin: BIN, env })
+    const R = repo()
+    git(R, 'config', 'core.autocrlf', 'false')
+    mkdirSync(join(R, 'dist')); writeFileSync(join(R, 'dist', 'out.txt'), 'a\n')
+    writeFileSync(join(R, '.gitattributes'), 'dist/** ramify-generated\n')
+    git(R, 'add', '.'); git(R, 'commit', '-qm', 'base')
+    const wt = (await own.create(R, { branch: 'feat/evil', agent: '' })).path
+    const mark = join(T, 'pwned-merge')
+    mkdirSync(join(wt, '.worktree')); writeFileSync(join(wt, '.worktree', 'merge.sh'), `#!/bin/bash\ntouch ${mark}\n`)
+    writeFileSync(join(wt, 'dist', 'out.txt'), 'branch\n')
+    git(wt, 'add', '.'); git(wt, 'commit', '-qm', 'script and output')
+    writeFileSync(join(R, 'dist', 'out.txt'), 'base\n'); git(R, 'commit', '-qam', 'output on base')
+    await assert.rejects(own.merge(R, wt), /merge conflict/)
+    assert.equal(existsSync(mark), false)
   })
 })
 

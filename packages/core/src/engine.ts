@@ -462,6 +462,9 @@ export class Engine {
   private async rebuildGenerated(repo: string, files: string[]): Promise<{ ok: boolean; output: string } | null> {
     const script = join(repo, '.worktree', 'merge.sh')
     if (!existsSync(script)) return null
+    // Mid-merge, the working tree already holds what the branch brought: only the script and the attributes the
+    // base had are trusted, never ones the branch being merged adds or changes.
+    if ((await this.run('git', ['-C', repo, 'diff', '--cached', '--quiet', 'HEAD', '--', '.worktree/merge.sh', '.gitattributes'])).code !== 0) return null
     const attrs = await this.git(repo, 'check-attr', 'ramify-generated', '--', ...files)
     const generated = new Set(attrs.split('\n').filter((l) => l.endsWith(': ramify-generated: set')).map((l) => l.slice(0, -': ramify-generated: set'.length)))
     if (!files.every((f) => generated.has(f))) return null
