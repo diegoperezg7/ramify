@@ -22,6 +22,7 @@ import { sortWorktrees, WorktreeList } from './components/WorktreeList'
 import { bridge } from './bridge'
 import { useStore } from './store'
 import { SideView } from './components/SideView'
+import { LivingBranches } from './components/LivingBranches'
 
 /** Loaded in the editor's side bar (the extension marks the page), not as the dashboard. */
 const SIDE_BAR = document.documentElement.dataset.mode === 'sidebar'
@@ -146,6 +147,7 @@ export function App() {
     <div className={`shell${caps?.multiRepo ? ' has-sidebar' : ''}`}>
       {caps?.multiRepo && <Sidebar />}
       <div className={`app is-${size}`} ref={appRef}>
+        <LivingBranches />
         <TopBar />
         {conn !== 'ok' && !noRepos && (
           <div className="banner" role="alert"><AlertTriangle size={16} />{conn === 'unauthorized' ? t('badToken') : t('offline')}</div>

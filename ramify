@@ -3,7 +3,7 @@
 # https://github.com/diegoperezg7/ramify
 set -euo pipefail
 
-VERSION=0.7.6
+VERSION=0.7.7
 ROOT="${RAMIFY_ROOT:-$HOME/.worktrees}"
 PORT_MIN="${RAMIFY_PORT_MIN:-4100}"
 PORT_MAX="${RAMIFY_PORT_MAX:-4990}"
