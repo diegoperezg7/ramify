@@ -105,7 +105,9 @@ export function activate(ctx: vscode.ExtensionContext) {
     resolveWebviewView(view) {
       view.webview.options = { enableScripts: true, localResourceRoots: [ui] }
       view.webview.html = page(view.webview, 'sidebar')
-      ctx.subscriptions.push(answer(view.webview))
+      // The view is resolved again each time it comes back: its listener goes with it, not with the extension.
+      const listening = answer(view.webview)
+      view.onDidDispose(() => listening.dispose())
     },
   }))
 
