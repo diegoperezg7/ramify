@@ -23,7 +23,7 @@
   <a href="README.es.md"><img alt="Español" src="https://img.shields.io/badge/lang-español-4e4e4e"></a>
 </p>
 
-https://github.com/user-attachments/assets/c89861ef-e1dd-4305-b7ec-6a74b6527b3b
+<p align="center"><a href="docs/ramify-demo.mp4"><img src="docs/ramify-hero.gif" width="800" alt="Ramify: start an agent on a branch of its own, then bring its work into main with one click"></a></p>
 
 <p align="center"><sub><b><a href="docs/ramify-demo.mp4">▶ Watch the full demo (55 s)</a></b>: agents working now, a new agent and its terminal, agent hours, any day in detail, the branches and a merge in one click</sub></p>
 

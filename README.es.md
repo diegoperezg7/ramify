@@ -17,7 +17,7 @@
 
 <p align="center"><a href="README.md">English</a></p>
 
-https://github.com/user-attachments/assets/c89861ef-e1dd-4305-b7ec-6a74b6527b3b
+<p align="center"><a href="docs/ramify-demo.mp4"><img src="docs/ramify-hero.gif" width="800" alt="Ramify: arranca un agente en una rama propia y lleva su trabajo a main con un clic"></a></p>
 
 <p align="center"><sub><b><a href="docs/ramify-demo.mp4">▶ Ver la demo completa (55 s)</a></b>: agentes trabajando ahora, un agente nuevo y su terminal, horas de los agentes, cualquier día al detalle, las ramas y un merge con un clic</sub></p>
 
