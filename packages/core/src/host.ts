@@ -128,6 +128,7 @@ export function sanitizeSettings(input: unknown, current: Settings): Settings {
     autoDraftPr: bool('autoDraftPr') as boolean | undefined,
     autoClean: bool('autoClean') as boolean | undefined,
     autoUpdate: bool('autoUpdate') as boolean | undefined,
+    notifyReady: bool('notifyReady') as boolean | undefined,
   }
   for (const k of Object.keys(next) as (keyof Settings)[]) if (next[k] === undefined) delete next[k]
   return next

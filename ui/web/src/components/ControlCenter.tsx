@@ -160,10 +160,11 @@ export function ControlCenter() {
 
       <NowPanel sessions={sessions} branches={branchIndex} now={now} />
 
-      <ActivityCharts sessions={sessions} now={now} />
-
+      {/* The year of commits first, with the day it opens right under it; the agents' charts after. */}
       <Heatmap days={days} picked={picked} onPick={setPicked} />
       {picked !== null && <DayPanel day={picked} sessions={sessions} onClose={() => setPicked(null)} />}
+
+      <ActivityCharts sessions={sessions} now={now} />
 
       {boards && boards.length > 0 && <h2 className="cc-h2">{t('ccBranchesTitle')}</h2>}
 

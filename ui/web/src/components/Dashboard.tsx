@@ -8,6 +8,7 @@ import { useStore } from '../store'
 import type { AgentSession, BranchHealth, TimelineCommit } from '../types'
 import { AgentBadge } from './AgentBadge'
 import { duration } from './Sessions'
+import { FillGrid } from './SessionsInsights'
 
 const DAY = 86_400_000
 const base = (p: string) => p.split('/').filter(Boolean).pop() ?? p
@@ -302,18 +303,20 @@ function niceHours(ms: number): number {
   return step * 3_600_000
 }
 
-/** One day, opened from the contribution grid: its commits per repository and its AI sessions. */
+/** One day, opened from the contribution grid: its figures, its hours (commits and AI sessions per repository) and its commits. */
 export function DayPanel({ day, sessions, onClose }: { day: number; sessions: AgentSession[] | null; onClose: () => void }) {
   const t = useStore((s) => s.t)
   const lang = useStore((s) => s.lang)
   const repos = useStore((s) => s.repos)
   const setRepo = useStore((s) => s.setRepo)
   const [commits, setCommits] = useState<{ repo: string; list: TimelineCommit[] }[] | null>(null)
+  const [open, setOpen] = useState<Set<string>>(new Set())
   const reposKey = repos.map((r) => r.path).join('\n')
 
   useEffect(() => {
     let alive = true
     setCommits(null)
+    setOpen(new Set())
     void Promise.all((reposKey ? reposKey.split('\n') : []).map(async (repo) => ({ repo, list: await bridge.dayCommits(repo, day).catch(() => [] as TimelineCommit[]) })))
       .then((all) => { if (alive) setCommits(all.filter((x) => x.list.length).sort((a, b) => b.list.length - a.list.length)) })
     return () => { alive = false }
@@ -322,10 +325,35 @@ export function DayPanel({ day, sessions, onClose }: { day: number; sessions: Ag
   const start = day * 1000
   const d = new Date(start)
   const end = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime()
+  const span = end - start
   const daySessions = useMemo(() => (sessions ?? []).filter((s) => isWork(s) && s.start < end && (s.end ?? Date.now()) > start).sort((a, b) => a.start - b.start), [sessions, start, end])
   const title = new Intl.DateTimeFormat(lang, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(start)
   const time = new Intl.DateTimeFormat(lang, { hour: '2-digit', minute: '2-digit' })
-  const total = commits?.reduce((s, c) => s + c.list.length, 0) ?? 0
+
+  const view = useMemo(() => {
+    const list = commits ?? []
+    const all = list.flatMap((c) => c.list.map((x) => x.time * 1000))
+    // Commits per hour of the day.
+    const hours = new Array<number>(24).fill(0)
+    for (const at of all) hours[new Date(at).getHours()]++
+    // A lane per repository with commits or sessions: busiest first, sessions outside one at the end.
+    const clip = (s: AgentSession) => [Math.max(s.start, start), Math.min(s.end ?? Date.now(), end)] as [number, number]
+    const keys = [...list.map((c) => c.repo), ...daySessions.map((s) => s.repo ?? '').filter((r) => !list.some((c) => c.repo === r))]
+    const lanes = [...new Set(keys)].map((repo) => ({
+      repo,
+      commits: list.find((c) => c.repo === repo)?.list ?? [],
+      sessions: daySessions.filter((s) => (s.repo ?? '') === repo).map((s) => ({ s, at: clip(s) })),
+    })).sort((a, b) => Number(a.repo === '') - Number(b.repo === '') || b.commits.length - a.commits.length)
+    return {
+      total: all.length, hours, peak: Math.max(1, ...hours), lanes,
+      first: all.length ? Math.min(...all) : null, last: all.length ? Math.max(...all) : null,
+      ai: unionMs(daySessions.map(clip)),
+    }
+  }, [commits, daySessions, start, end])
+
+  const x = (ms: number) => `${((ms - start) / span) * 100}%`
+  const marks = [0, 3, 6, 9, 12, 15, 18, 21, 24]
+  const label = (repo: string) => (repo ? base(repo) : t('outsideRepo'))
 
   return (
     <section className="day-panel" aria-label={title}>
@@ -333,38 +361,77 @@ export function DayPanel({ day, sessions, onClose }: { day: number; sessions: Ag
         <h3>{title}</h3>
         <button type="button" className="icon-btn" onClick={onClose} aria-label={t('close')}><X size={15} /></button>
       </header>
-      <div className="day-cols">
-        <div>
-          <h4 className="pane-kicker">{t('dayCommits')}{commits && <span className="muted"> · {total}</span>}</h4>
-          {commits === null ? <p aria-busy="true"><i className="skel" style={{ width: '70%' }} /></p>
-            : commits.length === 0 ? <p className="muted small">{t('dayNoCommits')}</p>
-            : commits.map((c) => (
-              <div key={c.repo} className="day-repo">
-                <button type="button" className="link day-repo-name" onClick={() => setRepo(c.repo)}><FolderGit2 size={13} />{base(c.repo)}<span className="muted"> · {c.list.length}</span></button>
-                <ul>
-                  {c.list.slice(0, 8).map((x) => <li key={x.hash}><span className="mono muted">{time.format(x.time * 1000)}</span><span className="day-subject">{x.subject}</span></li>)}
-                  {c.list.length > 8 && <li className="muted small">{t('dayMore', { n: c.list.length - 8 })}</li>}
-                </ul>
-              </div>
-            ))}
-        </div>
-        <div>
-          <h4 className="pane-kicker">{t('daySessions')}<span className="muted"> · {daySessions.length}</span></h4>
-          {daySessions.length === 0 ? <p className="muted small">{t('dayNoSessions')}</p> : (
-            <ul className="day-sessions">
-              {daySessions.slice(0, 12).map((s) => (
-                <li key={s.id}>
-                  <AgentBadge agent={s.agent} size={18} live={s.end === null} />
-                  <b>{agentName(s.agent)}</b>
-                  <span className="muted">{s.repo ? base(s.repo) : s.cwd ? base(s.cwd) : s.host}{s.branch && ` ⎇ ${s.branch}`}</span>
-                  <span className="mono muted day-when">{time.format(Math.max(s.start, start))} · {duration(Math.min(s.end ?? Date.now(), end) - Math.max(s.start, start))}</span>
-                </li>
-              ))}
-              {daySessions.length > 12 && <li className="muted small">{t('dayMore', { n: daySessions.length - 12 })}</li>}
-            </ul>
-          )}
-        </div>
+
+      <div className="day-stats">
+        <div><span>{t('dayCommits')}</span><b>{commits ? view.total : '—'}</b></div>
+        <div><span>{t('dayRepos')}</span><b>{commits ? commits.length : '—'}</b></div>
+        <div><span>{t('daySessions')}</span><b>{daySessions.length}</b>{view.ai > 0 && <em>{duration(view.ai)}</em>}</div>
+        <div><span>{t('daySpan')}</span><b>{view.first !== null && view.last !== null ? `${time.format(view.first)}–${time.format(view.last)}` : '—'}</b></div>
       </div>
+
+      {commits === null ? <p aria-busy="true"><i className="skel" style={{ width: '70%' }} /></p> : view.lanes.length === 0 ? (
+        <p className="muted small">{t('dayNoCommits')} {t('dayNoSessions')}</p>
+      ) : (
+        <figure className="day-chart">
+          <figcaption className="pane-kicker">{t('dayHours')}</figcaption>
+          {/* Commits per hour above, then a lane per repository on the same 00–24 axis. */}
+          <div className="day-row">
+            <span />
+            <span className="day-hist" aria-hidden="true">
+              {view.hours.map((n, h) => <i key={h} title={`${String(h).padStart(2, '0')}:00 · ${n}`} style={{ height: n ? `${Math.max(12, (n / view.peak) * 100)}%` : 0 }} />)}
+            </span>
+            <span />
+          </div>
+          <div className="day-row day-axis" aria-hidden="true">
+            <span />
+            <span className="day-scale">{marks.map((h) => <i key={h} style={{ left: `${(h / 24) * 100}%` }}>{String(h % 24).padStart(2, '0')}</i>)}</span>
+            <span />
+          </div>
+          {view.lanes.map((l) => (
+            <div key={l.repo || '~'} className="day-row day-lane">
+              <span className="day-lane-name" title={l.repo || undefined}><FolderGit2 size={13} /><b>{label(l.repo)}</b></span>
+              <span className="day-track">
+                {marks.slice(1, -1).map((h) => <i key={h} className="day-grid" style={{ left: `${(h / 24) * 100}%` }} />)}
+                {l.sessions.map(({ s, at }) => (
+                  <i key={s.id} className="day-session" style={{ left: x(at[0]), width: `max(4px, ${((at[1] - at[0]) / span) * 100}%)`, background: agentVar(s.agent) }}
+                    title={`${agentName(s.agent)} · ${time.format(at[0])}–${time.format(at[1])} · ${duration(at[1] - at[0])}${s.branch ? ` · ${s.branch}` : ''}`} />
+                ))}
+                {l.commits.map((c) => <i key={c.hash} className="day-dot" style={{ left: x(c.time * 1000) }} title={`${time.format(c.time * 1000)} · ${c.subject}`} />)}
+              </span>
+              <span className="day-lane-n mono">{l.commits.length || ''}</span>
+            </div>
+          ))}
+          <div className="day-legend muted">
+            <span><i className="day-dot is-key" />{t('dayLegendCommit')}</span>
+            {daySessions.length > 0 && <span><i className="day-session is-key" />{t('dayLegendSession')}</span>}
+          </div>
+        </figure>
+      )}
+
+      {commits && commits.length > 0 && (
+        <FillGrid n={commits.length} min={300} max={4} className="day-repos">
+          {commits.map((c) => {
+            const all = open.has(c.repo)
+            return (
+              <article key={c.repo} className="day-repo">
+                <header>
+                  <button type="button" className="link day-repo-name" onClick={() => setRepo(c.repo)}><FolderGit2 size={13} />{base(c.repo)}</button>
+                  <span className="muted">{c.list.length}</span>
+                </header>
+                <span className="day-share"><i style={{ width: `${(c.list.length / Math.max(1, view.total)) * 100}%` }} /></span>
+                <ul>
+                  {(all ? c.list : c.list.slice(0, 6)).map((x) => <li key={x.hash} title={x.subject}><span className="mono muted">{time.format(x.time * 1000)}</span><span className="day-subject">{x.subject}</span></li>)}
+                </ul>
+                {c.list.length > 6 && (
+                  <button type="button" className="link day-more" onClick={() => setOpen((o) => { const n = new Set(o); if (all) n.delete(c.repo); else n.add(c.repo); return n })}>
+                    {all ? t('showLess') : t('dayMore', { n: c.list.length - 6 })}
+                  </button>
+                )}
+              </article>
+            )
+          })}
+        </FillGrid>
+      )}
     </section>
   )
 }

@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, realpathSync, utimesSync, writeFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, mkdtempSync, realpathSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
@@ -260,9 +260,80 @@ describe('where an agent really works', () => {
       JSON.stringify({ type: 'user', message: { content: '"cwd":"/elsewhere"' } }),
     ].join('\n') + '\n')
     assert.deepEqual(claudeContext(42, home), {
-      cwd: '/Users/d/code/shop', state: 'working', sessionId: 's1', transcript: join(home, '.claude', 'projects', '-Users-d', 's1.jsonl'),
+      cwd: '/Users/d/code/shop', before: ['/Users/d'], wrote: null, state: 'working', sessionId: 's1', transcript: join(home, '.claude', 'projects', '-Users-d', 's1.jsonl'),
     })
     assert.equal(claudeContext(7, home), null)
+  })
+
+  it('remembers where a Claude Code session last edited and where it was before a cd', async () => {
+    const { claudeContext } = await import('../src/activity.ts')
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'ramify-claude-')))
+    mkdirSync(join(home, '.claude', 'sessions'), { recursive: true })
+    mkdirSync(join(home, '.claude', 'projects', '-Users-d'), { recursive: true })
+    writeFileSync(join(home, '.claude', 'sessions', '43.json'), JSON.stringify({ pid: 43, sessionId: 's2', cwd: '/Users/d', status: 'busy' }))
+    const edit = (name: string, input: object, cwd: string) => JSON.stringify({ type: 'assistant', cwd, message: { content: [{ type: 'text', text: 'ok' }, { type: 'tool_use', name, input }] } })
+    const say = (cwd: string) => JSON.stringify({ type: 'user', cwd, message: { content: 'go on' } })
+    const file = join(home, '.claude', 'projects', '-Users-d', 's2.jsonl')
+    writeFileSync(file, [
+      edit('Edit', { file_path: '/Users/d/code/keys/app.ts' }, '/Users/d/code/keys'),
+      edit('Write', { file_path: '/Users/d/wt/shop/fix-cart/src/cart.ts' }, '/Users/d/wt/shop/fix-cart'),
+      say('/Users/d/wt/shop/fix-cart'),
+      // Reading is not editing: neither a Read nor a quoted tool call moves where it wrote.
+      edit('Read', { file_path: '/Users/d/code/shop/README.md' }, '/Users/d/code/shop'),
+      JSON.stringify({ type: 'user', cwd: '/Users/d/code/shop', message: { content: '{"type":"tool_use","name":"Edit","input":{"file_path":"/elsewhere/x.ts"}}' } }),
+    ].join('\n') + '\n')
+    const ctx = claudeContext(43, home)
+    assert.equal(ctx?.cwd, '/Users/d/code/shop')
+    assert.deepEqual(ctx?.before, ['/Users/d/wt/shop/fix-cart', '/Users/d/code/keys'])
+    assert.equal(ctx?.wrote, '/Users/d/wt/shop/fix-cart/src')
+
+    // Later turns are read from where the last read ended; a line still being written waits for the next one.
+    appendFileSync(file, edit('Edit', { file_path: '/Users/d/code/shop/main.ts' }, '/Users/d/code/blog') + '\n' + '{"type":"assistant","cwd":"/Users/d/ha')
+    const next = claudeContext(43, home)
+    assert.equal(next?.cwd, '/Users/d/code/blog')
+    assert.deepEqual(next?.before, ['/Users/d/code/shop', '/Users/d/wt/shop/fix-cart', '/Users/d/code/keys'])
+    assert.equal(next?.wrote, '/Users/d/code/shop')
+  })
+
+  it('finds an edit megabytes back in a long transcript', async () => {
+    const { lastPlace } = await import('../src/activity.ts')
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'ramify-long-')))
+    const file = join(dir, 'long.jsonl')
+    const filler = JSON.stringify({ type: 'progress', blob: 'x'.repeat(200_000) })
+    writeFileSync(file, [
+      JSON.stringify({ type: 'assistant', cwd: '/w/a', message: { content: [{ type: 'tool_use', name: 'Edit', input: { file_path: '/w/a/src/x.ts' } }] } }),
+      ...Array.from({ length: 15 }, () => filler),
+      JSON.stringify({ type: 'user', cwd: '/w/main', message: { content: 'hi' } }),
+    ].join('\n') + '\n')
+    const place = lastPlace(file)
+    assert.equal(place.cwd, '/w/main')
+    assert.equal(place.wrote, '/w/a/src')
+    assert.deepEqual(place.before, ['/w/a'])
+  })
+
+  it('keeps a session on its worktree when it cds back to the main checkout', async () => {
+    const { workPlace } = await import('../src/activity.ts')
+    type At = { repo: string | null; worktree: string | null; branch: string | null }
+    const main: At = { repo: '/r/shop', worktree: '/r/shop', branch: 'main' }
+    const wt: At = { repo: '/r/shop', worktree: '/wt/shop/fix-cart', branch: 'fix/cart' }
+    const keys: At = { repo: '/r/keys', worktree: '/wt/keys/feat-share', branch: 'feat/share' }
+    const other: At = { repo: '/r/blog', worktree: '/r/blog', branch: 'main' }
+    const none: At = { repo: null, worktree: null, branch: null }
+    // Worked in a worktree (edits by shell, so no edit tool says so), then looked around the main checkout.
+    assert.equal(workPlace(main, keys, [wt, keys]), wt)
+    // Edited in the worktree with the edit tools: the same.
+    assert.equal(workPlace(main, wt), wt)
+    // Editing the main checkout itself is working on main: the warning must still show.
+    assert.equal(workPlace(main, main, [wt]), main)
+    // Only ever in the main checkout, or came from another repository: main.
+    assert.equal(workPlace(main, null), main)
+    assert.equal(workPlace(main, none, [other]), main)
+    // Started in ~ and editing a repository by its full path: that repository.
+    assert.equal(workPlace(none, wt), wt)
+    assert.equal(workPlace(none, null), none)
+    // Moving on to another worktree or repository moves the session with it.
+    assert.equal(workPlace(wt, main, [main]), wt)
+    assert.equal(workPlace(other, wt, [wt]), other)
   })
 })
 
@@ -357,5 +428,40 @@ describe('agents started by an agent', () => {
     assert.deepEqual(codexThreads(0, join(home, 'none')), [])
     writeFileSync(join(home, 'bad.sqlite'), 'not a database')
     assert.deepEqual(codexThreads(0, home, join(home, 'bad.sqlite')), [])
+  })
+})
+
+describe('what a Claude Code session is doing', () => {
+  it('reads the task, the last step, the files edited and the last hour from its transcript, then only new lines', async () => {
+    const { transcriptGlance } = await import('../src/activity.ts')
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'ramify-glance-')))
+    const file = join(dir, 's.jsonl')
+    const now = Date.parse('2026-11-05T18:00:00Z')
+    const at = (minAgo: number) => new Date(now - minAgo * 60_000).toISOString()
+    const user = (content: unknown, extra = {}) => JSON.stringify({ type: 'user', message: { content }, ...extra })
+    const tool = (minAgo: number, name: string, input: object) => JSON.stringify({ type: 'assistant', timestamp: at(minAgo), message: { content: [{ type: 'tool_use', name, input }] } })
+    writeFileSync(file, [
+      user('<command-name>/clear</command-name>'),
+      user('Caveat: the messages below were generated by the user while running local commands.'),
+      user('ignored', { isMeta: true }),
+      user([{ type: 'text', text: 'Redesign   the sessions view\nwith cards' }]),
+      tool(90, 'Edit', { file_path: '/r/a.ts' }),
+      user([{ type: 'tool_result', content: 'ok' }]),
+      tool(50, 'Write', { file_path: '/r/b.ts' }),
+      tool(50, 'Edit', { file_path: '/r/a.ts' }),
+      tool(2, 'Bash', { command: 'npm test\nmore' }),
+    ].join('\n') + '\n')
+    const first = transcriptGlance(file, now)
+    assert.equal(first.task, 'Redesign the sessions view with cards')
+    assert.deepEqual(first.glance.action, { tool: 'Bash', target: 'npm test', at: now - 2 * 60_000 })
+    assert.equal(first.glance.files, 2)
+    // An hour in twelve five-minute slots: two replies 50 minutes ago, one 2 minutes ago; the one 90 minutes ago is out.
+    assert.deepEqual(first.glance.pulse, [0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 1])
+
+    appendFileSync(file, tool(1, 'Read', { file_path: '/r/c.ts' }) + '\n' + tool(0, 'Edit', { file_path: '/r/c.ts' }) + '\n')
+    const next = transcriptGlance(file, now)
+    assert.deepEqual(next.glance.action, { tool: 'Edit', target: 'c.ts', at: now })
+    assert.equal(next.glance.files, 3)
+    assert.equal(next.glance.pulse[11], 3)
   })
 })

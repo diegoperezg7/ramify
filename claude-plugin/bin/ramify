@@ -285,7 +285,9 @@ launch() {
     sess=$(printf '%s_%s' "$(basename "$(dirname "$wt")")" "$(basename "$wt")" | tr '.:' '__')
     set -- -d -s "$sess" -c "$wt" "$AGENT_CMD" "$@"
     while IFS= read -r line; do [ -n "$line" ] && set -- -e "$line" "$@"; done < "$wt/.worktree.env"
-    tmux new-session "$@"
+    # Started detached on purpose (the agent works in the background until attached): with destroy-unattached on,
+    # tmux would end it at once, so this one session opts out in the same call that creates it.
+    tmux new-session "$@" \; set-option -t "$sess" destroy-unattached off
     if [ -n "${TMUX:-}" ]; then log "tmux session ${B}$sess${N} started: tmux switch-client -t $sess"
     else log "tmux session ${B}$sess${N} started: tmux attach -t $sess"; fi
   else
