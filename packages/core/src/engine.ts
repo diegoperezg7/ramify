@@ -126,6 +126,11 @@ export interface EngineOptions {
    * The script only sees an agent by its process name, which misses agents that run on node or python.
    */
   running?: () => Map<string, string[]>
+  /**
+   * Agents open but idle at their prompt, by worktree path: the script sees their process and would call
+   * them running, so they are taken out (unless another session of the same agent is at work there).
+   */
+  paused?: () => Map<string, string[]>
 }
 
 interface RunResult { code: number; stdout: string; stderr: string }
@@ -134,10 +139,12 @@ export class Engine {
   private bin: string
   private env: NodeJS.ProcessEnv
   private runningAgents?: () => Map<string, string[]>
+  private pausedAgents?: () => Map<string, string[]>
 
   constructor(opts: EngineOptions) {
     this.bin = opts.bin
     this.runningAgents = opts.running
+    this.pausedAgents = opts.paused
     this.env = hardenedGitEnv({ ...process.env, ...opts.env, NO_COLOR: '1' })
   }
 
@@ -229,7 +236,12 @@ export class Engine {
   async worktrees(repo: string): Promise<Worktree[]> {
     const list = JSON.parse(await this.mustBin(['ls', '--json'], repo)) as Worktree[]
     const live = this.runningAgents?.()
-    if (live) for (const w of list) w.running = [...new Set([...w.running, ...(live.get(normPath(w.path)) ?? [])])]
+    const paused = this.pausedAgents?.()
+    for (const w of list) {
+      const busy = live?.get(normPath(w.path)) ?? []
+      const idle = paused?.get(normPath(w.path)) ?? []
+      w.running = [...new Set([...w.running, ...busy])].filter((a) => busy.includes(a) || !idle.includes(a))
+    }
     // A worktree made without `-a` has no agent of its own: show the one working in it right now,
     // or an agent seen at work there reads as "no agent".
     for (const w of list) if (!w.main && !w.agent && w.running.length) w.agent = w.running[0]

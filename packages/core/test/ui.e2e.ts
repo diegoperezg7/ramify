@@ -12,6 +12,7 @@ import assert from 'node:assert/strict'
 import { chromium, type Browser } from 'playwright'
 import { createHandlers, dispatch } from '../src/host.ts'
 import { Engine, IDES } from '../src/engine.ts'
+import type { AgentSession } from '../src/types.ts'
 
 const ROOT_DIR = resolve(import.meta.dirname, '../../..')
 const BIN = join(ROOT_DIR, 'ramify')
@@ -312,6 +313,72 @@ describe('web UI', () => {
     // Nothing overflows the plot horizontally.
     const overflow = await page.evaluate(() => { const p = document.querySelector('.tl-plot')!; return p.scrollWidth - p.clientWidth })
     assert.ok(overflow <= 1, `plot overflows by ${overflow}px`)
+    await page.close()
+  })
+
+  it('desktop host: AI sessions without holes, a row opens its branch, the X closes a session', async () => {
+    const now = Date.now()
+    const session = (id: string, over: Partial<AgentSession>): AgentSession => ({
+      id, key: id, agent: 'claude', host: 'Ghostty · tmux', via: 'terminal', inferred: false, cwd: REPO, repo: REPO,
+      branch: 'main', github: 'o/shop', start: now - 3600_000, end: null, lastSeen: now, ...over,
+    })
+    const sessions = [
+      session('working', { branch: 'feat/checkout', state: 'working', cwd: join(T, 'wts', 'shop', 'feat-checkout') }),
+      session('paused', { state: 'idle', start: now - 7200_000 }),
+      // Finished sessions in repositories not on GitHub: a tall "Not on GitHub" card.
+      ...['a', 'b', 'c', 'd', 'e'].map((n) => session(`old-${n}`, { repo: `/tmp/${n}`, cwd: `/tmp/${n}`, github: null, end: now - 60_000 })),
+    ]
+    const closed: string[] = []
+    const base = createHandlers({
+      engine: new Engine({ bin: BIN, env }),
+      capabilities: { host: 'desktop', multiRepo: true, create: false, settings: false, github: false, sessions: true, timeline: true, ides: IDES },
+      repo: () => REPO,
+      runInTerminal: () => {},
+    })
+    const handlers = {
+      ...base,
+      repos: () => [{ path: REPO, name: 'shop', worktrees: 1, active: ['claude'] }],
+      sessions: () => sessions,
+      closeSession: (id: string) => { closed.push(id); const s = sessions.find((x) => x.id === id); if (s) s.end = Date.now() },
+    } as typeof base
+    const page = await browser.newPage({ locale: 'en-US', viewport: { width: 1440, height: 900 } })
+    const errors: string[] = []
+    page.on('pageerror', (e) => errors.push(String(e)))
+    await page.exposeFunction('__host', (method: string, args: unknown[]) =>
+      dispatch(handlers, method, args).then((result) => ({ result }), (e: Error) => ({ error: e.message })))
+    await page.addInitScript(() => {
+      const w = window as unknown as { ramify: unknown; __host: (m: string, a: unknown[]) => Promise<{ result?: unknown; error?: string }> }
+      try { localStorage.setItem('ramify-view', 'sessions') } catch { /* no storage */ }
+      w.ramify = {
+        invoke: async (method: string, args: unknown[]) => {
+          const r = await w.__host(method, args)
+          if (r.error) throw new Error(r.error)
+          return r.result
+        },
+        on: () => {},
+      }
+    })
+    await page.goto(`http://127.0.0.1:${WEB}/index.html`)
+    await page.waitForSelector('.repo-card li:has-text("feat/checkout")')
+
+    // Only the session at work counts; the paused one is listed as paused.
+    assert.equal((await page.textContent('.sess-summary span:first-child b'))?.trim(), '1')
+    assert.ok(await page.isVisible('.repo-card li:has-text("idle")'))
+    // "Not on GitHub" sits below the session cards, not in a column next to them: no empty space under short cards.
+    assert.equal(await page.locator('.repo-cards .unpub-card').count(), 0)
+    const cards = await page.locator('.repo-cards').boundingBox()
+    const unpub = await page.locator('.unpub-card').boundingBox()
+    assert.ok(cards && unpub && unpub.y >= cards.y + cards.height, 'Not on GitHub must come after the session cards')
+
+    // The X closes the paused session without a reload.
+    await page.locator('.repo-card li:has-text("idle") .row-close').click()
+    await page.waitForSelector('.repo-card li:has-text("idle")', { state: 'detached' })
+    assert.deepEqual(closed, ['paused'])
+
+    // A row opens its repository on the branch it works on.
+    await page.click('.repo-card li:has-text("feat/checkout")')
+    await page.waitForSelector('.wt-row.is-selected:has-text("feat/checkout")')
+    assert.deepEqual(errors, [])
     await page.close()
   })
 })

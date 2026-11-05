@@ -29,7 +29,11 @@ const bin = app.isPackaged ? join(process.resourcesPath, 'bin', 'ramify') : reso
 try { chmodSync(bin, 0o755) } catch { /* read-only bundle: already executable */ }
 const env = hardenedGitEnv({ ...process.env, PATH: loginPath() ?? process.env.PATH })
 // The monitor below knows which agent runs in which worktree (by command line, not process name): share it.
-const engine = new Engine({ bin, env, running: () => new Map(live.map((l) => [l.path, l.agents])) })
+const engine = new Engine({
+  bin, env,
+  running: () => new Map(live.map((l) => [l.path, l.busy])),
+  paused: () => new Map(live.map((l) => [l.path, l.agents.filter((a) => !l.busy.includes(a))])),
+})
 const es = () => app.getLocale().toLowerCase().startsWith('es')
 
 // --- persisted config ---------------------------------------------------------
@@ -89,8 +93,8 @@ function addRepoToConfig(path: string) {
 // One `ps` + `lsof` for the whole machine every few seconds: which agents run in which
 // worktree. Feeds the sidebar, the Dock badge, the menu bar and the "agent finished" notification.
 
-/** `working`: how many of its sessions are doing something (not idle at their prompt). */
-interface Live { repo: string; path: string; branch: string; agents: string[]; working: number }
+/** `busy`: the agents doing something there (not idle at their prompt); `agents` are all the open ones. */
+interface Live { repo: string; path: string; branch: string; agents: string[]; busy: string[] }
 let live: Live[] = []
 const worktreeCache = new Map<string, { at: number; list: { path: string; branch: string }[] }>()
 const mainOf = new Map<string, { main: string | null; at: number }>()
@@ -169,9 +173,9 @@ async function scan(): Promise<Live[]> {
     // Throwaway repositories in the system's temporary folders (tests, demos) are not followed by themselves.
     if (config.settings.autoDetect && !isTemporary(s.repo)) addRepoToConfig(s.repo)
     if (!config.repos.includes(s.repo)) continue
-    const entry = found.get(s.worktree) ?? { repo: s.repo, path: s.worktree, branch: s.branch ?? '', agents: [], working: 0 }
+    const entry = found.get(s.worktree) ?? { repo: s.repo, path: s.worktree, branch: s.branch ?? '', agents: [], busy: [] }
     if (!entry.agents.includes(s.agent)) entry.agents.push(s.agent)
-    if (isActive(open.get(s.key)!)) entry.working++
+    if (isActive(open.get(s.key)!) && !entry.busy.includes(s.agent)) entry.busy.push(s.agent)
     found.set(s.worktree, entry)
   }
   return [...found.values()]
@@ -235,7 +239,7 @@ function withPrs(list: AgentSession[]): AgentSession[] {
   })
 }
 
-const workingCount = () => live.reduce((sum, l) => sum + l.working, 0)
+const workingCount = () => live.reduce((sum, l) => sum + l.busy.length, 0)
 
 let firstScan = true
 let scanning = false
@@ -364,7 +368,7 @@ function updateTray(count: number) {
     .filter((s) => s.end === null && !s.inferred && s.state === 'waiting' && s.repo && config.repos.includes(s.repo))
     .map((s) => `${s.repo}#${s.branch ?? ''}`))
   // Rebuilding the menu every scan costs work on the main thread: only when what it shows changed.
-  const signature = `${count}|${es()}|${[...waitingAt].join(',')}|${live.map((l) => `${l.path}:${l.agents.join(',')}`).join(';')}`
+  const signature = `${count}|${es()}|${[...waitingAt].join(',')}|${live.map((l) => `${l.path}:${l.busy.join(',')}`).join(';')}`
   if (tray && signature === traySignature) return
   traySignature = signature
   if (!tray) tray = new Tray(trayIcon())
@@ -375,7 +379,7 @@ function updateTray(count: number) {
   const items: Electron.MenuItemConstructorOptions[] = [
     { label: count ? `${es() ? `${count} agente(s) trabajando` : `${count} agent(s) working`}${waitingAt.size ? `  ·  ${waits}` : ''}` : (es() ? 'Ningún agente trabajando' : 'No agents working'), enabled: false },
     // One line per agent: its logo, where it works, and whether it waits for you. The name stays as a tooltip.
-    ...live.flatMap((l) => l.agents.map((a) => {
+    ...live.flatMap((l) => l.busy.map((a) => {
       const icon = agentIcon(a)
       const where = `${l.repo.split('/').pop()} / ${l.branch}`
       const wait = waitingAt.has(`${l.repo}#${l.branch}`) ? (es() ? '  ·  te espera' : '  ·  waiting for you') : ''
@@ -616,7 +620,7 @@ const handlers = {
   repos: async (): Promise<RepoInfo[]> => {
     return Promise.all(presentRepos().map(async (r) => ({
       ...(await cachedInfo(r)),
-      active: [...new Set(live.filter((l) => l.repo === r).flatMap((l) => l.agents))],
+      active: [...new Set(live.filter((l) => l.repo === r).flatMap((l) => l.busy))],
       github: await cachedSlug(r),
     })))
   },

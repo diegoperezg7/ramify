@@ -1,5 +1,5 @@
 import { AppWindow, Code2, Download, FolderGit2, GitBranch, GitPullRequest, MoreHorizontal, SquareTerminal, Trash2, Upload, X } from 'lucide-react'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { bridge } from '../bridge'
 import { isActive } from '../logic'
 import { useStore } from '../store'
@@ -139,7 +139,8 @@ export function Sessions() {
   }, [groups, t])
 
   // Cards fill columns of equal height (the shortest column takes the next card), so no column ends
-  // in a hole. The repositories not on GitHub yet are one more card.
+  // in a hole. The repositories not on GitHub yet go below, on their own: a long card among short ones
+  // left the space under the short ones empty.
   const [cols, setCols] = useState(2)
   const observer = useRef<ResizeObserver | null>(null)
   const gridRef = useCallback((el: HTMLDivElement | null) => {
@@ -152,17 +153,35 @@ export function Sessions() {
   const UNPUB = 3
   const [allUnpub, setAllUnpub] = useState(false)
   const shownUnpub = allUnpub ? unpublished : unpublished.slice(0, UNPUB)
-  type Card = (typeof liveByRepo)[number] | 'unpublished'
   const columns = useMemo(() => {
-    const cards: Card[] = [...liveByRepo, ...(unpublished.length ? ['unpublished' as const] : [])]
-    const out = Array.from({ length: Math.max(1, Math.min(cols, cards.length)) }, () => ({ h: 0, cards: [] as Card[] }))
-    for (const c of cards) {
+    const out = Array.from({ length: Math.max(1, Math.min(cols, liveByRepo.length)) }, () => ({ h: 0, cards: [] as typeof liveByRepo }))
+    for (const c of liveByRepo) {
       const col = out.reduce((a, b) => (b.h < a.h ? b : a))
       col.cards.push(c)
-      col.h += 1.2 + (c === 'unpublished' ? shownUnpub.length * 0.9 + (unpublished.length > UNPUB ? 0.5 : 0) : c.rows.length)
+      col.h += 1.2 + c.rows.length
     }
     return out.map((c) => c.cards)
-  }, [liveByRepo, unpublished, shownUnpub, cols])
+  }, [liveByRepo, cols])
+
+  // A session opens its repository on the branch it works on (once the repository's state has loaded).
+  const select = useStore((s) => s.select)
+  const openSession = (s: AgentSession) => {
+    const repo = s.repo
+    if (!repo || !known(repo)) return
+    setRepo(repo)
+    if (!s.branch) return
+    // Once: selecting changes the store, which would call the subscription again.
+    let stop: (() => void) | null = null
+    const pick = () => {
+      const st = useStore.getState()
+      if (st.repo !== repo || st.state) { stop?.(); stop = null }
+      if (st.repo !== repo || !st.state) return st.repo !== repo
+      const w = st.state.worktrees.find((x) => x.branch === s.branch)
+      if (w) select(w.path)
+      return true
+    }
+    if (!pick()) stop = useStore.subscribe(pick)
+  }
 
   return (
     <main className="sessions">
@@ -224,7 +243,47 @@ export function Sessions() {
             <div className="repo-cards" ref={gridRef}>
               {columns.map((col, i) => (
               <div key={i} className="repo-col">
-              {col.map((c) => c === 'unpublished' ? (
+              {col.map((c) => (
+                <article key={c.key} className="repo-card">
+                  <header>
+                    {c.key === '~apps' ? <AppWindow size={15} /> : <FolderGit2 size={15} />}
+                    <b title={c.repo ?? undefined}>{c.title}</b>
+                    <span className="repo-card-actions">
+                      {c.github && <a className="icon-link" href={`https://github.com/${c.github}`} target="_blank" rel="noreferrer" title={c.github}><GithubIcon size={14} /></a>}
+                      {known(c.repo) && <button type="button" className="link" onClick={() => c.repo && setRepo(c.repo)}>{t('openRepo')}</button>}
+                    </span>
+                  </header>
+                  <ul>
+                    {c.rows.map(({ s, n, ids }) => (
+                      <li key={s.id} className={`${s.inferred ? 'is-inferred' : ''}${known(s.repo) ? ' is-open' : ''}`} title={s.cwd ?? undefined}
+                        {...(known(s.repo) ? { role: 'button', tabIndex: 0, onClick: () => openSession(s), onKeyDown: (e: ReactKeyboardEvent) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openSession(s) } } } : {})}>
+                        <AgentBadge agent={s.agent} size={22} live={s.state === 'working'} />
+                        <span className="row-main">
+                          <span className="row-top">
+                            <b>{s.agent}</b>
+                            {n > 1 && <span className="live-count">×{n}</span>}
+                            {s.state && <span className={`state-chip is-${s.state}`}>{t(s.state === 'working' ? 'stateWorking' : s.state === 'waiting' ? 'stateWaiting' : 'stateIdle')}</span>}
+                            {s.inferred && <span className="tag" title={t('inferredHint')}>{t('inferred')}</span>}
+                          </span>
+                          <span className="row-sub muted">
+                            <ViaIcon via={s.via} host={s.host} />{s.host}
+                            {s.branch && <span className="mono">⎇ {s.branch}</span>}
+                            {!s.repo && s.cwd && <span className="mono">{tilde(s.cwd)}</span>}
+                            {s.pr && <a className="tag" href={s.pr.url} target="_blank" rel="noreferrer" title={s.pr.title} onClick={(e) => e.stopPropagation()}><GitPullRequest size={11} />#{s.pr.number}</a>}
+                          </span>
+                        </span>
+                        <span className="row-time mono">{duration(now - s.start)}</span>
+                        <button type="button" className="icon-btn row-close" title={t('closeSession')} aria-label={t('closeSession')}
+                          disabled={closing === s.id} onClick={(e) => { e.stopPropagation(); void closeSession(s.id, ids) }} onKeyDown={(e) => e.stopPropagation()}><X size={13} /></button>
+                      </li>
+                    ))}
+                  </ul>
+                </article>
+              ))}
+              </div>
+              ))}
+            </div>
+            {unpublished.length > 0 && (
                 <article key="~unpublished" className="repo-card unpub-card">
                   <header><Upload size={15} /><b>{t('notOnGithub')}</b></header>
                   <ul>
@@ -241,45 +300,7 @@ export function Sessions() {
                     </button>
                   )}
                 </article>
-              ) : (
-                <article key={c.key} className="repo-card">
-                  <header>
-                    {c.key === '~apps' ? <AppWindow size={15} /> : <FolderGit2 size={15} />}
-                    <b title={c.repo ?? undefined}>{c.title}</b>
-                    <span className="repo-card-actions">
-                      {c.github && <a className="icon-link" href={`https://github.com/${c.github}`} target="_blank" rel="noreferrer" title={c.github}><GithubIcon size={14} /></a>}
-                      {known(c.repo) && <button type="button" className="link" onClick={() => c.repo && setRepo(c.repo)}>{t('openRepo')}</button>}
-                    </span>
-                  </header>
-                  <ul>
-                    {c.rows.map(({ s, n, ids }) => (
-                      <li key={s.id} className={s.inferred ? 'is-inferred' : ''} title={s.cwd ?? undefined}>
-                        <AgentBadge agent={s.agent} size={22} live={s.state === 'working'} />
-                        <span className="row-main">
-                          <span className="row-top">
-                            <b>{s.agent}</b>
-                            {n > 1 && <span className="live-count">×{n}</span>}
-                            {s.state && <span className={`state-chip is-${s.state}`}>{t(s.state === 'working' ? 'stateWorking' : s.state === 'waiting' ? 'stateWaiting' : 'stateIdle')}</span>}
-                            {s.inferred && <span className="tag" title={t('inferredHint')}>{t('inferred')}</span>}
-                          </span>
-                          <span className="row-sub muted">
-                            <ViaIcon via={s.via} host={s.host} />{s.host}
-                            {s.branch && <span className="mono">⎇ {s.branch}</span>}
-                            {!s.repo && s.cwd && <span className="mono">{tilde(s.cwd)}</span>}
-                            {s.pr && <a className="tag" href={s.pr.url} target="_blank" rel="noreferrer" title={s.pr.title}><GitPullRequest size={11} />#{s.pr.number}</a>}
-                          </span>
-                        </span>
-                        <span className="row-time mono">{duration(now - s.start)}</span>
-                        <button type="button" className="icon-btn row-close" title={t('closeSession')} aria-label={t('closeSession')}
-                          disabled={closing === s.id} onClick={() => void closeSession(s.id, ids)}><X size={13} /></button>
-                      </li>
-                    ))}
-                  </ul>
-                </article>
-              ))}
-              </div>
-              ))}
-            </div>
+            )}
           </section>
 
           <section className="sessions-section">

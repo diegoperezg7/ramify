@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
@@ -55,6 +55,27 @@ describe('engine', () => {
     assert.equal(s.worktrees.find((w) => w.branch === 'feat/x')?.agent, 'claude')
     assert.equal(s.commits.find((c) => c.subject === 'work')?.owner, 'feat/x')
     assert.equal(s.commits.find((c) => c.subject === 'init')?.owner, null)
+  })
+
+  it('takes an agent idle at its prompt out of the running ones, even when the script sees its process', { skip: process.platform === 'win32' }, async () => {
+    const wt = P(ROOT, 'shop', 'feat-x')
+    // A node process working in the worktree: the script takes it for the worktree's agent (claude).
+    const proc = spawn(process.execPath, ['-e', 'setTimeout(() => {}, 30000)'], { cwd: wt, stdio: 'ignore' })
+    try {
+      const runningAt = async (e: Engine) => (await e.worktrees(REPO)).find((w) => w.branch === 'feat/x')?.running
+      // The process needs a moment before lsof shows its folder.
+      let seen: string[] | undefined = []
+      for (let i = 0; i < 25 && !seen?.length; i++) {
+        seen = await runningAt(engine)
+        if (!seen?.length) await new Promise((r) => setTimeout(r, 200))
+      }
+      assert.deepEqual(seen, ['claude'])
+      const paused = new Engine({ bin: BIN, env, running: () => new Map(), paused: () => new Map([[wt, ['claude']]]) })
+      assert.deepEqual(await runningAt(paused), [])
+      // Another session of the same agent at work there keeps it running.
+      const both = new Engine({ bin: BIN, env, running: () => new Map([[wt, ['claude']]]), paused: () => new Map([[wt, ['claude']]]) })
+      assert.deepEqual(await runningAt(both), ['claude'])
+    } finally { proc.kill() }
   })
 
   it('shows branches without a worktree too, each owning its commits', async () => {
