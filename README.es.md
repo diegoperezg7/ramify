@@ -17,7 +17,9 @@
 
 <p align="center"><a href="README.md">English</a></p>
 
-<p align="center"><img src="docs/ramify-new-agent.gif" width="960" alt="Crear un agente en Ramify: elegir Claude, escribir la tarea, la rama se nombra sola y el agente se abre en una terminal, en su propia carpeta"><br><sub><b><a href="docs/ramify-demo.mp4">▶ Ver la demo completa (55 s)</a></b>: agentes trabajando ahora, un agente nuevo y su terminal, horas de los agentes, cualquier día al detalle, las ramas y un merge con un clic</sub></p>
+https://github.com/user-attachments/assets/c89861ef-e1dd-4305-b7ec-6a74b6527b3b
+
+<p align="center"><sub><b><a href="docs/ramify-demo.mp4">▶ Ver la demo completa (55 s)</a></b>: agentes trabajando ahora, un agente nuevo y su terminal, horas de los agentes, cualquier día al detalle, las ramas y un merge con un clic</sub></p>
 
 ## En pocas palabras
 
@@ -93,7 +95,7 @@ historial de cada sesión (dónde, en qué proyecto y cuánto tiempo), exportabl
 
 ### Ver exactamente qué ha cambiado cada asistente
 
-<img src="docs/ramify-branches.gif" width="960" alt="Abrir un proyecto: cada rama con su agente, los cambios línea a línea de la que está haciendo Codex y la línea de tiempo de ramas">
+https://github.com/user-attachments/assets/6fb28701-b117-49b2-a899-73d64cae7ea8
 
 Cada rama con su asistente, y sus cambios línea a línea como en GitHub: verde lo añadido, rojo lo quitado. Ábrela en
 los editores que tienes instalados, vuelve a lanzar el asistente, llévala a tu proyecto o quítala. Ramify nunca borra
@@ -101,7 +103,7 @@ trabajo que no esté guardado o llevado al proyecto.
 
 ### Llevar el trabajo a tu proyecto con un clic
 
-<img src="docs/ramify-merge.gif" width="960" alt="Mergear una rama terminada: elegir feat/wishlist, Mergear en main, confirmar, y un aviso corto dice que ya está en main sin conflictos">
+https://github.com/user-attachments/assets/70585f1f-0d82-400b-bede-42561499f0c9
 
 Cuando un trabajo está listo, un clic lo lleva a tu proyecto y un mensaje corto te lo confirma. Si choca con otra
 cosa, una ventana te explica qué ha pasado, qué ficheros chocan y qué hacer. No se cambia nada.
