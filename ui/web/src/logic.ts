@@ -206,3 +206,6 @@ export async function friendlyMerge(merge: () => Promise<unknown>, ctx: { branch
 
 /** Running now: open and not idle at its prompt (a conversation left open in a tab is not running). */
 export const isActive = (s: AgentSession) => s.end === null && s.state !== 'idle'
+
+/** One word for a POSIX shell: plain names stay as they are, anything else goes in single quotes. */
+export const shellArg = (s: string) => (/^[\w./@%+=:,-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`)
