@@ -23,7 +23,9 @@
   <a href="README.es.md"><img alt="Español" src="https://img.shields.io/badge/lang-español-4e4e4e"></a>
 </p>
 
-<p align="center"><img src="docs/ramify-new-agent.gif" width="960" alt="Starting a new agent in Ramify: pick Claude, type the task, the branch is named for you, and the agent opens in a terminal in its own folder"><br><sub><b><a href="docs/ramify-demo.mp4">▶ Watch the full demo (55 s)</a></b>: agents working now, a new agent and its terminal, agent hours, any day in detail, the branches and a merge in one click</sub></p>
+https://github.com/user-attachments/assets/c89861ef-e1dd-4305-b7ec-6a74b6527b3b
+
+<p align="center"><sub><b><a href="docs/ramify-demo.mp4">▶ Watch the full demo (55 s)</a></b>: agents working now, a new agent and its terminal, agent hours, any day in detail, the branches and a merge in one click</sub></p>
 
 ## In plain words
 
@@ -99,7 +101,7 @@ session (where, which project, how long), exportable to a spreadsheet.
 
 ### See exactly what each assistant changed
 
-<img src="docs/ramify-branches.gif" width="960" alt="Opening a project: every branch with its agent, the line-by-line changes of the one Codex is working on, and the branch timeline">
+https://github.com/user-attachments/assets/6fb28701-b117-49b2-a899-73d64cae7ea8
 
 Every branch with its assistant, and its changes line by line as on GitHub: green for added, red for removed.
 Open it in the editors you have installed, start the assistant again, bring it in, or remove it. Ramify never
@@ -107,7 +109,7 @@ deletes work that has not been saved or brought in.
 
 ### Bring the work in with one click
 
-<img src="docs/ramify-merge.gif" width="960" alt="Merging a finished branch: pick feat/wishlist, Merge into main, confirm, and a short message says it is in main with no conflicts">
+https://github.com/user-attachments/assets/70585f1f-0d82-400b-bede-42561499f0c9
 
 When a piece of work is ready, one click brings it into your project and a short message confirms it. If it
 clashes with something else, a window explains what happened, which files clash and what to do. Nothing is changed.
