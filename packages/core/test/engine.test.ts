@@ -1,10 +1,10 @@
 import { execFileSync, spawn } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { after, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { Engine, EngineError, normPath, shellQuote } from '../src/engine.ts'
+import { Engine, EngineError, normPath, RECENT_IGNORED_MS, shellQuote } from '../src/engine.ts'
 
 const BIN = resolve(import.meta.dirname, '../../../ramify')
 // Paths as git prints them (on Windows: long names, forward slashes).
@@ -100,6 +100,42 @@ describe('engine', () => {
     const d = await engine.worktree(REPO, wt)
     assert.deepEqual(d.files.map((f) => [f.file, f.status, f.uncommitted]), [['b.txt', 'A', false], ['c.txt', '?', true]])
     assert.match(await engine.diff(REPO, wt, 'c.txt'), /\+new/)
+  })
+
+  it('keeps a worktree whose ignored files changed lately, and lets it go once they are old', { skip: process.platform === 'win32' ? 'no find -mmin on Windows' : false }, async () => {
+    const c = await engine.create(REPO, { branch: 'feat/build', agent: '' })
+    writeFileSync(join(c.path, '.gitignore'), 'target/\n')
+    sh(c.path, 'add', '.gitignore')
+    sh(c.path, 'commit', '-qm', 'ignore target')
+    assert.equal(await engine.keepReason(c.path), null, 'nothing ignored yet')
+
+    mkdirSync(join(c.path, 'target', 'release'), { recursive: true })
+    const pkg = join(c.path, 'target', 'release', 'App.dmg')
+    writeFileSync(pkg, 'signed')
+    // git status sees nothing: this is what removing the worktree used to miss.
+    assert.equal(sh(c.path, 'status', '--porcelain').trim(), '')
+    assert.deepEqual(await engine.keepReason(c.path), { kind: 'files', what: 'target/release/App.dmg' })
+
+    const old = (Date.now() - RECENT_IGNORED_MS - 3_600_000) / 1000
+    for (const p of [pkg, join(c.path, 'target', 'release'), join(c.path, 'target')]) utimesSync(p, old, old)
+    assert.equal(await engine.keepReason(c.path), null, 'a day-old build can go')
+    await engine.remove(REPO, c.path, true)
+  })
+
+  it('keeps a worktree a process is working in', { skip: hasLsof ? false : 'needs macOS and lsof' }, async () => {
+    const wt = (await engine.create(REPO, { branch: 'feat/serve', agent: '' })).path
+    mkdirSync(join(wt, 'web'))
+    assert.equal(await engine.keepReason(wt), null)
+    const build = spawn('sleep', ['30'], { cwd: join(wt, 'web') })
+    try {
+      await new Promise((r) => setTimeout(r, 300))
+      assert.deepEqual(await engine.keepReason(wt), { kind: 'process', what: 'sleep' })
+    } finally {
+      build.kill()
+    }
+    await new Promise((r) => setTimeout(r, 300))
+    assert.equal(await engine.keepReason(wt), null, 'once the process ends, it can go')
+    await engine.remove(REPO, wt, true)
   })
 
   it('refuses to merge with uncommitted changes, then merges', async () => {

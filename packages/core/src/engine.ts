@@ -10,6 +10,11 @@ const MAX_COMMITS = 300
 /** Branches without a worktree drawn in the graph (worktree branches are always drawn). */
 const MAX_LOCAL_BRANCHES = 30
 const MAX_DIFF = 400_000
+/** Ignored files changed this recently (a build, a signed package) keep a merged worktree from being tidied away. */
+export const RECENT_IGNORED_MS = 24 * 60 * 60 * 1000
+
+/** Why tidying a worktree up on its own would lose work: a process working in it, or ignored files it just made. */
+export type KeepReason = { kind: 'process'; what: string } | { kind: 'files'; what: string }
 export const IDES = ['xcode', 'cursor', 'code', 'zed', 'idea', 'Finder']
 
 /** Short ids the ramify script knows, by editor name in the catalog. Other editors are opened by app name. */
@@ -436,6 +441,33 @@ export class Engine {
     const msg = (r.stderr || r.stdout).trim()
     if (r.code !== 0) throw new EngineError(msg.replace(/^ramify: /, ''))
     return msg
+  }
+
+  /**
+   * Why removing this worktree without asking would lose work, or null when it can go. `git status` (all that
+   * `remove` checks) sees neither a process running in it (a build, a dev server) nor the files git ignores, so a
+   * build output or a signed package made there in the last day would go with it. Only for tidying up on its own:
+   * removing by hand stays the user's call. Windows has no lsof and no find -mmin: nothing is kept there.
+   */
+  async keepReason(path: string): Promise<KeepReason | null> {
+    if (WIN) return null
+    const inside = (p: string) => p === path || p.startsWith(path + '/')
+    const lsof = await this.run('lsof', ['-d', 'cwd', '-Fpcn'])
+    let pid = 0
+    let command = ''
+    for (const line of lsof.stdout.split('\n')) {
+      if (line[0] === 'p') pid = Number(line.slice(1))
+      else if (line[0] === 'c') command = line.slice(1)
+      else if (line[0] === 'n' && pid !== process.pid && inside(line.slice(1))) return { kind: 'process', what: command || String(pid) }
+    }
+    // Ignored folders come as one entry each (--directory), so a whole target/ or node_modules/ is one path.
+    const ignored = (await this.git(path, 'ls-files', '-z', '--others', '--ignored', '--exclude-standard', '--directory'))
+      .split('\0').filter((f) => f && f !== '.worktree.env') // ramify's own, rewritten on every open
+    if (!ignored.length) return null
+    const minutes = String(-Math.ceil(RECENT_IGNORED_MS / 60_000))
+    const found = await this.run('find', [...ignored.map((f) => join(path, f)), '-type', 'f', '-mmin', minutes, '-print', '-quit'])
+    const hit = found.stdout.trim()
+    return hit ? { kind: 'files', what: hit.slice(path.length + 1) } : null
   }
 
   async merge(repo: string, path: string): Promise<string> {

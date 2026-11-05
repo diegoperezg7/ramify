@@ -353,6 +353,16 @@ async function careForBranches() {
       const occupied = b.running.length > 0 || live.some((l) => l.path === b.path) || busyAt.has(b.path)
       if (b.merged && !occupied) {
         if (config.settings.autoClean) {
+          // git status does not see a build running there or the files it made (ignored): those stay until asked.
+          const keep = await engine.keepReason(b.path).catch(() => null)
+          if (keep) {
+            const why = keep.kind === 'process'
+              ? (es() ? `${keep.what} sigue trabajando en él` : `${keep.what} is still working in it`)
+              : (es() ? `tiene archivos ignorados recientes (${keep.what})` : `it has recent ignored files (${keep.what})`)
+            tell(`kept:${b.path}`, es() ? 'Worktree conservado' : 'Worktree kept',
+              es() ? `${name} · ${b.branch} ya está en ${health.base}, pero ${why}. Quítalo tú cuando quieras.` : `${name} · ${b.branch} is in ${health.base}, but ${why}. Remove it yourself when you are done.`, { repo, path: b.path })
+            continue
+          }
           try {
             await engine.remove(repo, b.path, false)
             tell(`clean:${b.path}`, es() ? 'Worktree recogido' : 'Worktree tidied up', es() ? `${name} · ${b.branch} ya estaba en ${health.base}` : `${name} · ${b.branch} was already in ${health.base}`, { repo })
