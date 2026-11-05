@@ -273,8 +273,10 @@ describe('throwaway folders', () => {
     assert.equal(inTempDir(join(tmp, 'demo'), tmp), true)
     assert.equal(inTempDir(tmp, tmp), true)
     assert.equal(inTempDir('/tmp/x/demo', tmp), true)
-    // A sibling whose name only starts like the temp directory is not inside it.
-    assert.equal(inTempDir(`${tmp}-other/demo`, tmp), false)
+    // A sibling whose name only starts like the temp directory is not inside it (a made-up root: on Linux the
+    // real one is /tmp, where any sibling is in /tmp too).
+    assert.equal(inTempDir('/opt/scratch/demo', '/opt/scratch'), true)
+    assert.equal(inTempDir('/opt/scratch-other/demo', '/opt/scratch'), false)
     assert.equal(inTempDir('/Users/d/code/shop', tmp), false)
     assert.equal(inTempDir(null, tmp), false)
     if (process.platform === 'darwin') {
