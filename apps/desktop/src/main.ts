@@ -41,7 +41,8 @@ const es = () => app.getLocale().toLowerCase().startsWith('es')
 if (process.env.RAMIFY_USER_DATA) app.setPath('userData', process.env.RAMIFY_USER_DATA)
 
 interface Bounds { x: number; y: number; width: number; height: number }
-interface Config { repos: string[]; settings: Settings; bounds?: Bounds }
+/** `hidden`: repositories the user removed, which detection must not bring back (adding one by hand clears it). */
+interface Config { repos: string[]; settings: Settings; bounds?: Bounds; hidden?: string[] }
 const configFile = join(app.getPath('userData'), 'config.json')
 // Renamed from agent-wt: bring the old repositories and settings over once.
 const legacyConfig = join(app.getPath('appData'), 'agent-wt', 'config.json')
@@ -56,7 +57,7 @@ const defaultSettings: Settings = {
 function readConfig(): Config {
   try {
     const c = JSON.parse(readFileSync(configFile, 'utf8')) as Partial<Config>
-    return { repos: c.repos ?? [], settings: { ...defaultSettings, ...c.settings }, bounds: c.bounds }
+    return { repos: c.repos ?? [], settings: { ...defaultSettings, ...c.settings }, bounds: c.bounds, hidden: Array.isArray(c.hidden) ? c.hidden : [] }
   } catch {
     return { repos: [], settings: { ...defaultSettings } }
   }
@@ -69,7 +70,7 @@ function writeConfig() {
 }
 
 const config = readConfig()
-for (const r of engine.discover()) if (!config.repos.includes(r)) config.repos.push(r)
+for (const r of engine.discover()) if (!config.repos.includes(r) && !config.hidden?.includes(r)) config.repos.push(r)
 writeConfig()
 
 /** Repositories on disks that are not mounted right now stay in the config; they are only hidden. */
@@ -85,8 +86,14 @@ function isTemporary(path: string): boolean {
   return tempRoots.some((root) => path === root || path.startsWith(`${root}/`))
 }
 
-function addRepoToConfig(path: string) {
-  if (!config.repos.includes(path)) { config.repos.push(path); writeConfig() }
+/** Added by the user it always goes in; found on its own (`detected`), not if the user removed it before. */
+function addRepoToConfig(path: string, detected = false) {
+  if (detected && config.hidden?.includes(path)) return
+  const unhide = !detected && !!config.hidden?.includes(path)
+  if (unhide) config.hidden = config.hidden!.filter((r) => r !== path)
+  if (!config.repos.includes(path)) config.repos.push(path)
+  else if (!unhide) return
+  writeConfig()
 }
 
 // --- agent monitor --------------------------------------------------------------
@@ -185,7 +192,7 @@ async function scan(): Promise<Live[]> {
   for (const s of sessions) {
     if (s.inferred || !s.repo || !s.worktree || !open.has(s.key)) continue
     // Throwaway repositories in the system's temporary folders (tests, demos) are not followed by themselves.
-    if (config.settings.autoDetect && !isTemporary(s.repo)) addRepoToConfig(s.repo)
+    if (config.settings.autoDetect && !isTemporary(s.repo)) addRepoToConfig(s.repo, true)
     if (!config.repos.includes(s.repo)) continue
     const entry = found.get(s.worktree) ?? { repo: s.repo, path: s.worktree, branch: s.branch ?? '', agents: [], busy: [] }
     if (!entry.agents.includes(s.agent)) entry.agents.push(s.agent)
@@ -700,7 +707,9 @@ const handlers = {
   removeRepo: (path: string) => {
     strings(path)
     for (const l of live) if (l.repo === path) dismissed.add(l.path)
-    config.repos = config.repos.filter((r) => r !== path); writeConfig()
+    config.repos = config.repos.filter((r) => r !== path)
+    if (!config.hidden?.includes(path)) config.hidden = [...config.hidden ?? [], path]
+    writeConfig()
   },
   github: (refresh?: boolean) => listGithub(!!refresh),
   cloneRepo: async (nameWithOwner: string): Promise<RepoInfo> => {
