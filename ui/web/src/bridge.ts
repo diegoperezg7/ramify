@@ -1,4 +1,4 @@
-import type { AgentSession, Bridge, Capabilities, GithubAccount, GithubSync, Health, InstalledTools, PullRequest, Timeline, TimelineCommit, Detail, GithubRepo, RepoInfo, Settings, SetupState, State } from './types'
+import type { AgentSession, Bridge, Capabilities, CommitDetail, GithubAccount, GithubSync, Health, InstalledTools, PullRequest, Timeline, TimelineCommit, Detail, GithubRepo, RepoInfo, Settings, SetupState, State } from './types'
 
 // One UI, three hosts:
 //  - desktop app: Electron preload exposes window.ramify.invoke
@@ -22,7 +22,7 @@ declare global {
   }
 }
 
-type HostEvent = { repo?: string; path?: string; event?: string }
+type HostEvent = { repo?: string; path?: string; event?: string; hash?: string }
 
 function rpc(invoke: Invoke, subscribe: (cb: (e: HostEvent) => void) => void): Bridge {
   const call = <T>(method: string, ...args: unknown[]) => invoke(method, args) as Promise<T>
@@ -31,6 +31,9 @@ function rpc(invoke: Invoke, subscribe: (cb: (e: HostEvent) => void) => void): B
     state: (repo) => call<State>('state', repo),
     worktree: (repo, path) => call<Detail>('worktree', repo, path),
     diff: (repo, path, file) => call<{ diff: string }>('diff', repo, path, file),
+    commit: (repo, hash) => call<CommitDetail>('commit', repo, hash),
+    commitDiff: (repo, hash, file) => call<{ diff: string }>('commitDiff', repo, hash, file),
+    dashboard: (action, hash) => call<void>('dashboard', action, hash),
     open: (repo, path, ide) => call('open', repo, path, ide),
     merge: (repo, path) => call('merge', repo, path),
     remove: (repo, path, force) => call('remove', repo, path, force),
@@ -132,6 +135,8 @@ function httpBridge(): Bridge {
     state: () => req<State>('/api/state'),
     worktree: (_r, path) => req<Detail>(`/api/worktree?path=${q(path)}`),
     diff: (_r, path, file) => req(`/api/diff?path=${q(path)}&file=${q(file)}`),
+    commit: (_r, hash) => req<CommitDetail>(`/api/commit?hash=${q(hash)}`),
+    commitDiff: (_r, hash, file) => req(`/api/commit-diff?hash=${q(hash)}&file=${q(file)}`),
     open: (_r, path, ide) => post('/api/open', { path, ide }),
     merge: (_r, path) => post('/api/merge', { path }),
     remove: (_r, path, force) => post('/api/remove', { path, force }),
@@ -176,8 +181,8 @@ function httpBridge(): Bridge {
 
 const electronEvents = (cb: (e: HostEvent) => void) => window.ramify?.on?.((p) => cb(p as HostEvent))
 const vscodeEvents = (cb: (e: HostEvent) => void) => window.addEventListener('message', (e: MessageEvent) => {
-  const d = e.data as { command?: string; id?: number }
-  if (d && typeof d.id !== 'number' && d.command) cb({ event: d.command })
+  const d = e.data as { command?: string; id?: number; hash?: string }
+  if (d && typeof d.id !== 'number' && d.command) cb({ event: d.command, hash: d.hash })
 })
 
 export const bridge: Bridge = window.ramify

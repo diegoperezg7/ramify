@@ -43,6 +43,12 @@ export function activate(ctx: vscode.ExtensionContext) {
     term.sendText(command)
   }
 
+  // A message for the dashboard panel: sent now when its page listens, or as soon as it does.
+  const toPanel = (msg: object) => {
+    if (ready) void panel?.webview.postMessage(msg)
+    else queued.push(msg)
+  }
+
   const handlers = {
     ...createHandlers({
       engine,
@@ -53,36 +59,51 @@ export function activate(ctx: vscode.ExtensionContext) {
       openFolder: { ides: ['code', 'cursor'], open: async (path) => { await vscode.commands.executeCommand('vscode.openFolder', vscode.Uri.file(path), { forceNewWindow: true }) } },
     }),
     repos: () => [],
+    // From the side bar: open the dashboard, on a commit or on the new worktree form.
+    dashboard: async (action: string, hash?: string) => {
+      await open()
+      if (action === 'new') toPanel({ command: 'new' })
+      else if (typeof hash === 'string' && /^[0-9a-f]{4,64}$/i.test(hash)) toPanel({ command: 'commit', hash })
+    },
   }
+
+  const ui = vscode.Uri.joinPath(ctx.extensionUri, 'media', 'ui')
+  const page = (webview: vscode.Webview, mode?: 'sidebar') =>
+    webviewHtml(readFileSync(join(ui.fsPath, 'index.html'), 'utf8'), webview.asWebviewUri(ui).toString(), webview.cspSource, mode)
+  // Both pages ask the same handlers; `first` runs on a page's first request (it is listening from then on).
+  const answer = (webview: vscode.Webview, first?: () => void) => webview.onDidReceiveMessage(async (msg: { id: number; method: string; args: unknown[] }) => {
+    first?.()
+    try {
+      void webview.postMessage({ id: msg.id, result: await dispatch(handlers, msg.method, msg.args) })
+    } catch (e) {
+      void webview.postMessage({ id: msg.id, error: (e as Error).message })
+    }
+  })
 
   const open = async () => {
     if (panel) { panel.reveal(); return }
-    const ui = vscode.Uri.joinPath(ctx.extensionUri, 'media', 'ui')
     panel = vscode.window.createWebviewPanel('ramify', 'Ramify', vscode.ViewColumn.Active, {
       enableScripts: true, retainContextWhenHidden: true, localResourceRoots: [ui],
     })
     panel.iconPath = vscode.Uri.joinPath(ctx.extensionUri, 'media', 'icon.png')
-    panel.webview.html = webviewHtml(readFileSync(join(ui.fsPath, 'index.html'), 'utf8'), panel.webview.asWebviewUri(ui).toString(), panel.webview.cspSource)
-    panel.webview.onDidReceiveMessage(async (msg: { id: number; method: string; args: unknown[] }) => {
-      // The first request means the UI is listening: deliver anything queued before that.
-      if (!ready) { ready = true; for (const m of queued.splice(0)) void panel?.webview.postMessage(m) }
-      try {
-        const result = await dispatch(handlers, msg.method, msg.args)
-        void panel?.webview.postMessage({ id: msg.id, result })
-      } catch (e) {
-        void panel?.webview.postMessage({ id: msg.id, error: (e as Error).message })
-      }
-    })
+    panel.webview.html = page(panel.webview)
+    const webview = panel.webview
+    answer(webview, () => { if (!ready) { ready = true; for (const m of queued.splice(0)) void webview.postMessage(m) } })
     panel.onDidDispose(() => { panel = undefined; ready = false })
   }
 
+  // Activity bar: the branch tree of this repository in the side bar, the dashboard a click away.
+  ctx.subscriptions.push(vscode.window.registerWebviewViewProvider('ramify.home', {
+    resolveWebviewView(view) {
+      view.webview.options = { enableScripts: true, localResourceRoots: [ui] }
+      view.webview.html = page(view.webview, 'sidebar')
+      ctx.subscriptions.push(answer(view.webview))
+    },
+  }))
+
   ctx.subscriptions.push(
     vscode.commands.registerCommand('ramify.open', open),
-    vscode.commands.registerCommand('ramify.new', async () => {
-      await open()
-      if (ready) void panel?.webview.postMessage({ command: 'new' })
-      else queued.push({ command: 'new' })
-    }),
+    vscode.commands.registerCommand('ramify.new', () => handlers.dashboard('new')),
   )
 }
 

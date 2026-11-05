@@ -16,3 +16,8 @@ If `.worktree.env` exists at the project root, this is an isolated git worktree,
 - For xcodebuild always pass `-derivedDataPath "$DERIVED_DATA"`. If `SIM_UDID` is set, use `-destination "id=$SIM_UDID"`.
 - Never commit `.worktree.env`. Do not merge into main or push to main: the user decides that from `ramify ui` or the terminal.
 - `"${CLAUDE_PLUGIN_ROOT}"/bin/ramify ls` shows every worktree of the repository, its agent and whether it is running.
+- Before editing files another agent may be changing, run `"${CLAUDE_PLUGIN_ROOT}"/bin/ramify who <files>` (the `coordinar` skill): it exits 1 and names the branch when another worktree changes them.
+
+If the session did not start inside the repository (EnterWorktree then has no repository to branch from), run
+`"${CLAUDE_PLUGIN_ROOT}"/bin/ramify new <feat/...> --no-launch` from the repository and call EnterWorktree with the
+`path` it prints.

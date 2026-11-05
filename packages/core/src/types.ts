@@ -40,6 +40,17 @@ export interface FileChange {
   uncommitted: boolean
 }
 
+/** One commit of the graph: what it says and the files it changed (a merge: against its first parent). */
+export interface CommitDetail {
+  hash: string
+  parents: string[]
+  author: string
+  time: number
+  subject: string
+  body: string
+  files: FileChange[]
+}
+
 export interface Detail {
   path: string
   branch: string
@@ -277,6 +288,8 @@ export interface Bridge {
   state(repo: string): Promise<State>
   worktree(repo: string, path: string): Promise<Detail>
   diff(repo: string, path: string, file: string): Promise<{ diff: string }>
+  commit(repo: string, hash: string): Promise<CommitDetail>
+  commitDiff(repo: string, hash: string, file: string): Promise<{ diff: string }>
   open(repo: string, path: string, ide: string): Promise<{ message: string }>
   merge(repo: string, path: string): Promise<{ message: string }>
   remove(repo: string, path: string, force: boolean): Promise<{ message: string }>
@@ -334,5 +347,7 @@ export interface Bridge {
   /** Create a GitHub repository for a local repository without a remote, and push it. */
   publishRepo(path: string, name: string, isPrivate: boolean): Promise<{ message: string; github: string }>
   /** Host-initiated events: open a repository/worktree, show the "new worktree" form. */
-  onEvent(cb: (e: { repo?: string; path?: string; event?: string }) => void): void
+  /** Editor only: open the dashboard panel, on a commit (`open`) or on the new worktree form (`new`). */
+  dashboard?(action: 'open' | 'new', hash?: string): Promise<void>
+  onEvent(cb: (e: { repo?: string; path?: string; event?: string; hash?: string }) => void): void
 }

@@ -22,6 +22,8 @@ interface Store {
   conn: Conn
   lastSync: number
   selected: string | null
+  /** A commit opened from the graph (its hash): shown where a worktree's detail goes. */
+  commit: string | null
   detail: Detail | null
   file: string | null
   /** The open file's diff: null while it loads, '' when git has no text to show. */
@@ -55,6 +57,7 @@ interface Store {
   addRepo: () => Promise<void>
   removeRepo: (path: string) => Promise<void>
   select: (path: string | null) => void
+  selectCommit: (hash: string | null) => void
   refreshDetail: () => Promise<void>
   openFile: (file: string | null) => Promise<void>
   createWorktree: (req: CreateRequest, repo?: string) => Promise<boolean>
@@ -102,6 +105,7 @@ export const useStore = create<Store>((set, get) => ({
   conn: 'ok',
   lastSync: 0,
   selected: null,
+  commit: null,
   detail: null,
   file: null,
   diff: null,
@@ -208,7 +212,7 @@ export const useStore = create<Store>((set, get) => ({
 
   setRepo: (path) => {
     save('ramify-repo', path)
-    set({ repo: path, state: null, selected: null, detail: null, file: null, diff: null, menuOpen: false, view: get().view === 'timeline' ? 'timeline' : 'repo' })
+    set({ repo: path, state: null, selected: null, commit: null, detail: null, file: null, diff: null, menuOpen: false, view: get().view === 'timeline' ? 'timeline' : 'repo' })
     void get().poll(true)
   },
 
@@ -231,9 +235,11 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   select: (path) => {
-    set({ selected: path, detail: null, file: null, diff: null })
+    set({ selected: path, commit: null, detail: null, file: null, diff: null })
     if (path) void get().refreshDetail()
   },
+
+  selectCommit: (hash) => set({ commit: hash, selected: null, detail: null, file: null, diff: null }),
 
   refreshDetail: async () => {
     const { selected: path, repo } = get()

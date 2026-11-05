@@ -30,6 +30,8 @@ export function createHandlers(o: HostOptions): Handlers {
     state: async (r: string) => engine.state(await repo(r)),
     worktree: async (r: string, path: string) => { strings(path); return engine.worktree(await repo(r), path) },
     diff: async (r: string, path: string, file: string) => { strings(path, file); return { diff: await engine.diff(await repo(r), path, file) } },
+    commit: async (r: string, hash: string) => { strings(hash); return engine.commit(await repo(r), hash) },
+    commitDiff: async (r: string, hash: string, file: string) => { strings(hash, file); return { diff: await engine.commitDiff(await repo(r), hash, file) } },
     open: async (r: string, path: string, ide: string) => {
       strings(path, ide)
       const main = await repo(r)

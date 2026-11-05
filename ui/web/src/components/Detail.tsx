@@ -12,6 +12,7 @@ import { AgentBadge } from './AgentBadge'
 import { Activity } from './Activity'
 import { upstreamLabel } from './WorktreeList'
 import { Bar, ListSkeleton } from './Skeletons'
+import { CommitDetail } from './CommitDetail'
 
 export const IDE_LABELS: Record<string, string> = { xcode: 'Xcode', cursor: 'Cursor', code: 'VS Code', zed: 'Zed', idea: 'IntelliJ IDEA' }
 
@@ -35,6 +36,8 @@ export function Detail() {
   const [force, setForce] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
 
+  const commit = useStore((s) => s.commit)
+  if (commit) return <CommitDetail hash={commit} />
   const w = state.worktrees.find((x) => x.path === selected)
   if (!w) {
     return (

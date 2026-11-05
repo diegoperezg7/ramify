@@ -91,6 +91,10 @@ describe('web UI', () => {
     await page.click('.file:has-text("pay.ts")')
     // GitHub-style rows: the added line sits in a green row with its new line number.
     assert.match(await (await page.waitForSelector('.diff .dl-add')).textContent() ?? '', /export const pay = 1/)
+    // The same commit view through ui/server.py.
+    await page.click('.graph-row:has-text("Stripe payment intent")')
+    await page.click('.commit-pane .file:has-text("pay.ts")')
+    assert.match(await (await page.waitForSelector('.commit-pane .diff .dl-add')).textContent() ?? '', /export const pay = 1/)
     assert.deepEqual(errors, [])
     await page.close()
   })
@@ -168,6 +172,103 @@ describe('web UI', () => {
     assert.equal(launched.length, 1)
     assert.match(launched[0].command, /open .*feat-wishlist -a codex -p 'add a wishlist, it'\\''s fine'$/)
     assert.ok(existsSync(join(T, 'wts', 'shop', 'feat-wishlist', '.worktree.env')))
+    await page.close()
+  })
+
+  it('editor host: the graph shows several branches at once, with each worktree\'s uncommitted work', async () => {
+    git(REPO, 'checkout', '-qb', 'spike/search')
+    writeFileSync(join(REPO, 'search.ts'), 'export const q = 1\n')
+    git(REPO, 'add', '.')
+    git(REPO, 'commit', '-qm', 'Search spike')
+    git(REPO, 'checkout', '-q', 'main')
+    const handlers = createHandlers({
+      engine: new Engine({ bin: BIN, env }),
+      capabilities: { host: 'vscode', multiRepo: false, create: true, settings: false, github: false, timeline: true, ides: IDES },
+      repo: () => REPO,
+      runInTerminal: () => {},
+    })
+    for (const scheme of ['light', 'dark'] as const) {
+      const page = await browser.newPage({ locale: 'en-US', colorScheme: scheme, viewport: { width: 1280, height: 760 } })
+      const errors: string[] = []
+      page.on('pageerror', (e) => errors.push(String(e)))
+      await page.exposeFunction('__host', (method: string, args: unknown[]) =>
+        dispatch(handlers, method, args).then((result) => ({ result }), (e: Error) => ({ error: e.message })))
+      await page.addInitScript((theme: string) => {
+        const w = window as unknown as { acquireVsCodeApi: () => unknown; __host: (m: string, a: unknown[]) => Promise<{ result?: unknown; error?: string }> }
+        w.acquireVsCodeApi = () => ({
+          postMessage: (msg: { id: number; method: string; args: unknown[] }) => {
+            void w.__host(msg.method, msg.args).then((r) => window.postMessage({ id: msg.id, ...r }, '*'))
+          },
+        })
+        // The editor marks its theme on the body, as VS Code and Cursor do.
+        document.addEventListener('DOMContentLoaded', () => document.body.classList.add(`vscode-${theme}`))
+      }, scheme)
+      await page.goto(`http://127.0.0.1:${WEB}/index.html`)
+      // A branch with a worktree and a plain local branch, side by side.
+      await page.waitForSelector('.graph-row:has-text("Search spike") .ref-branch:has-text("spike/search")')
+      assert.equal(await page.getAttribute('html', 'data-theme'), scheme)
+      await page.waitForSelector('.graph-row:has-text("Stripe payment intent") .ref-branch:has-text("feat/checkout")')
+      // feat/checkout has draft.ts uncommitted: shown on its tip.
+      assert.match(await page.textContent('.graph-row:has-text("Stripe payment intent") .ref-pending') ?? '', /\+1 uncommitted/)
+      assert.ok(await page.$('.node-pending'))
+      if (process.env.RAMIFY_E2E_SHOTS) await page.screenshot({ path: join(process.env.RAMIFY_E2E_SHOTS, `graph-${scheme}.png`) })
+      // Any commit opens: its files, the diff of one, then back through its parent.
+      await page.click('.graph-row:has-text("Stripe payment intent")')
+      await page.waitForSelector('.commit-pane .commit-subject:has-text("Stripe payment intent")')
+      await page.click('.commit-pane .file:has-text("pay.ts")')
+      assert.match(await (await page.waitForSelector('.commit-pane .diff .dl-add')).textContent() ?? '', /export const pay = 1/)
+      if (process.env.RAMIFY_E2E_SHOTS) await page.screenshot({ path: join(process.env.RAMIFY_E2E_SHOTS, `commit-${scheme}.png`) })
+      await page.click('.commit-pane .commit-parent')
+      await page.waitForSelector('.commit-pane .commit-subject:has-text("Initial storefront")')
+      assert.ok(await page.$('.graph-row.is-selected:has-text("Initial storefront")'))
+      await page.keyboard.press('Escape')
+      await page.waitForSelector('.commit-pane', { state: 'detached' })
+      assert.deepEqual(errors, [])
+      await page.close()
+    }
+    git(REPO, 'branch', '-qD', 'spike/search')
+  })
+
+  it('editor side bar: the branch tree in a narrow column, a commit opens in the dashboard', async () => {
+    const asked: unknown[][] = []
+    const handlers = {
+      ...createHandlers({
+        engine: new Engine({ bin: BIN, env }),
+        capabilities: { host: 'vscode', multiRepo: false, create: true, settings: false, github: false, timeline: true, ides: IDES },
+        repo: () => REPO,
+        runInTerminal: () => {},
+      }),
+      dashboard: (...args: unknown[]) => { asked.push(args) },
+    }
+    const page = await browser.newPage({ locale: 'es-ES', viewport: { width: 300, height: 700 } })
+    const errors: string[] = []
+    page.on('pageerror', (e) => errors.push(String(e)))
+    await page.exposeFunction('__host', (method: string, args: unknown[]) =>
+      dispatch(handlers, method, args).then((result) => ({ result }), (e: Error) => ({ error: e.message })))
+    await page.addInitScript(() => {
+      const w = window as unknown as { acquireVsCodeApi: () => unknown; __host: (m: string, a: unknown[]) => Promise<{ result?: unknown; error?: string }> }
+      w.acquireVsCodeApi = () => ({
+        postMessage: (msg: { id: number; method: string; args: unknown[] }) => {
+          void w.__host(msg.method, msg.args).then((r) => window.postMessage({ id: msg.id, ...r }, '*'))
+        },
+      })
+      document.addEventListener('DOMContentLoaded', () => document.body.classList.add('vscode-dark'))
+    })
+    // The page the extension's side bar loads: index.html marked as the side bar (apps/vscode/src/html.ts).
+    await page.route('**/index.html', async (route) => {
+      const res = await route.fetch()
+      await route.fulfill({ response: res, body: (await res.text()).replace('<html', '<html data-mode="sidebar"') })
+    })
+    await page.goto(`http://127.0.0.1:${WEB}/index.html`)
+    await page.waitForSelector('.side .graph-row:has-text("Stripe payment intent")')
+    assert.equal(await page.$('.topbar'), null) // no dashboard chrome in the side bar
+    assert.equal(await page.$('.list-pane'), null)
+    if (process.env.RAMIFY_E2E_SHOTS) await page.screenshot({ path: join(process.env.RAMIFY_E2E_SHOTS, 'sidebar.png') })
+    await page.click('.side .graph-row:has-text("Stripe payment intent")')
+    await page.click('.side-actions button[aria-label="Nuevo agente"]')
+    const hash = git(REPO, 'log', '-1', '--format=%H', '--grep=Stripe payment intent', '--all').toString().trim()
+    assert.deepEqual(asked, [['open', hash], ['new', undefined]])
+    assert.deepEqual(errors, [])
     await page.close()
   })
 

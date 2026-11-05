@@ -20,6 +20,10 @@ import { GanttChart, Network } from 'lucide-react'
 import { sortWorktrees, WorktreeList } from './components/WorktreeList'
 import { bridge } from './bridge'
 import { useStore } from './store'
+import { SideView } from './components/SideView'
+
+/** Loaded in the editor's side bar (the extension marks the page), not as the dashboard. */
+const SIDE_BAR = document.documentElement.dataset.mode === 'sidebar'
 
 const POLL_MS = 2500
 
@@ -38,6 +42,7 @@ export function App() {
   const t = useStore((s) => s.t)
   const density = useStore((s) => s.density)
   const selected = useStore((s) => s.selected)
+  const commit = useStore((s) => s.commit)
   const select = useStore((s) => s.select)
   const mergeProblem = useStore((s) => s.mergeProblem)
   const mergeDone = useStore((s) => s.mergeDone)
@@ -62,6 +67,7 @@ export function App() {
       else if (mod && e.key === ',' && s.caps?.settings) { e.preventDefault(); s.setModal('settings') }
       // The worktree list only exists in the repository view: elsewhere arrows scroll and Esc does nothing.
       else if (s.view !== 'repo') return
+      else if (e.key === 'Escape' && s.commit) s.selectCommit(null)
       else if (e.key === 'Escape' && s.selected) s.select(null)
       else if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && s.state && !mod) {
         e.preventDefault()
@@ -102,6 +108,8 @@ export function App() {
       // A worktree opened from a notification or the menu bar is shown in the repository view.
       if (e.path) { const st = useStore.getState(); if (st.view !== 'repo') st.setView('repo'); st.select(e.path) }
       if (e.event === 'new') useStore.getState().setModal('create')
+      // A commit picked in the editor's side bar opens beside the graph.
+      if (e.event === 'commit' && e.hash) { const st = useStore.getState(); if (st.view !== 'repo') st.setView('repo'); st.selectCommit(e.hash) }
       if (e.event === 'sessions') useStore.getState().setView('sessions')
     })
   }, [])
@@ -128,6 +136,9 @@ export function App() {
   useEffect(() => { if (caps) document.documentElement.dataset.host = caps.host }, [caps])
 
   const noRepos = caps?.multiRepo && repos.length === 0
+
+  // The editor's side bar: the branch tree only, the dashboard a click away.
+  if (SIDE_BAR) return <div className="app is-sm side-app" ref={appRef}><SideView /></div>
 
   return (
     <div className={`shell${caps?.multiRepo ? ' has-sidebar' : ''}`}>
@@ -159,12 +170,12 @@ export function App() {
         )}
         {view === 'repo' && state && !noRepos && (
           <>
-            <main className={`layout${selected ? ' has-selection' : ''}`}>
+            <main className={`layout${selected || commit ? ' has-selection' : ''}${commit ? ' has-commit' : ''}`}>
               <WorktreeList />
               <Graph />
               <div className="drawer-scrim" onClick={() => select(null)} />
               {/* Keyed by worktree: a merge or remove dialog (and its "force") never carries over to another one. */}
-              <Detail key={selected ?? ''} />
+              <Detail key={commit ?? selected ?? ''} />
             </main>
           </>
         )}
