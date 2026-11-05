@@ -588,7 +588,8 @@ shared_branch_at() {
 # else a leading `cd <dir> &&`, else the session folder. Prints nothing when there is no commit.
 commit_dir() {
   local cmd="$1" cwd="$2" dir
-  printf '%s' "$cmd" | grep -Eq '(^|[;&|(]|[[:space:]])git([[:space:]]+-[Cc][[:space:]]+[^[:space:]]+)*[[:space:]]+commit([[:space:]]|$)' || return 1
+  # git by any path (/usr/bin/git), inside quotes (bash -c "git …") and after global options (-C dir, -c k=v, -P, --no-pager…).
+  printf '%s' "$cmd" | grep -Eq '(^|[;&|("'"'"'`]|[[:space:]])([^[:space:];&|("'"'"'`]*/)?git([[:space:]]+(-[Cc][[:space:]]+[^[:space:]]+|-[A-Za-z]|--[A-Za-z][^[:space:]]*))*[[:space:]]+commit([[:space:]]|$)' || return 1
   dir=$(printf '%s' "$cmd" | sed -nE 's/.*git[[:space:]]+-C[[:space:]]+("([^"]*)"|'"'"'([^'"'"']*)'"'"'|([^[:space:]]+)).*/\2\3\4/p' | head -1)
   [ -n "$dir" ] || dir=$(printf '%s' "$cmd" | sed -nE 's/^[[:space:]]*cd[[:space:]]+("([^"]*)"|'"'"'([^'"'"']*)'"'"'|([^[:space:];&]+))[[:space:]]*(&&|;).*/\2\3\4/p' | head -1)
   case "$dir" in
@@ -663,6 +664,11 @@ cmd_hook() {
     guard)
       # A commit from the terminal on the shared branch is refused like an edit.
       cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty')
+      if [ -n "$cmd" ] && printf '%s' "$cmd" | grep -Eiq 'ramify\.allowmain'; then
+        jq -n '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason:
+          "ramify.allowMain is for the user to set: it turns off the protection of the shared branch."}}'
+        exit 0
+      fi
       if [ -n "$cmd" ]; then
         dir=$(commit_dir "$cmd" "$(printf '%s' "$input" | jq -r '.cwd // empty')") || exit 0
         branch=$(shared_branch_at "$dir") || exit 0
@@ -676,6 +682,8 @@ cmd_hook() {
       file=$(printf '%s' "$input" | jq -r '.tool_input.file_path // .tool_input.notebook_path // empty')
       [ -n "$file" ] || exit 0
       case "$file" in /*|[A-Za-z]:*) ;; *) file="$(printf '%s' "$input" | jq -r '.cwd')/$file" ;; esac
+      # Inside .git (its config, its hooks) git cannot tell the branch: judge by the checkout that owns it.
+      case "$file" in */.git/*) file="${file%%/.git/*}/.git" ;; esac
       branch=$(shared_branch_at "$(dirname "$file")") || exit 0
       jq -n --arg b "$branch" '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason:
         ("This file is on " + $b + ", the shared branch. Call the EnterWorktree tool first with a short conventional name for "

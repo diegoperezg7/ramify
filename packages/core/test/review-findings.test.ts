@@ -64,7 +64,7 @@ describe('CLI (ramify)', () => {
     assert.equal(owner(pb), realpathSync(b))
   })
 
-  it('the guard stops commits on the shared branch however git is called, and edits of .git/config', { todo: 'ramify:584 matches only a bare `git commit`; ramify:666 lets .git/ through' }, () => {
+  it('the guard stops commits on the shared branch however git is called, and edits of .git/config', () => {
     const r = repo()
     const guard = (input: object) => cli(r, ['hook', 'guard'], JSON.stringify({ cwd: r, ...input })).stdout
     const commit = 'commit'
