@@ -347,7 +347,20 @@ EOF
   CREATED_WT=$wt
 }
 
-json_str() { printf '"%s"' "$(printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\000-\037')"; }
+# A JSON string. Control characters are escaped, not dropped: a path with a tab in it must come out as that path.
+json_str() {
+  local s=$1 out="" c i
+  s=${s//\\/\\\\}; s=${s//\"/\\\"}; s=${s//$'\t'/\\t}; s=${s//$'\n'/\\n}; s=${s//$'\r'/\\r}
+  if [[ $s == *[$'\001'-$'\037']* ]]; then
+    for ((i = 0; i < ${#s}; i++)); do
+      c=${s:i:1}
+      if [[ $c == [$'\001'-$'\037'] ]]; then printf -v c '\\u%04x' "'$c"; fi
+      out+=$c
+    done
+    s=$out
+  fi
+  printf '"%s"' "$s"
+}
 
 # Agents running in a worktree folder, comma separated (at most 3): $1 the active_agents output, $2 the folder,
 # $3 the agent recorded in its .worktree.env (a node/bun/python process there counts as that agent).

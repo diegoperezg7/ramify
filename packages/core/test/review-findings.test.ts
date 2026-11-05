@@ -55,6 +55,12 @@ describe('CLI (ramify)', () => {
     assert.equal(main.main, true)
   })
 
+  it('ramify ls --json keeps control characters of a path, escaped', () => {
+    const r = repo(join(T, 'tab\there', 'app'))
+    const list = JSON.parse(cli(r, ['ls', '--json']).stdout) as { path: string; main: boolean }[]
+    assert.equal(realpathSync(list.find((w) => w.main)!.path), realpathSync(r))
+  })
+
   it('hook create gives two repositories with the same folder name worktrees of their own', () => {
     const a = repo(join(T, 'x', 'app'))
     const b = repo(join(T, 'y', 'app'))
