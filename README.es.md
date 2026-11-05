@@ -90,8 +90,10 @@ cuadradito para abrir ese día: qué se guardó en cada proyecto y qué asistent
 
 <img src="docs/app-sessions.png" alt="Sesiones de IA: cada agente trabajando ahora con su terminal, proyecto y rama, y el historial de sesiones anteriores">
 
-Asistentes en cualquier terminal, el chat de tu editor y las apps de IA de escritorio, encontrados solos. Un
-historial de cada sesión (dónde, en qué proyecto y cuánto tiempo), exportable a una hoja de cálculo.
+Asistentes en cualquier terminal, el chat de tu editor y las apps de IA de escritorio, encontrados solos. Bajo cada
+uno, los agentes que ha lanzado y la rama en la que trabaja cada uno: subagentes de Claude Code en plena tarea,
+compañeros de un equipo de agentes en su propio panel, worktrees que ha creado un subagente y los hilos de Codex de la
+app de ChatGPT. Un historial de cada sesión (dónde, en qué proyecto y cuánto tiempo), exportable a una hoja de cálculo.
 
 ### Ver exactamente qué ha cambiado cada asistente
 
@@ -195,7 +197,7 @@ instalar esas piezas, compilar desde el código o saber cómo funciona por dentr
 
 ## Estado
 
-**Versión 0.7.1.** App de escritorio para macOS (Apple silicon) y Windows (x64), extensión de VS Code / Cursor,
+**Versión 0.7.2.** App de escritorio para macOS (Apple silicon) y Windows (x64), extensión de VS Code / Cursor,
 CLI y plugin de Claude Code, todo compilado desde este repositorio.
 
 - **Probado:** 96 tests del núcleo, 5 tests de la interfaz en un navegador real y 79 del CLI en cada push; la batería

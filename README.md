@@ -96,8 +96,10 @@ what was saved in each project and which assistants worked on it.
 
 <img src="docs/app-sessions.png" alt="AI sessions: every agent working now with its terminal, project and branch, plus the history of past sessions">
 
-Assistants in any terminal, the chat in your editor and the AI desktop apps, found on their own. A history of every
-session (where, which project, how long), exportable to a spreadsheet.
+Assistants in any terminal, the chat in your editor and the AI desktop apps, found on their own. Under each one, the
+agents it started and the branch each works on: Claude Code subagents mid-task, agent-team teammates in their own pane,
+worktrees a subagent made, and the Codex threads of the ChatGPT app. A history of every session (where, which project,
+how long), exportable to a spreadsheet.
 
 ### See exactly what each assistant changed
 
@@ -201,7 +203,7 @@ or know how it works inside.
 
 ## Status
 
-**Version 0.7.1.** Desktop app for macOS (Apple silicon) and Windows (x64), VS Code / Cursor extension,
+**Version 0.7.2.** Desktop app for macOS (Apple silicon) and Windows (x64), VS Code / Cursor extension,
 CLI and Claude Code plugin, all built from this repository.
 
 - **Tested:** 96 core tests, 5 end-to-end UI tests in a real browser and 79 CLI tests run on every push; the core
