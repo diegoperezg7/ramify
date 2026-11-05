@@ -199,7 +199,7 @@ or know how it works inside.
 
 ## Status
 
-**Version 0.6.0.** Desktop app for macOS (Apple silicon and Intel) and Windows (x64), VS Code / Cursor extension,
+**Version 0.6.1.** Desktop app for macOS (Apple silicon) and Windows (x64), VS Code / Cursor extension,
 CLI and Claude Code plugin, all built from this repository.
 
 - **Tested:** 96 core tests, 5 end-to-end UI tests in a real browser and 79 CLI tests run on every push; the core
@@ -215,7 +215,7 @@ CLI and Claude Code plugin, all built from this repository.
 
 ## Install
 
-**Desktop app** (macOS 12+ on Apple silicon or Intel, Windows 10+): download it from the
+**Desktop app** (macOS 12+ on Apple silicon, Windows 10+): download it from the
 [latest release](https://github.com/diegoperezg7/ramify/releases/latest). It is not signed yet: on macOS right-click it the first time and choose *Open*;
 on Windows choose *More info* → *Run anyway*. Windows needs [Git for Windows](https://git-scm.com/download/win).
 

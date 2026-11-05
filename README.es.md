@@ -193,7 +193,7 @@ instalar esas piezas, compilar desde el código o saber cómo funciona por dentr
 
 ## Estado
 
-**Versión 0.6.0.** App de escritorio para macOS (Apple silicon e Intel) y Windows (x64), extensión de VS Code / Cursor,
+**Versión 0.6.1.** App de escritorio para macOS (Apple silicon) y Windows (x64), extensión de VS Code / Cursor,
 CLI y plugin de Claude Code, todo compilado desde este repositorio.
 
 - **Probado:** 96 tests del núcleo, 5 tests de la interfaz en un navegador real y 79 del CLI en cada push; la batería
@@ -209,7 +209,7 @@ CLI y plugin de Claude Code, todo compilado desde este repositorio.
 
 ## Instalación
 
-**App de escritorio** (macOS 12+ en Apple silicon o Intel, Windows 10+): descárgala de la
+**App de escritorio** (macOS 12+ en Apple silicon, Windows 10+): descárgala de la
 [última release](https://github.com/diegoperezg7/ramify/releases/latest). Todavía no está firmada: en macOS, la primera vez, clic derecho y *Abrir*; en Windows,
 *Más información* → *Ejecutar de todas formas*. En Windows necesita [Git para Windows](https://git-scm.com/download/win).
 

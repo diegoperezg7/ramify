@@ -60,7 +60,7 @@ jobs:
         run: |
           gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --title "Ramify ${GITHUB_REF_NAME#v}" --notes "Downloads:
 
-          - **macOS**: \`.dmg\` for Apple silicon (arm64) or Intel (x64). Not signed: the first time, right-click the app and choose *Open*.
+          - **macOS**: \`.dmg\` for Apple silicon (M1 or later). Not signed: the first time, right-click the app and choose *Open*.
           - **Windows**: \`.exe\` installer (x64; runs on Windows on ARM too). Needs [Git for Windows](https://git-scm.com/download/win). SmartScreen may warn because it is not signed: *More info* → *Run anyway*.
           - **VS Code / Cursor**: \`.vsix\` (\`code --install-extension ramify-*.vsix\`).
           - **CLI**: \`git clone\` and \`./install.sh\`, see the README."
