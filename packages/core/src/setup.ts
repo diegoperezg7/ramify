@@ -209,9 +209,17 @@ export function windowsShims(gitBash: string, bin: string): { cmd: string; sh: s
 /** PowerShell that adds (or removes) a folder in the user's PATH, the way installers do. */
 export function userPathScript(dir: string, add: boolean): string {
   const d = dir.replace(/'/g, "''")
-  return add
-    ? `$p = [Environment]::GetEnvironmentVariable('Path', 'User'); if (-not (($p -split ';') -contains '${d}')) { [Environment]::SetEnvironmentVariable('Path', ((@($p -split ';') + '${d}') | Where-Object { $_ }) -join ';', 'User') }`
-    : `$p = [Environment]::GetEnvironmentVariable('Path', 'User'); [Environment]::SetEnvironmentVariable('Path', ((@($p -split ';') | Where-Object { $_ -and $_ -ne '${d}' }) -join ';'), 'User')`
+  // Read and written as stored in the registry: [Environment]::GetEnvironmentVariable expands %USERPROFILE% and the
+  // like, and SetEnvironmentVariable writes plain REG_SZ, so every other entry would lose its variables for good.
+  const open = "$k = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true); " +
+    "$p = [string]$k.GetValue('Path', '', 'DoNotExpandEnvironmentNames'); " +
+    "$kind = if ($k.GetValueNames() -contains 'Path') { $k.GetValueKind('Path') } else { 'ExpandString' }; "
+  const write = add
+    ? `if (-not (($p -split ';') -contains '${d}')) { $k.SetValue('Path', (((@($p -split ';') + '${d}') | Where-Object { $_ }) -join ';'), $kind) }; `
+    : `$k.SetValue('Path', ((@($p -split ';') | Where-Object { $_ -and $_ -ne '${d}' }) -join ';'), $kind); `
+  // Writing the registry tells no one: setting and clearing a variable through .NET announces the change to Windows.
+  const announce = "$k.Close(); [Environment]::SetEnvironmentVariable('RAMIFY_PATH_CHANGED', '1', 'User'); [Environment]::SetEnvironmentVariable('RAMIFY_PATH_CHANGED', $null, 'User')"
+  return open + write + announce
 }
 
 function linkTarget(f: string): string | null {

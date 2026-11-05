@@ -11,7 +11,7 @@ import assert from 'node:assert/strict'
 import { SessionLog, sessionsCsv, claudeContext, parsePs, remember, type LiveSession, type Resolved } from '../src/activity.ts'
 import { agentOf } from '../src/projects.ts'
 import { Engine, riskyGitConfig } from '../src/engine.ts'
-import { withoutBlock } from '../src/setup.ts'
+import { userPathScript, withoutBlock } from '../src/setup.ts'
 import { windowsLaunch } from '../src/terminal.ts'
 import type { AgentSession } from '../src/types.ts'
 
@@ -263,6 +263,18 @@ describe('Windows terminal', () => {
     const t = windowsLaunch(command, 'C:/r', 'bash.exe', 'C:/wt.exe')
     assert.equal(t.cmd, 'C:/wt.exe')
     assert.equal(t.args.at(-1), `${command}\\; exec bash --login -i`)
+  })
+})
+
+describe('Windows user PATH', () => {
+  it('edits the PATH as stored, keeping %VARIABLES% and the value kind', () => {
+    for (const add of [true, false]) {
+      const script = userPathScript('C:\\Users\\me\\bin', add)
+      assert.match(script, /DoNotExpandEnvironmentNames/)
+      assert.match(script, /SetValue\('Path', .*\$kind\)/)
+      assert.doesNotMatch(script, /GetEnvironmentVariable\('Path'/)
+      assert.doesNotMatch(script, /SetEnvironmentVariable\('Path'/)
+    }
   })
 })
 
