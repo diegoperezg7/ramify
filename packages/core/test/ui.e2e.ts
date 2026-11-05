@@ -405,24 +405,29 @@ describe('web UI', () => {
       }
     })
     await page.goto(`http://127.0.0.1:${WEB}/index.html`)
-    await page.waitForSelector('.repo-card li:has-text("feat/checkout")')
+    const live = '.sess-grid.is-live'
+    await page.waitForSelector(`${live} .sess-card:has-text("feat/checkout")`)
 
     // Only the session at work counts; the paused one is listed as paused.
     assert.equal((await page.textContent('.sess-summary span:first-child b'))?.trim(), '1')
-    assert.ok(await page.isVisible('.repo-card li:has-text("idle")'))
+    assert.ok(await page.isVisible(`${live} .sess-card:has-text("idle")`))
     // "Not on GitHub" sits below the session cards, not in a column next to them: no empty space under short cards.
-    assert.equal(await page.locator('.repo-cards .unpub-card').count(), 0)
-    const cards = await page.locator('.repo-cards').boundingBox()
+    assert.equal(await page.locator(`${live} .unpub-card`).count(), 0)
+    const cards = await page.locator(live).first().boundingBox()
     const unpub = await page.locator('.unpub-card').boundingBox()
     assert.ok(cards && unpub && unpub.y >= cards.y + cards.height, 'Not on GitHub must come after the session cards')
+    // The cards fill their row: two sessions, two columns as wide as the row.
+    const row = await page.locator(`${live} .sess-card`).evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().width)))
+    assert.equal(row.length, 2)
+    assert.ok(Math.abs(row[0] - row[1]) <= 1, row.join(' '))
 
     // The X closes the paused session without a reload.
-    await page.locator('.repo-card li:has-text("idle") .row-close').click()
-    await page.waitForSelector('.repo-card li:has-text("idle")', { state: 'detached' })
+    await page.locator(`${live} .sess-card:has-text("idle") .row-close`).click()
+    await page.waitForSelector(`${live} .sess-card:has-text("idle")`, { state: 'detached' })
     assert.deepEqual(closed, ['paused'])
 
-    // A row opens its repository on the branch it works on.
-    await page.click('.repo-card li:has-text("feat/checkout")')
+    // A card opens its repository on the branch it works on.
+    await page.click(`${live} .sess-card:has-text("feat/checkout")`)
     await page.waitForSelector('.wt-row.is-selected:has-text("feat/checkout")')
     assert.deepEqual(errors, [])
     await page.close()
@@ -470,16 +475,17 @@ describe('web UI', () => {
       }
     })
     await page.goto(`http://127.0.0.1:${WEB}/index.html`)
-    await page.waitForSelector('.repo-card li.child-row:has-text("Find the parser")')
+    const kids = '.sess-card:has-text("idle") .sess-card-kids li'
+    await page.waitForSelector(`${kids}:has-text("Explore")`)
 
-    // Both children sit right under their session, each with its kind and branch.
-    const rows = await page.locator('.repo-card li').allTextContents()
-    const at = rows.findIndex((r) => r.includes('idle'))
-    assert.ok(at >= 0 && rows[at + 1].includes('subagent') && rows[at + 1].includes('feat/checkout'), rows.join(' | '))
-    assert.ok(rows[at + 2].includes('reviewer') && rows[at + 2].includes('teammate'), rows.join(' | '))
+    // Both children sit inside their session's card, each with its kind and branch.
+    const rows = await page.locator(kids).allTextContents()
+    assert.equal(rows.length, 2, rows.join(' | '))
+    assert.ok(rows[0].includes('Explore') && rows[0].includes('subagent') && rows[0].includes('feat/checkout'), rows.join(' | '))
+    assert.ok(rows[1].includes('reviewer') && rows[1].includes('teammate'), rows.join(' | '))
 
-    // A subagent row opens the branch it works on.
-    await page.click('.repo-card li.child-row:has-text("Find the parser")')
+    // A subagent opens the branch it works on.
+    await page.click(`${kids}:has-text("Explore")`)
     await page.waitForSelector('.wt-row.is-selected:has-text("feat/checkout")')
     assert.deepEqual(errors, [])
     await page.close()

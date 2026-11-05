@@ -274,7 +274,7 @@ export function Sessions() {
             {live.length === 0 && <p className="muted small">{sessions.length ? t('sessionsNoneLive') : t('sessionsNone')}</p>}
             {groups.length > 0 && (
               // A card per session, rows filled edge to edge: the width carries them, not a long list.
-              <FillGrid n={liveCards.length} min={320} max={3}>
+              <FillGrid n={liveCards.length} min={320} max={3} className="is-live">
                 {liveCards.map(({ s, n, ids, keys }) => {
                   const kids = keys.flatMap((k) => children[k] ?? [])
                   const b = s.repo && s.branch ? health.get(`${s.repo}#${s.branch}`) : undefined
