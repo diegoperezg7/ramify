@@ -259,7 +259,81 @@ describe('where an agent really works', () => {
       // Text that merely mentions a cwd must not count.
       JSON.stringify({ type: 'user', message: { content: '"cwd":"/elsewhere"' } }),
     ].join('\n') + '\n')
-    assert.deepEqual(claudeContext(42, home), { cwd: '/Users/d/code/shop', state: 'working' })
+    assert.deepEqual(claudeContext(42, home), {
+      cwd: '/Users/d/code/shop', state: 'working', sessionId: 's1', transcript: join(home, '.claude', 'projects', '-Users-d', 's1.jsonl'),
+    })
     assert.equal(claudeContext(7, home), null)
+  })
+})
+
+describe('agents started by an agent', () => {
+  it('recognises a Claude Code teammate in a pane of its own', async () => {
+    const { teammateOf } = await import('../src/activity.ts')
+    const exe = '/Users/d/.local/share/claude/versions/2.1.318'
+    const args = '--agent-id rev@session-ab --agent-name rev --team-name session-ab --agent-color blue --parent-session-id 1234-abcd --agent-type code-reviewer --model opus'
+    assert.deepEqual(teammateOf(exe, args), { name: 'rev', parentSessionId: '1234-abcd', agentType: 'code-reviewer' })
+    assert.deepEqual(teammateOf(exe, '--agent-name rev --parent-session-id 1234-abcd'), { name: 'rev', parentSessionId: '1234-abcd', agentType: null })
+    // The lead itself (no parent) and other binaries are not teammates.
+    assert.equal(teammateOf(exe, '--model opus'), null)
+    assert.equal(teammateOf('/usr/local/bin/claude', args), null)
+  })
+
+  it('lists the subagents of a session that are in the middle of a turn', async () => {
+    const { claudeSubagents } = await import('../src/activity.ts')
+    const dir = realpathSync(mkdtempSync(join(tmpdir(), 'ramify-sub-')))
+    const transcript = join(dir, 's1.jsonl')
+    writeFileSync(transcript, '')
+    const subs = join(dir, 's1', 'subagents')
+    mkdirSync(subs, { recursive: true })
+    const agent = (id: string, meta: object, cwd?: string) => {
+      writeFileSync(join(subs, `agent-${id}.meta.json`), JSON.stringify(meta))
+      writeFileSync(join(subs, `agent-${id}.jsonl`), cwd ? JSON.stringify({ cwd, type: 'assistant' }) + '\n' : '')
+    }
+    agent('a1', { agentType: 'Explore', description: 'Find the parser' }, '/Users/d/code/shop/.worktrees/agent-a1')
+    agent('a2', { agentType: 'Plan', description: 'Done already', finished: true })
+    agent('a3', { agentType: 'Explore', description: 'From an earlier run' })
+    const old = new Date(Date.now() - 3_600_000)
+    utimesSync(join(subs, 'agent-a3.meta.json'), old, old)
+
+    const since = Date.now() - 60_000
+    assert.deepEqual(claudeSubagents(transcript, since), [
+      { id: 'a1', agentType: 'Explore', description: 'Find the parser', cwd: '/Users/d/code/shop/.worktrees/agent-a1' },
+    ])
+    // A subagent that finishes its turn drops out (the cache follows the file's modification time).
+    writeFileSync(join(subs, 'agent-a1.meta.json'), JSON.stringify({ agentType: 'Explore', finished: true }))
+    const later = new Date(Date.now() + 2000)
+    utimesSync(join(subs, 'agent-a1.meta.json'), later, later)
+    assert.deepEqual(claudeSubagents(transcript, since), [])
+    assert.deepEqual(claudeSubagents(join(dir, 'none.jsonl')), [])
+  })
+
+  it('reads recent Codex threads and the thread that spawned each one', async (t) => {
+    const { codexThreads } = await import('../src/activity.ts')
+    const mod = (process as unknown as { getBuiltinModule?: (id: string) => unknown }).getBuiltinModule?.('node:sqlite') as
+      { DatabaseSync: new (path: string) => { exec(sql: string): void; close(): void } } | undefined
+    if (!mod) { t.skip('no node:sqlite in this Node'); return }
+    const home = realpathSync(mkdtempSync(join(tmpdir(), 'ramify-codex-')))
+    mkdirSync(join(home, '.codex'))
+    const file = join(home, '.codex', 'state_5.sqlite')
+    const now = Date.now()
+    const db = new mod.DatabaseSync(file)
+    db.exec(`
+      create table threads (id text primary key, cwd text, git_branch text, agent_role text, agent_nickname text,
+        updated_at integer, updated_at_ms integer, archived integer);
+      create table thread_spawn_edges (parent_thread_id text, child_thread_id text, status text);
+      insert into threads values ('t1', '/Users/d/code/shop', 'main', null, null, ${Math.floor(now / 1000)}, ${now}, 0);
+      insert into threads values ('t2', '/Users/d/code/shop', 'feat/x', 'worker', 'Ada', ${Math.floor(now / 1000)}, ${now - 1000}, 0);
+      insert into threads values ('t3', '/Users/d/code/old', 'main', null, null, 1, 1000, 0);
+      insert into threads values ('t4', '/Users/d/code/shop', 'main', null, null, ${Math.floor(now / 1000)}, ${now}, 1);
+      insert into thread_spawn_edges values ('t1', 't2', 'open');`)
+    db.close()
+    assert.deepEqual(codexThreads(now - 60_000, home), [
+      { id: 't1', cwd: '/Users/d/code/shop', branch: 'main', name: null, parentId: null, updatedAt: now },
+      { id: 't2', cwd: '/Users/d/code/shop', branch: 'feat/x', name: 'Ada', parentId: 't1', updatedAt: now - 1000 },
+    ])
+    // No database, or one of another schema: nothing, not an error.
+    assert.deepEqual(codexThreads(0, join(home, 'none')), [])
+    writeFileSync(join(home, 'bad.sqlite'), 'not a database')
+    assert.deepEqual(codexThreads(0, home, join(home, 'bad.sqlite')), [])
   })
 })

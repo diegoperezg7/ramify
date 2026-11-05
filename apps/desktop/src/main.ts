@@ -7,11 +7,11 @@ import { pathToFileURL } from 'node:url'
 import {
   cloneGithub, createHandlers, defaultProjectsDir, dispatch, Engine, EngineError, githubRepos, idesFor, openInTerminal, originSlug,
   accessibleRepos, AuthError, currentUser, hardenedGitEnv, isSafeExternal, normPath, pullRequestsWithToken, riskyGitConfig, sanitizeSettings, strings, installedTools, pollForTokens, publishGithub, pullRequestFor, pullRequestWithToken,
-  refreshTokens, requestDeviceCode, isActive, scanRepos, scanSessions, SessionLog, sessionsCsv, type Resolved, type Tokens,
+  refreshTokens, requestDeviceCode, codexThreads, IDE_IDLE_MS, isActive, scanRepos, scanSessions, SessionLog, sessionsCsv, type Resolved, type Tokens,
   gitBash, setupApply, setupStatus, setupUndo, type SetupContext,
 } from '../../../packages/core/src/index.ts'
 import { GITHUB_APP } from './github-app.ts'
-import type { AgentSession, GithubAccount, GithubRepo, GithubSync, PullRequest, RepoInfo, Settings, SetupItemId } from '../../../packages/core/src/types.ts'
+import type { AgentChild, AgentSession, GithubAccount, GithubRepo, GithubSync, PullRequest, RepoInfo, Settings, SetupItemId } from '../../../packages/core/src/types.ts'
 
 // Apps started from Finder get a minimal PATH: borrow the login shell's so agents,
 // xcodegen, npm and friends are found exactly as in the terminal.
@@ -31,8 +31,8 @@ const env = hardenedGitEnv({ ...process.env, PATH: loginPath() ?? process.env.PA
 // The monitor below knows which agent runs in which worktree (by command line, not process name): share it.
 const engine = new Engine({
   bin, env,
-  running: () => new Map(live.map((l) => [l.path, l.busy])),
-  paused: () => new Map(live.map((l) => [l.path, l.agents.filter((a) => !l.busy.includes(a))])),
+  running: () => new Map([...busyAt].map(([path, e]) => [path, e.agents])),
+  paused: () => new Map(live.map((l) => [l.path, l.agents.filter((a) => !(busyAt.get(l.path)?.agents ?? []).includes(a))])),
 })
 const es = () => app.getLocale().toLowerCase().startsWith('es')
 
@@ -96,6 +96,10 @@ function addRepoToConfig(path: string) {
 /** `busy`: the agents doing something there (not idle at their prompt); `agents` are all the open ones. */
 interface Live { repo: string; path: string; branch: string; agents: string[]; busy: string[] }
 let live: Live[] = []
+/** Agents at work by worktree: the sessions' (Live.busy) plus subagents in the middle of a turn there. */
+let busyAt = new Map<string, { repo: string; branch: string; agents: string[] }>()
+/** What runs alongside each open session (subagents, teammates, worktrees, Codex threads), by session key. */
+let children: Record<string, AgentChild[]> = {}
 const worktreeCache = new Map<string, { at: number; list: { path: string; branch: string }[] }>()
 const mainOf = new Map<string, { main: string | null; at: number }>()
 
@@ -159,8 +163,11 @@ async function resolveCwd(cwd: string | null): Promise<Resolved & { worktree: st
 
 async function scan(): Promise<Live[]> {
   const ignored = new Set(config.settings.ignored ?? [])
-  const seen = (await scanSessions(env)).filter((s) => !ignored.has(s.agent) && !ignored.has(s.host.split(' · ')[0]))
+  const scanned = (await scanSessions(env)).filter((s) => !ignored.has(s.agent) && !ignored.has(s.host.split(' · ')[0]))
+  // Teammates in panes of their own belong to their lead's session: shown under it, never kept in the history.
+  const seen = scanned.filter((s) => !s.parentSessionId)
   const sessions = await Promise.all(seen.map(async (s) => ({ ...s, ...(await resolveCwd(s.cwd)) })))
+  const mates = await Promise.all(scanned.filter((s) => s.parentSessionId).map(async (s) => ({ ...s, ...(await resolveCwd(s.cwd)) })))
   warnSharedBranches(sessions)
   const { started, ended } = sessionLog.update(sessions)
   saveSessions(started.length > 0 || ended.length > 0)
@@ -178,7 +185,53 @@ async function scan(): Promise<Live[]> {
     if (isActive(open.get(s.key)!) && !entry.busy.includes(s.agent)) entry.busy.push(s.agent)
     found.set(s.worktree, entry)
   }
+
+  // Work running alongside the open sessions. A subagent in the middle of a turn works on its branch even while
+  // its session waits at the prompt; it counts there, but its end is not an agent finishing (no notification).
+  const kids: Record<string, AgentChild[]> = {}
+  const add = (key: string, c: AgentChild) => { (kids[key] ??= []).push(c) }
+  const busy = new Map<string, { repo: string; branch: string; agents: string[] }>()
+  for (const l of found.values()) busy.set(l.path, { repo: l.repo, branch: l.branch, agents: [...l.busy] })
+  for (const s of sessions) {
+    if (!open.has(s.key)) continue
+    for (const sub of s.subagents ?? []) {
+      const at = await resolveCwd(sub.cwd)
+      add(s.key, { kind: 'subagent', id: sub.id, label: sub.agentType, description: sub.description, cwd: sub.cwd, repo: at.repo, branch: at.branch, working: true })
+      if (!at.repo || !at.worktree || !config.repos.includes(at.repo)) continue
+      const e = busy.get(at.worktree) ?? { repo: at.repo, branch: at.branch ?? '', agents: [] }
+      if (!e.agents.includes(s.agent)) e.agents.push(s.agent)
+      busy.set(at.worktree, e)
+    }
+    if (s.sessionId && s.repo) {
+      for (const w of await sessionWorktrees(s.repo, s.sessionId)) {
+        add(s.key, { kind: 'worktree', id: w.path, label: w.branch, description: '', cwd: w.path, repo: s.repo, branch: w.branch, working: false })
+      }
+    }
+  }
+  for (const m of mates) {
+    const lead = sessions.find((s) => s.sessionId === m.parentSessionId && open.has(s.key))
+    if (lead) add(lead.key, { kind: 'teammate', id: m.agentName ?? m.key, label: m.agentName ?? 'teammate', description: m.agentType ?? '', cwd: m.cwd, repo: m.repo, branch: m.branch, working: false })
+  }
+  // Codex in the ChatGPT app: its threads changed in the last minutes, under the app's session.
+  const chatgpt = sessions.find((s) => s.agent === 'chatgpt' && open.has(s.key))
+  if (chatgpt) {
+    for (const th of codexThreads(Date.now() - IDE_IDLE_MS)) {
+      const at = await resolveCwd(th.cwd)
+      add(chatgpt.key, { kind: 'codex', id: th.id, label: th.name ?? 'codex', description: '', cwd: th.cwd, repo: at.repo, branch: th.branch ?? at.branch, working: true, spawned: !!th.parentId })
+    }
+  }
+  busyAt = busy
+  children = kids
   return [...found.values()]
+}
+
+/** Worktrees of a repository that a subagent of this conversation made (WT_SESSION in its .worktree.env). */
+async function sessionWorktrees(repo: string, sessionId: string): Promise<{ path: string; branch: string }[]> {
+  let list: { path: string; branch: string }[] = []
+  try { list = await worktreesOf(repo) } catch { return [] }
+  return list.filter((w) => {
+    try { return /^WT_SESSION=(.*)$/m.exec(readFileSync(join(w.path, '.worktree.env'), 'utf8'))?.[1]?.trim() === sessionId } catch { return false }
+  })
 }
 
 const countAgents = (list: string[]) => [...new Set(list)].map((a) => { const n = list.filter((x) => x === a).length; return n > 1 ? `${a} ×${n}` : a }).join(', ')
@@ -239,7 +292,7 @@ function withPrs(list: AgentSession[]): AgentSession[] {
   })
 }
 
-const workingCount = () => live.reduce((sum, l) => sum + l.busy.length, 0)
+const workingCount = () => [...busyAt.values()].reduce((sum, e) => sum + e.agents.length, 0)
 
 let firstScan = true
 let scanning = false
@@ -368,7 +421,7 @@ function updateTray(count: number) {
     .filter((s) => s.end === null && !s.inferred && s.state === 'waiting' && s.repo && config.repos.includes(s.repo))
     .map((s) => `${s.repo}#${s.branch ?? ''}`))
   // Rebuilding the menu every scan costs work on the main thread: only when what it shows changed.
-  const signature = `${count}|${es()}|${[...waitingAt].join(',')}|${live.map((l) => `${l.path}:${l.busy.join(',')}`).join(';')}`
+  const signature = `${count}|${es()}|${[...waitingAt].join(',')}|${[...busyAt].map(([path, e]) => `${path}:${e.agents.join(',')}`).join(';')}`
   if (tray && signature === traySignature) return
   traySignature = signature
   if (!tray) tray = new Tray(trayIcon())
@@ -379,11 +432,11 @@ function updateTray(count: number) {
   const items: Electron.MenuItemConstructorOptions[] = [
     { label: count ? `${es() ? `${count} agente(s) trabajando` : `${count} agent(s) working`}${waitingAt.size ? `  ·  ${waits}` : ''}` : (es() ? 'Ningún agente trabajando' : 'No agents working'), enabled: false },
     // One line per agent: its logo, where it works, and whether it waits for you. The name stays as a tooltip.
-    ...live.flatMap((l) => l.busy.map((a) => {
+    ...[...busyAt].flatMap(([path, l]) => l.agents.map((a) => {
       const icon = agentIcon(a)
       const where = `${l.repo.split('/').pop()} / ${l.branch}`
       const wait = waitingAt.has(`${l.repo}#${l.branch}`) ? (es() ? '  ·  te espera' : '  ·  waiting for you') : ''
-      return { label: `${icon ? '' : `${a}  ·  `}${where}${wait}`, icon, toolTip: a, click: () => focus({ repo: l.repo, path: l.path }) }
+      return { label: `${icon ? '' : `${a}  ·  `}${where}${wait}`, icon, toolTip: a, click: () => focus({ repo: l.repo, path }) }
     })),
     { type: 'separator' },
     { label: es() ? 'Abrir Ramify' : 'Open Ramify', click: () => focus() },
@@ -620,7 +673,7 @@ const handlers = {
   repos: async (): Promise<RepoInfo[]> => {
     return Promise.all(presentRepos().map(async (r) => ({
       ...(await cachedInfo(r)),
-      active: [...new Set(live.filter((l) => l.repo === r).flatMap((l) => l.busy))],
+      active: [...new Set([...busyAt.values()].filter((e) => e.repo === r).flatMap((e) => e.agents))],
       github: await cachedSlug(r),
     })))
   },
@@ -650,6 +703,7 @@ const handlers = {
     return list.map((s) => (s.repo && slugs.has(s.repo) ? { ...s, github: slugs.get(s.repo) ?? null } : s))
   },
   clearSessions: () => { sessionLog.clear(); saveSessions(true) },
+  agentChildren: async () => children,
   closeSession: async (id: string) => {
     strings(id)
     if (!sessionLog.close(id)) throw new EngineError('unknown session')

@@ -11,6 +11,8 @@ export interface Worktree {
   commits: number
   upstream: string
   port: number | null
+  /** Claude Code conversation whose subagent made this worktree (WT_SESSION, from the WorktreeCreate hook). */
+  session?: string
 }
 
 export interface Commit {
@@ -225,6 +227,24 @@ export type SessionVia = 'terminal' | 'ide' | 'app'
 export type SessionState = 'working' | 'idle' | 'waiting'
 
 /** One AI session seen on this machine: an agent CLI, an IDE's AI chat or a desktop AI app. */
+/** Work an open session runs alongside it, never kept in the history. */
+export type AgentChildKind = 'subagent' | 'teammate' | 'worktree' | 'codex'
+export interface AgentChild {
+  kind: AgentChildKind
+  id: string
+  /** Subagent or teammate type, teammate name, Codex nickname or role. */
+  label: string
+  /** What it was asked to do (subagents), when known. */
+  description: string
+  cwd: string | null
+  repo: string | null
+  branch: string | null
+  /** Counts as working on its branch (a subagent in the middle of a turn). */
+  working: boolean
+  /** Codex: a thread another thread spawned (a Codex subagent). */
+  spawned?: boolean
+}
+
 export interface AgentSession {
   id: string
   /** Identity of the live session (process or IDE workspace), used to resume it after a restart. */
@@ -344,6 +364,8 @@ export interface Bridge {
   clearSessions(): Promise<void>
   /** Close a session that is still open (it stops counting as running and is not reopened). */
   closeSession(id: string): Promise<void>
+  /** Subagents, teammates, worktrees and Codex threads of the open sessions, by session key. */
+  agentChildren(): Promise<Record<string, AgentChild[]>>
   /** Save the whole history to a file the user picks. */
   exportSessions(format: 'csv' | 'json'): Promise<{ message: string }>
   /** Create a GitHub repository for a local repository without a remote, and push it. */

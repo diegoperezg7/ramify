@@ -1076,6 +1076,9 @@ kbd {
 .row-sub .mono { overflow: hidden; text-overflow: ellipsis; }
 .row-time { flex: none; font-size: 12px; color: var(--muted); }
 .row-close { flex: none; width: 24px; height: 24px; }
+.repo-card li.child-row { padding-left: 34px; color: var(--muted); }
+.repo-card li.child-row .row-top b { font-weight: 500; font-size: 13px; color: var(--text); }
+.child-desc { overflow: hidden; text-overflow: ellipsis; }
 .menu-pop { right: 0; left: auto; min-width: 190px; padding: 4px; display: flex; flex-direction: column; gap: 0; }
 .menu-pop button { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border: 0; border-radius: 6px; background: none; color: var(--text); font: 500 13px var(--font); text-align: left; cursor: pointer; }
 .menu-pop button:hover { background: var(--surface-hover); }

@@ -12,7 +12,7 @@ import assert from 'node:assert/strict'
 import { chromium, type Browser } from 'playwright'
 import { createHandlers, dispatch } from '../src/host.ts'
 import { Engine, IDES } from '../src/engine.ts'
-import type { AgentSession } from '../src/types.ts'
+import type { AgentChild, AgentSession } from '../src/types.ts'
 
 const ROOT_DIR = resolve(import.meta.dirname, '../../..')
 const BIN = join(ROOT_DIR, 'ramify')
@@ -377,6 +377,63 @@ describe('web UI', () => {
 
     // A row opens its repository on the branch it works on.
     await page.click('.repo-card li:has-text("feat/checkout")')
+    await page.waitForSelector('.wt-row.is-selected:has-text("feat/checkout")')
+    assert.deepEqual(errors, [])
+    await page.close()
+  })
+
+  it('desktop host: the agents a session started are listed under it, and one opens its branch', async () => {
+    const now = Date.now()
+    const lead: AgentSession = {
+      id: 'lead', key: 'pid:100', agent: 'claude', host: 'Ghostty', via: 'terminal', inferred: false, cwd: REPO, repo: REPO,
+      branch: 'main', github: 'o/shop', start: now - 600_000, end: null, lastSeen: now, state: 'idle',
+    }
+    const children: Record<string, AgentChild[]> = {
+      'pid:100': [
+        { kind: 'subagent', id: 'a1', label: 'Explore', description: 'Find the parser', cwd: join(T, 'wts', 'shop', 'feat-checkout'), repo: REPO, branch: 'feat/checkout', working: true },
+        { kind: 'teammate', id: '200', label: 'reviewer', description: 'code-reviewer', cwd: REPO, repo: REPO, branch: 'main', working: true },
+      ],
+    }
+    const base = createHandlers({
+      engine: new Engine({ bin: BIN, env }),
+      capabilities: { host: 'desktop', multiRepo: true, create: false, settings: false, github: false, sessions: true, timeline: true, ides: IDES },
+      repo: () => REPO,
+      runInTerminal: () => {},
+    })
+    const handlers = {
+      ...base,
+      repos: () => [{ path: REPO, name: 'shop', worktrees: 1, active: ['claude'] }],
+      sessions: () => [lead],
+      agentChildren: () => children,
+    } as typeof base
+    const page = await browser.newPage({ locale: 'en-US', viewport: { width: 1440, height: 900 } })
+    const errors: string[] = []
+    page.on('pageerror', (e) => errors.push(String(e)))
+    await page.exposeFunction('__host', (method: string, args: unknown[]) =>
+      dispatch(handlers, method, args).then((result) => ({ result }), (e: Error) => ({ error: e.message })))
+    await page.addInitScript(() => {
+      const w = window as unknown as { ramify: unknown; __host: (m: string, a: unknown[]) => Promise<{ result?: unknown; error?: string }> }
+      try { localStorage.setItem('ramify-view', 'sessions') } catch { /* no storage */ }
+      w.ramify = {
+        invoke: async (method: string, args: unknown[]) => {
+          const r = await w.__host(method, args)
+          if (r.error) throw new Error(r.error)
+          return r.result
+        },
+        on: () => {},
+      }
+    })
+    await page.goto(`http://127.0.0.1:${WEB}/index.html`)
+    await page.waitForSelector('.repo-card li.child-row:has-text("Find the parser")')
+
+    // Both children sit right under their session, each with its kind and branch.
+    const rows = await page.locator('.repo-card li').allTextContents()
+    const at = rows.findIndex((r) => r.includes('idle'))
+    assert.ok(at >= 0 && rows[at + 1].includes('subagent') && rows[at + 1].includes('feat/checkout'), rows.join(' | '))
+    assert.ok(rows[at + 2].includes('reviewer') && rows[at + 2].includes('teammate'), rows.join(' | '))
+
+    // A subagent row opens the branch it works on.
+    await page.click('.repo-card li.child-row:has-text("Find the parser")')
     await page.waitForSelector('.wt-row.is-selected:has-text("feat/checkout")')
     assert.deepEqual(errors, [])
     await page.close()

@@ -200,6 +200,7 @@ s1b=$(printf '{"name":"feat-pay","cwd":"%s","session_id":"s-one"}' "$T/demo" | "
 s2=$(printf '{"name":"feat-pay","cwd":"%s","session_id":"s-two"}' "$T/demo" | "$AW" hook create 2>/dev/null | tail -1)
 check "the same conversation resumes its own worktree" '[ -n "$s1" ] && [ "$s1b" = "$s1" ]'
 check "another conversation with the same name gets a worktree of its own" '[ -n "$s2" ] && [ "$s2" != "$s1" ] && [ "$(git -C "$s2" branch --show-current)" = feat/pay-2 ]'
+check "ls --json tells which conversation made a worktree" '(cd "$T/demo" && "$AW" ls --json) | jq -e "(.[] | select(.branch == \"feat/pay-2\") | .session == \"s-two\") and (.[] | select(.branch == \"feat/login\") | has(\"session\") | not)" >/dev/null'
 g=$(printf '{"cwd":"%s","tool_name":"Edit","tool_input":{"file_path":"%s/a.txt"}}' "$p1" "$p1" | "$AW" hook guard 2>/dev/null)
 check "edits inside its worktree are allowed" '[ -z "$g" ]'
 g=$(printf '{"cwd":"%s","tool_name":"Bash","tool_input":{"command":"git add -A && git commit -m wip"}}' "$T/demo" | "$AW" hook guard 2>/dev/null)
