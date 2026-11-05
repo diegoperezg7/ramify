@@ -37,6 +37,21 @@ export function agentOf(comm: string, args: string): string | null {
 }
 
 /** Working directory of every running agent process. */
+const isFile = (p: string) => { try { return statSync(p).isFile() } catch { return false } }
+/**
+ * The executable at the start of a command line. ps separates arguments with spaces, so a path with a space in it
+ * (/Users/x/My Tools/claude) is cut at the first one: grow it word by word until it names a file that exists.
+ */
+export function exeOf(commandLine: string, exists: (p: string) => boolean = isFile): string {
+  const words = commandLine.trim().split(/\s+/)
+  if (!words[0]?.startsWith('/') || exists(words[0])) return words[0] ?? ''
+  for (let n = 2; n <= Math.min(words.length, 8); n++) {
+    const candidate = words.slice(0, n).join(' ')
+    if (exists(candidate)) return candidate
+  }
+  return words[0]
+}
+
 export async function runningAgents(env?: NodeJS.ProcessEnv): Promise<{ agent: string; cwd: string }[]> {
   // `comm` is cut to 16 characters on macOS (/opt/homebrew/bi...), so read the executable from the full command line.
   const ps = await out('ps', ['-axww', '-o', 'pid=,args='], env)
@@ -44,9 +59,9 @@ export async function runningAgents(env?: NodeJS.ProcessEnv): Promise<{ agent: s
   if (ps.code !== 0) throw new Error(`ps failed: ${ps.stderr.trim()}`)
   const agents = new Map<string, string>()
   for (const line of ps.stdout.split('\n')) {
-    const m = /^\s*(\d+)\s+(\S+)(.*)$/.exec(line)
+    const m = /^\s*(\d+)\s+(.*)$/.exec(line)
     if (!m || Number(m[1]) === process.pid) continue
-    const agent = agentOf(m[2], `${m[2]}${m[3]}`)
+    const agent = agentOf(exeOf(m[2]), m[2])
     if (agent) agents.set(m[1], agent)
   }
   if (!agents.size) return []

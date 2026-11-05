@@ -273,6 +273,52 @@ describe('web UI', () => {
     await page.close()
   })
 
+  it('editor host: a late diff of the file opened before does not show under the one opened now', async () => {
+    const one = (name: string) => `diff --git a/${name} b/${name}\n--- a/${name}\n+++ b/${name}\n@@ -0,0 +1 @@\n+from ${name}\n`
+    const base = createHandlers({
+      engine: new Engine({ bin: BIN, env }),
+      capabilities: { host: 'vscode', multiRepo: false, create: true, settings: false, github: false, timeline: true, ides: IDES },
+      repo: () => REPO,
+      runInTerminal: () => {},
+    })
+    const handlers = {
+      ...base,
+      // The editor host sends no repository (it has one): the real commit of this test's repository, with two files.
+      commit: async (_repo: string, hash: string) => ({
+        ...(await new Engine({ bin: BIN, env }).commit(REPO, hash)),
+        files: [{ file: 'first.txt', status: 'A', add: '1', del: '0' }, { file: 'second.txt', status: 'A', add: '1', del: '0' }],
+      }),
+      // The first file's diff comes back after the second file is opened, but before the second file's diff.
+      commitDiff: async (_repo: string, _hash: string, file: string) => {
+        await new Promise((r) => setTimeout(r, file === 'first.txt' ? 400 : 900))
+        return { diff: one(file) }
+      },
+    } as typeof base
+    const page = await browser.newPage({ locale: 'en-US', viewport: { width: 1440, height: 900 } })
+    const errors: string[] = []
+    page.on('pageerror', (e) => errors.push(String(e)))
+    await page.exposeFunction('__host', (method: string, args: unknown[]) =>
+      dispatch(handlers, method, args).then((result) => ({ result }), (e: Error) => ({ error: e.message })))
+    await page.addInitScript(() => {
+      const w = window as unknown as { acquireVsCodeApi: () => unknown; __host: (m: string, a: unknown[]) => Promise<{ result?: unknown; error?: string }> }
+      w.acquireVsCodeApi = () => ({
+        postMessage: (msg: { id: number; method: string; args: unknown[] }) => {
+          void w.__host(msg.method, msg.args).then((r) => window.postMessage({ id: msg.id, ...r }, '*'))
+        },
+      })
+    })
+    await page.goto(`http://127.0.0.1:${WEB}/index.html`)
+    await page.click('.graph-row:has-text("Stripe payment intent")')
+    await page.click('.commit-pane .file:has-text("first.txt")')
+    await page.click('.commit-pane .file:has-text("second.txt")')
+    await page.waitForTimeout(1500) // past both answers
+    const shown = await page.textContent('.commit-pane li:has(.file.is-open)') ?? ''
+    assert.match(shown, /from second\.txt/)
+    assert.doesNotMatch(shown, /from first\.txt/)
+    assert.deepEqual(errors, [])
+    await page.close()
+  })
+
   it('editor host: the branch timeline shows each branch from its fork to its merge', async () => {
     // A branch merged into main and deleted, rebuilt from its merge commit.
     git(REPO, 'checkout', '-qb', 'fix/typo')

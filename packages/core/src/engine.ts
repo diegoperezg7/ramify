@@ -71,11 +71,14 @@ export function riskyGitConfig(dir: string): string[] {
   for (const raw of text.split('\n')) {
     const line = raw.trim()
     const sec = /^\[\s*([\w.-]+)/.exec(line)
-    if (sec) { section = sec[1].toLowerCase(); continue }
+    // [filter "x"] and the older [filter.x] are the same section: judge by its first part.
+    if (sec) { section = sec[1].toLowerCase().split('.')[0]; continue }
     const key = /^([\w-]+)\s*=/.exec(line)?.[1]?.toLowerCase()
     if (!key) continue
     if (section === 'filter' || (section === 'diff' && ['textconv', 'command'].includes(key)) || (section === 'merge' && key === 'driver')
-      || (section === 'core' && ['fsmonitor', 'sshcommand', 'pager', 'editor', 'hookspath', 'askpass'].includes(key))) found.add(`${section}.${key}`)
+      || (section === 'core' && ['fsmonitor', 'sshcommand', 'pager', 'editor', 'hookspath', 'askpass'].includes(key))
+      // An included file is not read here, so it could hold any of these; signing runs gpg.program on every commit.
+      || ((section === 'include' || section === 'includeif') && key === 'path') || (section === 'gpg' && key === 'program')) found.add(`${section}.${key}`)
   }
   return [...found]
 }
@@ -311,7 +314,7 @@ export class Engine {
     }
     // -z everywhere: paths with spaces, accents or renames come through verbatim.
     const files = new Map<string, FileChange>()
-    const numstat = (await this.git(path, 'diff', '--no-ext-diff', '--no-textconv', '-z', '--numstat', mb)).split('\0')
+    const numstat = (await this.git(path, 'diff', '--no-ext-diff', '--no-textconv', '-z', '--numstat', mb, '--')).split('\0')
     for (let i = 0; i < numstat.length; i++) {
       const rec = numstat[i]
       if (!rec) continue
@@ -320,7 +323,7 @@ export class Engine {
       if (name === '') { i += 2; file = numstat[i] } // rename: "add\tdel\t" then old\0new\0
       if (file) files.set(file, { file, status: 'M', add, del, uncommitted: false })
     }
-    const nameStatus = (await this.git(path, 'diff', '--no-ext-diff', '--no-textconv', '-z', '--name-status', mb)).split('\0')
+    const nameStatus = (await this.git(path, 'diff', '--no-ext-diff', '--no-textconv', '-z', '--name-status', mb, '--')).split('\0')
     for (let i = 0; i < nameStatus.length; i++) {
       const st = nameStatus[i]
       if (!st) continue
@@ -349,10 +352,12 @@ export class Engine {
   async diff(repo: string, path: string, file: string): Promise<string> {
     const wt = await this.find(repo, path)
     const mb = await this.mergeBase(repo, path, wt)
-    const untracked = (await this.git(path, 'ls-files', '--others', '--exclude-standard', '--', file)).trim()
+    // A file name, not a pattern: [ab].txt or :memo.txt mean that one file.
+    const literal = `:(literal)${file}`
+    const untracked = (await this.git(path, 'ls-files', '--others', '--exclude-standard', '--', literal)).trim()
     const out = untracked
       ? (await this.run('git', ['-C', path, 'diff', '--no-ext-diff', '--no-textconv', '--no-index', '--', '/dev/null', file])).stdout
-      : await this.git(path, 'diff', '--no-ext-diff', '--no-textconv', mb, '--', file)
+      : await this.git(path, 'diff', '--no-ext-diff', '--no-textconv', mb, '--', literal)
     return out.slice(0, MAX_DIFF)
   }
 
@@ -402,7 +407,7 @@ export class Engine {
 
   async commitDiff(repo: string, hash: string, file: string): Promise<string> {
     const c = await this.commitRef(repo, hash)
-    const out = await this.git(repo, 'diff-tree', '-p', '-M', '--no-commit-id', '--no-ext-diff', '--no-textconv', ...Engine.treeRange(c), '--', file)
+    const out = await this.git(repo, 'diff-tree', '-p', '-M', '--no-commit-id', '--no-ext-diff', '--no-textconv', ...Engine.treeRange(c), '--', `:(literal)${file}`)
     return out.slice(0, MAX_DIFF)
   }
 
@@ -442,7 +447,8 @@ export class Engine {
     if ((await this.git(path, 'status', '--porcelain')).trim()) throw new EngineError('the worktree has uncommitted changes')
     const r = await this.run('git', ['-C', repo, 'merge', '--no-ff', '--no-edit', wt.branch])
     if (r.code === 0) return r.stdout.trim()
-    const conflicted = (await this.git(repo, 'diff', '--name-only', '--diff-filter=U')).split('\n').map((f) => f.trim()).filter(Boolean)
+    // -z: names with accents or spaces come through as they are, not quoted and escaped.
+    const conflicted = (await this.git(repo, 'diff', '--name-only', '-z', '--diff-filter=U')).split('\0').filter(Boolean)
     const rebuilt = conflicted.length ? await this.rebuildGenerated(repo, conflicted) : null
     if (rebuilt?.ok) return `merged ${wt.branch}; regenerated: ${conflicted.join(', ')}`
     await this.run('git', ['-C', repo, 'merge', '--abort'])
@@ -459,11 +465,16 @@ export class Engine {
   private async rebuildGenerated(repo: string, files: string[]): Promise<{ ok: boolean; output: string } | null> {
     const script = join(repo, '.worktree', 'merge.sh')
     if (!existsSync(script)) return null
-    const attrs = await this.git(repo, 'check-attr', 'ramify-generated', '--', ...files)
-    const generated = new Set(attrs.split('\n').filter((l) => l.endsWith(': ramify-generated: set')).map((l) => l.slice(0, -': ramify-generated: set'.length)))
+    // Mid-merge, the working tree already holds what the branch brought: only the script and the attributes the
+    // base had are trusted, never ones the branch being merged adds or changes.
+    if ((await this.run('git', ['-C', repo, 'diff', '--cached', '--quiet', 'HEAD', '--', '.worktree/merge.sh', '.gitattributes'])).code !== 0) return null
+    // -z: path, attribute, value, each ended by NUL, with the path as it is (no quoting of accents).
+    const attrs = (await this.git(repo, 'check-attr', '-z', 'ramify-generated', '--', ...files)).split('\0')
+    const generated = new Set<string>()
+    for (let i = 0; i + 2 < attrs.length; i += 3) if (attrs[i + 2] === 'set') generated.add(attrs[i])
     if (!files.every((f) => generated.has(f))) return null
     // Either side will do: the script rebuilds them anyway. (A file deleted on one side has no "theirs": fine.)
-    await this.run('git', ['-C', repo, 'checkout', '--theirs', '--', ...files])
+    await this.run('git', ['-C', repo, 'checkout', '--theirs', '--', ...files.map((f) => `:(literal)${f}`)])
     const tail = (out: string) => out.trim().split('\n').slice(-12).join('\n')
     const s = await this.run(WIN ? gitBash(this.env) : 'bash', [WIN ? script.replace(/\\/g, '/') : script], repo)
     if (s.code !== 0) return { ok: false, output: tail(s.stdout + s.stderr) }
@@ -510,7 +521,7 @@ export class Engine {
       let added = 0
       let deleted = 0
       const touched = new Set<string>()
-      const numstat = (await this.git(at, 'diff', '--no-ext-diff', '--no-textconv', '-z', '--numstat', mb)).split('\0')
+      const numstat = (await this.git(at, 'diff', '--no-ext-diff', '--no-textconv', '-z', '--numstat', mb, '--')).split('\0')
       for (let i = 0; i < numstat.length; i++) {
         const m = /^(\d+|-)\t(\d+|-)\t(.*)$/s.exec(numstat[i])
         if (!m) continue

@@ -99,12 +99,15 @@ env_set() {
   printf '%s\n%s=%s\n' "$tmp" "$2" "$3" | sed '/^$/d' > "$f"
 }
 
+# A folder under $ROOT/<name> belongs to this repository: two repositories with the same folder name share it.
+of_repo() { [ "$( (main_checkout "$1") 2>/dev/null)" = "$2" ]; }
+
 # Worktree path from its folder name, branch or path.
 find_wt() {
   local main="$1" name="$2" repo path="" line cur=""
   repo=$(basename "$main")
   if [ -d "$name/.git" ] || [ -f "$name/.git" ]; then (cd "$name" && pwd); return; fi
-  if [ -d "$ROOT/$repo/$(slugify "$name")" ]; then
+  if [ -d "$ROOT/$repo/$(slugify "$name")" ] && of_repo "$ROOT/$repo/$(slugify "$name")" "$main"; then
     (cd "$ROOT/$repo/$(slugify "$name")" && abspwd); return
   fi
   while IFS= read -r line; do
@@ -132,6 +135,19 @@ alloc_port() {
   done
   die "no free port block between $PORT_MIN and $PORT_MAX"
 }
+
+PORT_LOCK="$ROOT/.port-lock"
+port_lock() {
+  local i=0
+  mkdir -p "$ROOT"
+  until mkdir "$PORT_LOCK" 2>/dev/null; do
+    # Left behind by a ramify that died holding it (older than a minute): take it over.
+    if [ -n "$(find "$PORT_LOCK" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then rmdir "$PORT_LOCK" 2>/dev/null; continue; fi
+    i=$((i + 1)); [ "$i" -lt 300 ] || die "another ramify holds $PORT_LOCK; remove it if none is running"
+    sleep 0.1
+  done
+}
+port_unlock() { rmdir "$PORT_LOCK" 2>/dev/null || true; }
 
 port_busy() {
   command -v lsof >/dev/null || return 1
@@ -307,6 +323,8 @@ create() {
   fi
 
   copy_included "$main" "$wt"
+  # Choosing a port and writing it down is one step: two worktrees made at once must not both pick the same block.
+  port_lock
   port=$(alloc_port)
   cat > "$wt/.worktree.env" <<EOF
 WT_NAME=$slug
@@ -317,6 +335,9 @@ WT_AGENT=$agent
 PORT=$port
 DERIVED_DATA=$ROOT/$repo/.derived-data/$slug
 EOF
+  # The conversation it is for (hook create), recorded before the setup runs: another one looking now sees it taken.
+  [ -z "${CREATE_SESSION:-}" ] || printf 'WT_SESSION=%s\n' "$CREATE_SESSION" >> "$wt/.worktree.env"
+  port_unlock
   exclude_env_file "$wt"
 
   if [ "$setup" = 1 ] && ! run_project_script "$wt" "$main" setup; then
@@ -326,7 +347,20 @@ EOF
   CREATED_WT=$wt
 }
 
-json_str() { printf '"%s"' "$(printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g' | tr -d '\000-\037')"; }
+# A JSON string. Control characters are escaped, not dropped: a path with a tab in it must come out as that path.
+json_str() {
+  local s=$1 out="" c i
+  s=${s//\\/\\\\}; s=${s//\"/\\\"}; s=${s//$'\t'/\\t}; s=${s//$'\n'/\\n}; s=${s//$'\r'/\\r}
+  if [[ $s == *[$'\001'-$'\037']* ]]; then
+    for ((i = 0; i < ${#s}; i++)); do
+      c=${s:i:1}
+      if [[ $c == [$'\001'-$'\037'] ]]; then printf -v c '\\u%04x' "'$c"; fi
+      out+=$c
+    done
+    s=$out
+  fi
+  printf '"%s"' "$s"
+}
 
 # Agents running in a worktree folder, comma separated (at most 3): $1 the active_agents output, $2 the folder,
 # $3 the agent recorded in its .worktree.env (a node/bun/python process there counts as that agent).
@@ -416,6 +450,9 @@ cmd_ls() {
           if ! git -C "$cur" rev-parse -q --verify '@{u}' >/dev/null 2>&1; then sync=local
           else sync=$(git -C "$cur" rev-list --count '@{u}..HEAD'); [ "$sync" = 0 ] && sync=pushed || sync="+$sync"; fi
           port=$(env_get "$cur" PORT); agent=$(env_get "$cur" WT_AGENT)
+          # .worktree.env can come from the repository itself (a clone that ships one): a port is digits or nothing,
+          # never text that bash arithmetic or the JSON below would run or splice in.
+          [[ $port =~ ^[0-9]{1,5}$ ]] || port=""
           active=$(agents_in "$procs" "$cur" "$agent")
           if [ "$json" = 1 ]; then
             [ "$first" = 1 ] || printf ','; first=0
@@ -511,6 +548,7 @@ cmd_prune() {
   for wt in "$ROOT/$repo"/*/; do
     wt=${wt%/}
     [ -f "$wt/.worktree.env" ] || continue
+    of_repo "$wt" "$main" || continue
     [ -z "$(git -C "$wt" status --porcelain 2>/dev/null)" ] || continue
     branch=$(git -C "$wt" branch --show-current 2>/dev/null || true)
     [ -n "$branch" ] && git -C "$main" merge-base --is-ancestor "$branch" HEAD || continue
@@ -539,7 +577,7 @@ cmd_ui() {
   if [ -f "$SELF_DIR/ui/server.py" ]; then cd "$SELF_DIR/ui"
   elif [ -f "$SELF_DIR/../ui/server.py" ]; then cd "$SELF_DIR/../ui"
   else die "dashboard files not found next to $SELF_DIR"; fi
-  python3 -I server.py --main "$main" --bin "$SELF_DIR/ramify" --port "$port" --token "$token" \
+  RAMIFY_UI_TOKEN=$token python3 -I server.py --main "$main" --bin "$SELF_DIR/ramify" --port "$port" \
     | while IFS= read -r url; do
         log "${B}ramify ui${N}  $url  ${D}(Ctrl-C to stop)${N}"
         if [ "$open_browser" = 1 ]; then
@@ -581,7 +619,8 @@ shared_branch_at() {
 # else a leading `cd <dir> &&`, else the session folder. Prints nothing when there is no commit.
 commit_dir() {
   local cmd="$1" cwd="$2" dir
-  printf '%s' "$cmd" | grep -Eq '(^|[;&|(]|[[:space:]])git([[:space:]]+-[Cc][[:space:]]+[^[:space:]]+)*[[:space:]]+commit([[:space:]]|$)' || return 1
+  # git by any path (/usr/bin/git), inside quotes (bash -c "git …") and after global options (-C dir, -c k=v, -P, --no-pager…).
+  printf '%s' "$cmd" | grep -Eq '(^|[;&|("'"'"'`]|[[:space:]])([^[:space:];&|("'"'"'`]*/)?git([[:space:]]+(-[Cc][[:space:]]+[^[:space:]]+|-[A-Za-z]|--[A-Za-z][^[:space:]]*))*[[:space:]]+commit([[:space:]]|$)' || return 1
   dir=$(printf '%s' "$cmd" | sed -nE 's/.*git[[:space:]]+-C[[:space:]]+("([^"]*)"|'"'"'([^'"'"']*)'"'"'|([^[:space:]]+)).*/\2\3\4/p' | head -1)
   [ -n "$dir" ] || dir=$(printf '%s' "$cmd" | sed -nE 's/^[[:space:]]*cd[[:space:]]+("([^"]*)"|'"'"'([^'"'"']*)'"'"'|([^[:space:];&]+))[[:space:]]*(&&|;).*/\2\3\4/p' | head -1)
   case "$dir" in
@@ -620,17 +659,23 @@ cmd_hook() {
       n=1; branch=$base
       while :; do
         slug=$(slugify "$branch"); dir="$ROOT/$repo/$slug"
-        if [ -d "$dir" ]; then
+        if [ -d "$dir" ] && [ -d "$ROOT/$repo/.claims/$slug" ]; then
+          :  # still being made for another conversation (git worktree add, then npm ci…): taken
+        elif [ -d "$dir" ]; then
           owner=$(env_get "$dir" WT_SESSION)
-          if [ -z "$session" ] || [ -z "$owner" ] || [ "$owner" = "$session" ]; then (cd "$dir" && abspwd); exit 0; fi
+          # A worktree of another repository with the same folder name is taken, whoever made it.
+          if of_repo "$dir" "$main" && { [ -z "$session" ] || [ -z "$owner" ] || [ "$owner" = "$session" ]; }; then
+            (cd "$dir" && abspwd); exit 0
+          fi
         elif mkdir "$ROOT/$repo/.claims/$slug" 2>/dev/null; then
           break  # claimed: two conversations starting at once cannot both take this name
         fi
         n=$((n + 1)); branch="$base-$n"
       done
-      create "$branch" "" 1 claude
-      rmdir "$ROOT/$repo/.claims/$slug" 2>/dev/null || true
-      [ -z "$session" ] || env_set "$CREATED_WT" WT_SESSION "$session"
+      # The claim goes when this ends, also when create stops: a failed name must not stay reserved.
+      # (The path is fixed now: these variables are local and gone by the time the script exits.)
+      trap "rmdir -- $(printf '%q' "$ROOT/$repo/.claims/$slug") 2>/dev/null || true" EXIT
+      CREATE_SESSION=$session create "$branch" "" 1 claude
       printf '%s\n' "$CREATED_WT" ;;
     remove)
       wt=$(printf '%s' "$input" | jq -r '.worktree_path')
@@ -653,6 +698,11 @@ cmd_hook() {
     guard)
       # A commit from the terminal on the shared branch is refused like an edit.
       cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty')
+      if [ -n "$cmd" ] && printf '%s' "$cmd" | grep -Eiq 'ramify\.allowmain'; then
+        jq -n '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason:
+          "ramify.allowMain is for the user to set: it turns off the protection of the shared branch."}}'
+        exit 0
+      fi
       if [ -n "$cmd" ]; then
         dir=$(commit_dir "$cmd" "$(printf '%s' "$input" | jq -r '.cwd // empty')") || exit 0
         branch=$(shared_branch_at "$dir") || exit 0
@@ -666,6 +716,8 @@ cmd_hook() {
       file=$(printf '%s' "$input" | jq -r '.tool_input.file_path // .tool_input.notebook_path // empty')
       [ -n "$file" ] || exit 0
       case "$file" in /*|[A-Za-z]:*) ;; *) file="$(printf '%s' "$input" | jq -r '.cwd')/$file" ;; esac
+      # Inside .git (its config, its hooks) git cannot tell the branch: judge by the checkout that owns it.
+      case "$file" in */.git/*) file="${file%%/.git/*}/.git" ;; esac
       branch=$(shared_branch_at "$(dirname "$file")") || exit 0
       jq -n --arg b "$branch" '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason:
         ("This file is on " + $b + ", the shared branch. Call the EnterWorktree tool first with a short conventional name for "
@@ -811,7 +863,11 @@ cmd_move() {
   git -C "$main" stash push --include-untracked -m "ramify: moved to $branch" >/dev/null || die "could not stash the changes"
   stash=$(git -C "$main" rev-parse 'stash@{0}')
   # The branch starts where the work started: the commit the changes were made on.
-  create "$branch" "" 1 "$agent"; wt=$CREATED_WT
+  # In a subshell: when create stops (the folder exists, a bad name…) the work comes back before ramify exits.
+  if ! wt=$(create "$branch" "" 1 "$agent" >&2 && printf '%s' "$CREATED_WT"); then
+    git -C "$main" stash pop --index >/dev/null 2>&1 || git -C "$main" stash pop >/dev/null 2>&1
+    die "could not create $branch; the changes are back in the main checkout"
+  fi
   if ! git -C "$wt" stash apply --index "$stash" >/dev/null 2>&1 && ! git -C "$wt" stash apply "$stash" >/dev/null 2>&1; then
     git -C "$main" stash pop >/dev/null 2>&1
     die "the changes did not apply to $branch; they are back in the main checkout"

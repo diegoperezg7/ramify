@@ -41,7 +41,8 @@ const es = () => app.getLocale().toLowerCase().startsWith('es')
 if (process.env.RAMIFY_USER_DATA) app.setPath('userData', process.env.RAMIFY_USER_DATA)
 
 interface Bounds { x: number; y: number; width: number; height: number }
-interface Config { repos: string[]; settings: Settings; bounds?: Bounds }
+/** `hidden`: repositories the user removed, which detection must not bring back (adding one by hand clears it). */
+interface Config { repos: string[]; settings: Settings; bounds?: Bounds; hidden?: string[] }
 const configFile = join(app.getPath('userData'), 'config.json')
 // Renamed from agent-wt: bring the old repositories and settings over once.
 const legacyConfig = join(app.getPath('appData'), 'agent-wt', 'config.json')
@@ -56,7 +57,7 @@ const defaultSettings: Settings = {
 function readConfig(): Config {
   try {
     const c = JSON.parse(readFileSync(configFile, 'utf8')) as Partial<Config>
-    return { repos: c.repos ?? [], settings: { ...defaultSettings, ...c.settings }, bounds: c.bounds }
+    return { repos: c.repos ?? [], settings: { ...defaultSettings, ...c.settings }, bounds: c.bounds, hidden: Array.isArray(c.hidden) ? c.hidden : [] }
   } catch {
     return { repos: [], settings: { ...defaultSettings } }
   }
@@ -69,7 +70,7 @@ function writeConfig() {
 }
 
 const config = readConfig()
-for (const r of engine.discover()) if (!config.repos.includes(r)) config.repos.push(r)
+for (const r of engine.discover()) if (!config.repos.includes(r) && !config.hidden?.includes(r)) config.repos.push(r)
 writeConfig()
 
 /** Repositories on disks that are not mounted right now stay in the config; they are only hidden. */
@@ -85,8 +86,14 @@ function isTemporary(path: string): boolean {
   return tempRoots.some((root) => path === root || path.startsWith(`${root}/`))
 }
 
-function addRepoToConfig(path: string) {
-  if (!config.repos.includes(path)) { config.repos.push(path); writeConfig() }
+/** Added by the user it always goes in; found on its own (`detected`), not if the user removed it before. */
+function addRepoToConfig(path: string, detected = false) {
+  if (detected && config.hidden?.includes(path)) return
+  const unhide = !detected && !!config.hidden?.includes(path)
+  if (unhide) config.hidden = config.hidden!.filter((r) => r !== path)
+  if (!config.repos.includes(path)) config.repos.push(path)
+  else if (!unhide) return
+  writeConfig()
 }
 
 // --- agent monitor --------------------------------------------------------------
@@ -135,7 +142,8 @@ async function worktreesOf(repo: string) {
 
 const sessionsFile = join(app.getPath('userData'), 'sessions.json')
 function readSessions(): AgentSession[] {
-  try { return JSON.parse(readFileSync(sessionsFile, 'utf8')) as AgentSession[] } catch { return [] }
+  // Anything but a list (null, an object) would stop the app at every start: start with an empty history instead.
+  try { const saved: unknown = JSON.parse(readFileSync(sessionsFile, 'utf8')); return Array.isArray(saved) ? saved as AgentSession[] : [] } catch { return [] }
 }
 const sessionLog = new SessionLog(readSessions())
 let sessionsWritten = 0
@@ -143,7 +151,12 @@ function saveSessions(force: boolean) {
   // Changes are written at once; "still running" heartbeats at most once a minute.
   if (!force && Date.now() - sessionsWritten < 60_000) return
   sessionLog.prune(5000, config.settings.historyDays ?? 90)
-  try { writeFileSync(sessionsFile, JSON.stringify(sessionLog.sessions)); sessionsWritten = Date.now() } catch { /* next scan retries */ }
+  // Written aside and renamed: a crash or a full disk mid-write leaves the previous history, never a cut file.
+  try {
+    writeFileSync(`${sessionsFile}.tmp`, JSON.stringify(sessionLog.sessions))
+    renameSync(`${sessionsFile}.tmp`, sessionsFile)
+    sessionsWritten = Date.now()
+  } catch { /* next scan retries */ }
 }
 
 async function resolveCwd(cwd: string | null): Promise<Resolved & { worktree: string | null }> {
@@ -179,7 +192,7 @@ async function scan(): Promise<Live[]> {
   for (const s of sessions) {
     if (s.inferred || !s.repo || !s.worktree || !open.has(s.key)) continue
     // Throwaway repositories in the system's temporary folders (tests, demos) are not followed by themselves.
-    if (config.settings.autoDetect && !isTemporary(s.repo)) addRepoToConfig(s.repo)
+    if (config.settings.autoDetect && !isTemporary(s.repo)) addRepoToConfig(s.repo, true)
     if (!config.repos.includes(s.repo)) continue
     const entry = found.get(s.worktree) ?? { repo: s.repo, path: s.worktree, branch: s.branch ?? '', agents: [], busy: [] }
     if (!entry.agents.includes(s.agent)) entry.agents.push(s.agent)
@@ -297,12 +310,15 @@ const workingCount = () => [...busyAt.values()].reduce((sum, e) => sum + e.agent
 
 let firstScan = true
 let scanning = false
+/** Worktrees whose sessions the user closed, or whose repository they removed: gone, but no agent finished there. */
+const dismissed = new Set<string>()
 async function monitor() {
   if (scanning) return
   scanning = true
   let next: Live[]
   try { next = await scan() } catch { return } finally { scanning = false }
-  const finished = firstScan ? [] : live.filter((l) => !next.some((n) => n.path === l.path))
+  const finished = firstScan ? [] : live.filter((l) => !next.some((n) => n.path === l.path) && !dismissed.has(l.path))
+  dismissed.clear()
   firstScan = false
   live = next
   const n = workingCount()
@@ -332,7 +348,9 @@ async function careForBranches() {
     const name = repo.split('/').pop()
     for (const b of health.branches) {
       if (b.main) continue
-      if (b.merged && !b.running.length) {
+      // `running` leaves out agents idle at their prompt: an open session there (or a subagent) still lives in it.
+      const occupied = b.running.length > 0 || live.some((l) => l.path === b.path) || busyAt.has(b.path)
+      if (b.merged && !occupied) {
         if (config.settings.autoClean) {
           try {
             await engine.remove(repo, b.path, false)
@@ -686,7 +704,13 @@ const handlers = {
     return addPath(res.filePaths[0])
   },
   addRepoPath: (path: string) => { strings(path); return addPath(path) },
-  removeRepo: (path: string) => { strings(path); config.repos = config.repos.filter((r) => r !== path); writeConfig() },
+  removeRepo: (path: string) => {
+    strings(path)
+    for (const l of live) if (l.repo === path) dismissed.add(l.path)
+    config.repos = config.repos.filter((r) => r !== path)
+    if (!config.hidden?.includes(path)) config.hidden = [...config.hidden ?? [], path]
+    writeConfig()
+  },
   github: (refresh?: boolean) => listGithub(!!refresh),
   cloneRepo: async (nameWithOwner: string): Promise<RepoInfo> => {
     strings(nameWithOwner)
@@ -707,7 +731,10 @@ const handlers = {
   agentChildren: async () => children,
   closeSession: async (id: string) => {
     strings(id)
-    if (!sessionLog.close(id)) throw new EngineError('unknown session')
+    const closed = sessionLog.close(id)
+    if (!closed) throw new EngineError('unknown session')
+    const at = await resolveCwd(closed.cwd)
+    if (at.worktree) dismissed.add(at.worktree)
     saveSessions(true)
     await monitor()
   },

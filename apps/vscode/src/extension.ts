@@ -21,7 +21,14 @@ export function activate(ctx: vscode.ExtensionContext) {
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50)
   status.command = 'ramify.open'
   ctx.subscriptions.push(status)
+  // One refresh at a time: with a slow repository, calls every 5 s would pile up and answer out of order.
+  let refreshing = false
   const refreshStatus = async () => {
+    if (refreshing) return
+    refreshing = true
+    try { await showStatus() } finally { refreshing = false }
+  }
+  const showStatus = async () => {
     const repo = await repoOf()
     if (!repo) { status.hide(); return }
     try {
@@ -89,7 +96,8 @@ export function activate(ctx: vscode.ExtensionContext) {
     panel.webview.html = page(panel.webview)
     const webview = panel.webview
     answer(webview, () => { if (!ready) { ready = true; for (const m of queued.splice(0)) void webview.postMessage(m) } })
-    panel.onDidDispose(() => { panel = undefined; ready = false })
+    // What was waiting for this page goes with it: a closed panel must not replay it in the next one.
+    panel.onDidDispose(() => { panel = undefined; ready = false; queued.length = 0 })
   }
 
   // Activity bar: the branch tree of this repository in the side bar, the dashboard a click away.
@@ -97,7 +105,9 @@ export function activate(ctx: vscode.ExtensionContext) {
     resolveWebviewView(view) {
       view.webview.options = { enableScripts: true, localResourceRoots: [ui] }
       view.webview.html = page(view.webview, 'sidebar')
-      ctx.subscriptions.push(answer(view.webview))
+      // The view is resolved again each time it comes back: its listener goes with it, not with the extension.
+      const listening = answer(view.webview)
+      view.onDidDispose(() => listening.dispose())
     },
   }))
 

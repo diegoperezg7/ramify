@@ -1,5 +1,5 @@
 import { Check, Copy, GitBranch, GitCommitHorizontal, X } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { agentVar } from '../agents'
 import { bridge } from '../bridge'
 import { relTime } from '../i18n'
@@ -21,20 +21,24 @@ export function CommitDetail({ hash }: { hash: string }) {
   const [file, setFile] = useState<string | null>(null)
   const [diff, setDiff] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
+  // The diff on screen answers the last request only: an earlier one (another file, another commit) arriving late is dropped.
+  const wanted = useRef('')
 
   useEffect(() => {
     let alive = true
-    setC(null); setFile(null); setDiff(null)
+    setC(null); setFile(null); setDiff(null); wanted.current = ''
     bridge.commit(repo, hash).then((x) => { if (alive) setC(x) }, (e: Error) => { if (alive) { toast('error', e.message); selectCommit(null) } })
     return () => { alive = false }
   }, [repo, hash, toast, selectCommit])
 
   const open = (f: string) => {
-    if (file === f) { setFile(null); return }
+    if (file === f) { setFile(null); wanted.current = ''; return }
+    const key = `${repo}\0${hash}\0${f}`
+    wanted.current = key
     setFile(f); setDiff(null)
     bridge.commitDiff(repo, hash, f).then(
-      (r) => setDiff((cur) => (cur === null ? r.diff : cur)),
-      (e: Error) => { setDiff(''); toast('error', e.message) })
+      (r) => { if (wanted.current === key) setDiff(r.diff) },
+      (e: Error) => { if (wanted.current === key) { setDiff(''); toast('error', e.message) } })
   }
   const copy = async () => {
     try { await navigator.clipboard.writeText(hash); setCopied(true); setTimeout(() => setCopied(false), 1500) } catch { /* denied */ }

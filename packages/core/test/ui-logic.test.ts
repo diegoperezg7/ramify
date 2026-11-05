@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { agentTimeByDay, dayLanes, friendlyMerge, lastActivity, MergeError, mergeProblem, lastDays, levels, nextAction, parseDiff, peakParallel, splitMinor, taskSlug, timeBy, unionMs } from '../../../ui/web/src/logic.ts'
+import { agentTimeByDay, dayLanes, friendlyMerge, lastActivity, MergeError, mergeProblem, lastDays, levels, nextAction, parseDiff, peakParallel, shellArg, splitMinor, taskSlug, timeBy, unionMs } from '../../../ui/web/src/logic.ts'
 import type { BranchHealth, PullRequest } from '../src/types.ts'
 
 const branch = (o: Partial<BranchHealth>): BranchHealth => ({
@@ -146,5 +146,13 @@ describe('merge notification', () => {
     const g = mergeProblem('generated files could not be rebuilt, nothing was changed:\nsh: npm: command not found', ctx)
     assert.equal(g.kind, 'generated'); assert.equal(g.detail, 'sh: npm: command not found')
     assert.deepEqual([mergeProblem('nothing to merge', ctx).kind, mergeProblem('nothing to merge', ctx).detail], ['other', 'nothing to merge'])
+  })
+})
+
+describe('commands to copy', () => {
+  it('quotes a branch name a shell would run', () => {
+    assert.equal(shellArg('feat/login-2'), 'feat/login-2')
+    assert.equal(shellArg('x;open${IFS}-a${IFS}Calculator'), "'x;open${IFS}-a${IFS}Calculator'")
+    assert.equal(shellArg("it's"), "'it'\\''s'")
   })
 })

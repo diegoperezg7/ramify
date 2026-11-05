@@ -3,7 +3,7 @@ import { closeSync, existsSync, fstatSync, openSync, readdirSync, readFileSync, 
 import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AI_APP_LIST, EDITORS, TERMINALS } from './catalog.ts'
-import { agentOf } from './projects.ts'
+import { agentOf, exeOf } from './projects.ts'
 import type { AgentSession, SessionState, SessionVia } from './types.ts'
 
 // Every AI session on this machine, wherever it runs:
@@ -56,11 +56,11 @@ export function parseEtime(s: string): number {
   return (Number(m[1] ?? 0) * 24 + Number(m[2] ?? 0)) * 3600 + Number(m[3]) * 60 + Number(m[4])
 }
 
-export function parsePs(stdout: string): Map<number, Proc> {
+export function parsePs(stdout: string, exists?: (p: string) => boolean): Map<number, Proc> {
   const procs = new Map<number, Proc>()
   for (const line of stdout.split('\n')) {
     const m = /^\s*(\d+)\s+(\d+)\s+(\S+)\s+(.*)$/.exec(line)
-    if (m) procs.set(Number(m[1]), { pid: Number(m[1]), ppid: Number(m[2]), elapsed: parseEtime(m[3]), exe: m[4].split(/\s+/)[0], args: m[4] })
+    if (m) procs.set(Number(m[1]), { pid: Number(m[1]), ppid: Number(m[2]), elapsed: parseEtime(m[3]), exe: exeOf(m[4], exists), args: m[4] })
   }
   return procs
 }
@@ -343,6 +343,16 @@ export function aiAppMain(proc: Proc, procs: Map<number, Proc>, win = WIN): stri
 // An agent started in ~ that then works in ~/code/shop has its process cwd in ~. The agents' own
 // session files say where each conversation is: read them (locally, read-only) to find the project.
 
+/**
+ * Caches that live as long as the app: one entry per transcript, session or subagent ever seen. A Map keeps the
+ * order things went in, so past the cap the oldest go first.
+ */
+export function remember<K, V>(map: Map<K, V>, key: K, value: V, max = 500): void {
+  map.delete(key)
+  map.set(key, value)
+  for (const old of map.keys()) { if (map.size <= max) break; map.delete(old) }
+}
+
 const cwdCache = new Map<string, { stamp: string; cwd: string | null }>()
 
 /** Last "cwd" recorded in a JSONL transcript (reads only its tail, and only when the file changed). */
@@ -352,7 +362,7 @@ export function lastCwd(file: string, bytes = 256 * 1024): string | null {
   const hit = cwdCache.get(file)
   if (hit?.stamp === stamp) return hit.cwd
   const cwd = readLastCwd(file, bytes)
-  cwdCache.set(file, { stamp, cwd })
+  remember(cwdCache, file, { stamp, cwd })
   return cwd
 }
 
@@ -385,6 +395,8 @@ const missingSince = new Map<string, number>()
 export function claudeContext(pid: number, home = homedir()): { cwd: string | null; state?: SessionState; sessionId?: string; transcript?: string } | null {
   let info: { sessionId?: string; status?: string; cwd?: string }
   try { info = JSON.parse(readFileSync(join(home, '.claude', 'sessions', `${pid}.json`), 'utf8')) } catch { return null }
+  // A session id names a file in ~/.claude/projects: anything with path parts would read from elsewhere.
+  if (typeof info.sessionId !== 'string' || !/^[\w-]+$/.test(info.sessionId)) info.sessionId = undefined
   const state: SessionState | undefined = info.status === 'busy' ? 'working' : info.status === 'idle' ? 'idle' : info.status === 'waiting' ? 'waiting' : undefined
   let cwd: string | null = null
   let file: string | undefined
@@ -397,11 +409,11 @@ export function claudeContext(pid: number, home = homedir()): { cwd: string | nu
       try {
         for (const d of readdirSync(root)) {
           const f = join(root, d, `${info.sessionId}.jsonl`)
-          if (existsSync(f)) { file = f; transcriptCache.set(info.sessionId, f); break }
+          if (existsSync(f)) { file = f; remember(transcriptCache, info.sessionId, f); break }
         }
       } catch { /* no projects */ }
       if (file && existsSync(file)) missingSince.delete(info.sessionId)
-      else missingSince.set(info.sessionId, Date.now())
+      else remember(missingSince, info.sessionId, Date.now())
     }
     if (file) cwd = lastCwd(file)
   }
@@ -438,7 +450,7 @@ export function claudeSubagents(transcript: string, since = 0): Subagent[] {
     let hit = metaCache.get(file)
     if (hit?.mtime !== mtime) {
       try { hit = { mtime, meta: JSON.parse(readFileSync(file, 'utf8')) } } catch { hit = { mtime, meta: null } }
-      metaCache.set(file, hit)
+      remember(metaCache, file, hit)
     }
     const meta = hit.meta
     if (!meta || meta.finished === true) continue
@@ -503,6 +515,8 @@ export class SessionLog {
   private open = new Map<string, AgentSession>()
   /** Sessions open when the app last stopped: resumed if the first scan still sees them. */
   private resumable: Map<string, AgentSession> | null = new Map()
+  /** Keys in the last scan: a closed session whose process still runs is what keeps it from opening again. */
+  private live = new Set<string>()
 
   constructor(saved: AgentSession[] = [], now = Date.now()) {
     // Until proven otherwise, they ended when they were last seen.
@@ -550,6 +564,7 @@ export class SessionLog {
       started.push(s)
     }
     this.resumable = null
+    this.live = seen
     for (const [key, s] of this.open) {
       if (seen.has(key)) continue
       s.end = s.via === 'ide' ? s.lastSeen : now
@@ -573,9 +588,14 @@ export class SessionLog {
     return s
   }
 
-  /** Forget every finished session (the ones still running stay). */
+  /** Forget every finished session (the ones still running stay, and the last one the user closed of a process still running). */
   clear() {
-    this.sessions = this.sessions.filter((s) => s.end === null)
+    // The last closed session of a process still running stays too: without it the next scan opens it again.
+    const keep = new Map<string, AgentSession>()
+    for (const s of this.sessions) {
+      if (s.end !== null && s.key && this.live.has(s.key) && (keep.get(s.key)?.start ?? -1) < s.start) keep.set(s.key, s)
+    }
+    this.sessions = this.sessions.filter((s) => s.end === null || (s.key && keep.get(s.key) === s))
   }
 
   /** Newest first, capped. */
@@ -598,8 +618,10 @@ export class SessionLog {
 // --- export ---------------------------------------------------------------------------
 
 const csvCell = (v: unknown) => {
-  const s = v === null || v === undefined ? '' : String(v)
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
+  let s = v === null || v === undefined ? '' : String(v)
+  // Text that starts like a formula (a branch named =HYPERLINK(…)) would run in a spreadsheet: keep it text.
+  if (typeof v === 'string' && /^[=+\-@\t\r]/.test(s)) s = `'${s}`
+  return /[",\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s
 }
 
 export function sessionsCsv(sessions: AgentSession[], now = Date.now()): string {

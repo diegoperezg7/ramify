@@ -4,7 +4,7 @@ import { useState } from 'react'
 import { agentVar } from '../agents'
 import { bridge } from '../bridge'
 import { relTime } from '../i18n'
-import { friendlyMerge } from '../logic'
+import { friendlyMerge, shellArg } from '../logic'
 import { useStore } from '../store'
 import { Dialog } from './Dialog'
 import { DiffStat, DiffView } from './DiffView'
@@ -51,7 +51,8 @@ export function Detail() {
   const copy = async (key: string, text: string) => {
     try { await navigator.clipboard.writeText(text); setCopied(key); setTimeout(() => setCopied(null), 1500) } catch { /* denied */ }
   }
-  const command = `ramify open ${w.branch}${w.agent ? ` -a ${w.agent}` : ''}`
+  // Pasted into a terminal: a branch made outside the app can hold ; $ ` and the like, so it is quoted.
+  const command = `ramify open ${shellArg(w.branch)}${w.agent ? ` -a ${shellArg(w.agent)}` : ''}`
   const mergeBlocked = w.changes > 0 ? t('whyNoMergeChanges') : w.commits === 0 ? t('whyNoMergeCommits') : null
 
   return (

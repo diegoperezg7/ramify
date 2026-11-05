@@ -55,29 +55,49 @@ async function must(p: ReturnType<SetupRun>, what: string) {
 
 /** Remove a marked block (begin..end lines) from a text. */
 export function withoutBlock(text: string, begin: string, end: string): string {
-  const out: string[] = []
-  let skip = false
-  for (const line of text.split('\n')) {
-    if (line === begin) { skip = true; continue }
-    if (skip) { if (line === end) skip = false; continue }
-    out.push(line)
-  }
-  return out.join('\n').replace(/\n{3,}/g, '\n\n')
+  const lines = text.split('\n')
+  const same = (line: string, mark: string) => line.replace(/\r$/, '') === mark // CRLF files too
+  const from = lines.findIndex((l) => same(l, begin))
+  const to = from < 0 ? -1 : lines.findIndex((l, i) => i > from && same(l, end))
+  // No block, or one whose end line is gone: leave the file as it is rather than cut the user's lines after it.
+  if (to < 0) return text
+  const out = [...lines.slice(0, from), ...lines.slice(to + 1)]
+  // The blank line that set the block apart goes with it; the user's own blank lines elsewhere stay.
+  if (from > 0 && out[from - 1]?.trim() === '' && out[from]?.trim() === '') out.splice(from, 1)
+  return out.join('\n')
 }
 
-function appendBlock(file: string, begin: string, body: string, end: string) {
-  const text = read(file)
+/**
+ * A profile read and written back in the encoding it has: Windows PowerShell 5.1 often saves $PROFILE as UTF-16
+ * (with a byte order mark), and appending UTF-8 to it leaves a file that no longer loads.
+ */
+type Encoding = 'utf8' | 'utf8bom' | 'utf16le'
+function readText(file: string): { text: string; encoding: Encoding } {
+  let b: Buffer
+  try { b = readFileSync(file) } catch { return { text: '', encoding: 'utf8' } }
+  if (b[0] === 0xff && b[1] === 0xfe) return { text: b.subarray(2).toString('utf16le'), encoding: 'utf16le' }
+  if (b[0] === 0xef && b[1] === 0xbb && b[2] === 0xbf) return { text: b.subarray(3).toString('utf8'), encoding: 'utf8bom' }
+  return { text: b.toString('utf8'), encoding: 'utf8' }
+}
+function writeText(file: string, text: string, encoding: Encoding) {
+  const body = Buffer.from(text, encoding === 'utf16le' ? 'utf16le' : 'utf8')
+  const bom = encoding === 'utf16le' ? Buffer.from([0xff, 0xfe]) : encoding === 'utf8bom' ? Buffer.from([0xef, 0xbb, 0xbf]) : Buffer.alloc(0)
+  writeFileSync(file, Buffer.concat([bom, body]))
+}
+
+export function appendBlock(file: string, begin: string, body: string, end: string) {
+  const { text, encoding } = readText(file)
   if (text.includes(begin)) return
   mkdirSync(dirname(file), { recursive: true })
   if (existsSync(file)) copyFileSync(file, `${file}.bak-ramify`)
-  writeFileSync(file, `${text}${text && !text.endsWith('\n') ? '\n' : ''}\n${begin}\n${body}\n${end}\n`)
+  writeText(file, `${text}${text && !text.endsWith('\n') ? '\n' : ''}\n${begin}\n${body}\n${end}\n`, encoding)
 }
 
-function dropBlock(file: string, begin: string, end: string) {
-  const text = read(file)
+export function dropBlock(file: string, begin: string, end: string) {
+  const { text, encoding } = readText(file)
   if (!text.includes(begin)) return
   copyFileSync(file, `${file}.bak-ramify`)
-  writeFileSync(file, withoutBlock(text, begin, end))
+  writeText(file, withoutBlock(text, begin, end), encoding)
 }
 
 // --- claude ----------------------------------------------------------------------
@@ -179,7 +199,7 @@ async function shellState(ctx: SetupContext): Promise<SetupState> {
   if (!win(ctx)) return { id: 'shell', status: read(shellRc(ctx.home, ctx.shell)).includes(BLOCK_BEGIN) ? 'done' : 'todo' }
   if (!existsSync(ctx.gitBash)) return { id: 'shell', status: 'unavailable' }
   const files = [join(ctx.home, '.bashrc'), ...await powershellProfiles(ctx)]
-  return { id: 'shell', status: files.every((f) => read(f).includes(BLOCK_BEGIN)) ? 'done' : 'todo' }
+  return { id: 'shell', status: files.every((f) => readText(f).text.includes(BLOCK_BEGIN)) ? 'done' : 'todo' }
 }
 
 async function shellApply(ctx: SetupContext) {
@@ -207,9 +227,17 @@ export function windowsShims(gitBash: string, bin: string): { cmd: string; sh: s
 /** PowerShell that adds (or removes) a folder in the user's PATH, the way installers do. */
 export function userPathScript(dir: string, add: boolean): string {
   const d = dir.replace(/'/g, "''")
-  return add
-    ? `$p = [Environment]::GetEnvironmentVariable('Path', 'User'); if (-not (($p -split ';') -contains '${d}')) { [Environment]::SetEnvironmentVariable('Path', ((@($p -split ';') + '${d}') | Where-Object { $_ }) -join ';', 'User') }`
-    : `$p = [Environment]::GetEnvironmentVariable('Path', 'User'); [Environment]::SetEnvironmentVariable('Path', ((@($p -split ';') | Where-Object { $_ -and $_ -ne '${d}' }) -join ';'), 'User')`
+  // Read and written as stored in the registry: [Environment]::GetEnvironmentVariable expands %USERPROFILE% and the
+  // like, and SetEnvironmentVariable writes plain REG_SZ, so every other entry would lose its variables for good.
+  const open = "$k = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true); " +
+    "$p = [string]$k.GetValue('Path', '', 'DoNotExpandEnvironmentNames'); " +
+    "$kind = if ($k.GetValueNames() -contains 'Path') { $k.GetValueKind('Path') } else { 'ExpandString' }; "
+  const write = add
+    ? `if (-not (($p -split ';') -contains '${d}')) { $k.SetValue('Path', (((@($p -split ';') + '${d}') | Where-Object { $_ }) -join ';'), $kind) }; `
+    : `$k.SetValue('Path', ((@($p -split ';') | Where-Object { $_ -and $_ -ne '${d}' }) -join ';'), $kind); `
+  // Writing the registry tells no one: setting and clearing a variable through .NET announces the change to Windows.
+  const announce = "$k.Close(); [Environment]::SetEnvironmentVariable('RAMIFY_PATH_CHANGED', '1', 'User'); [Environment]::SetEnvironmentVariable('RAMIFY_PATH_CHANGED', $null, 'User')"
+  return open + write + announce
 }
 
 function linkTarget(f: string): string | null {
