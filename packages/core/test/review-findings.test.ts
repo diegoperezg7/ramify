@@ -162,7 +162,7 @@ describe('setup undo', () => {
 })
 
 describe('browser host server (ui/server.py)', () => {
-  it('reads git output that is not UTF-8 instead of failing the request', { todo: 'run() in ui/server.py:25 decodes strict UTF-8' }, () => {
+  it('reads git output that is not UTF-8 instead of failing the request', () => {
     const r = spawnSync('python3', ['-I', '-B', '-c', [
       'import sys', `sys.path.insert(0, ${JSON.stringify(join(ROOT_DIR, 'ui'))})`, 'import server',
       "server.run(['printf', 'caf\\\\351'])",

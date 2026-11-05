@@ -22,7 +22,8 @@ IDES = {"xcode", "cursor", "code", "zed", "idea", "Finder"}
 
 
 def run(args, cwd=None, check=True):
-    p = subprocess.run(args, cwd=cwd, capture_output=True, text=True)
+    # git output is bytes: a file or a commit in another encoding must not fail the whole request.
+    p = subprocess.run(args, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if check and p.returncode != 0:
         raise RuntimeError((p.stderr or p.stdout).strip() or f"{args[0]} failed")
     return p
