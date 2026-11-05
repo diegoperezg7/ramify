@@ -71,11 +71,14 @@ export function riskyGitConfig(dir: string): string[] {
   for (const raw of text.split('\n')) {
     const line = raw.trim()
     const sec = /^\[\s*([\w.-]+)/.exec(line)
-    if (sec) { section = sec[1].toLowerCase(); continue }
+    // [filter "x"] and the older [filter.x] are the same section: judge by its first part.
+    if (sec) { section = sec[1].toLowerCase().split('.')[0]; continue }
     const key = /^([\w-]+)\s*=/.exec(line)?.[1]?.toLowerCase()
     if (!key) continue
     if (section === 'filter' || (section === 'diff' && ['textconv', 'command'].includes(key)) || (section === 'merge' && key === 'driver')
-      || (section === 'core' && ['fsmonitor', 'sshcommand', 'pager', 'editor', 'hookspath', 'askpass'].includes(key))) found.add(`${section}.${key}`)
+      || (section === 'core' && ['fsmonitor', 'sshcommand', 'pager', 'editor', 'hookspath', 'askpass'].includes(key))
+      // An included file is not read here, so it could hold any of these; signing runs gpg.program on every commit.
+      || ((section === 'include' || section === 'includeif') && key === 'path') || (section === 'gpg' && key === 'program')) found.add(`${section}.${key}`)
   }
   return [...found]
 }

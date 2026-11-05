@@ -120,7 +120,7 @@ describe('session history and export', () => {
 })
 
 describe('git settings of a folder opened from a link', () => {
-  it('sees risky settings in the old section syntax, in included files and in the signing program', { todo: 'riskyGitConfig (engine.ts:58) reads only the plain config and misses gpg.program' }, () => {
+  it('sees risky settings in the old section syntax, in included files and in the signing program', () => {
     const check = (config: string, extra?: [string, string]) => {
       const r = repo()
       if (extra) writeFileSync(join(r, extra[0]), extra[1])
