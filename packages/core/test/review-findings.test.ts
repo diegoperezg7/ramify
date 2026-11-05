@@ -192,6 +192,22 @@ describe('a file named like a revision', () => {
   })
 })
 
+describe('file names that look like patterns', () => {
+  it('the diff of [ab].txt is that file only, not a.txt and b.txt', async () => {
+    const own = new Engine({ bin: BIN, env: { RAMIFY_ROOT: join(T, 'wts-literal') } })
+    const R = repo()
+    for (const f of ['a.txt', 'b.txt', '[ab].txt']) writeFileSync(join(R, f), `${f}\n`)
+    git(R, 'add', '.'); git(R, 'commit', '-qm', 'three')
+    for (const f of ['a.txt', 'b.txt', '[ab].txt']) writeFileSync(join(R, f), `${f} changed\n`)
+    const d = await own.diff(R, R, '[ab].txt')
+    assert.match(d, /\[ab\]\.txt changed/)
+    assert.doesNotMatch(d, /^\+a\.txt changed/m)
+    const hash = git(R, 'rev-parse', 'HEAD').trim()
+    const c = await own.commitDiff(R, hash, '[ab].txt')
+    assert.doesNotMatch(c, /a\/a\.txt/)
+  })
+})
+
 describe('setup undo', () => {
   it('removing a block whose end line the user deleted keeps the rest of the file', () => {
     const text = ['export A=1', '# >>> ramify >>>', 'export PATH=x', 'alias ll="ls -l"', 'export B=2'].join('\n')

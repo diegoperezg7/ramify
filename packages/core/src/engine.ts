@@ -352,10 +352,12 @@ export class Engine {
   async diff(repo: string, path: string, file: string): Promise<string> {
     const wt = await this.find(repo, path)
     const mb = await this.mergeBase(repo, path, wt)
-    const untracked = (await this.git(path, 'ls-files', '--others', '--exclude-standard', '--', file)).trim()
+    // A file name, not a pattern: [ab].txt or :memo.txt mean that one file.
+    const literal = `:(literal)${file}`
+    const untracked = (await this.git(path, 'ls-files', '--others', '--exclude-standard', '--', literal)).trim()
     const out = untracked
       ? (await this.run('git', ['-C', path, 'diff', '--no-ext-diff', '--no-textconv', '--no-index', '--', '/dev/null', file])).stdout
-      : await this.git(path, 'diff', '--no-ext-diff', '--no-textconv', mb, '--', file)
+      : await this.git(path, 'diff', '--no-ext-diff', '--no-textconv', mb, '--', literal)
     return out.slice(0, MAX_DIFF)
   }
 
@@ -405,7 +407,7 @@ export class Engine {
 
   async commitDiff(repo: string, hash: string, file: string): Promise<string> {
     const c = await this.commitRef(repo, hash)
-    const out = await this.git(repo, 'diff-tree', '-p', '-M', '--no-commit-id', '--no-ext-diff', '--no-textconv', ...Engine.treeRange(c), '--', file)
+    const out = await this.git(repo, 'diff-tree', '-p', '-M', '--no-commit-id', '--no-ext-diff', '--no-textconv', ...Engine.treeRange(c), '--', `:(literal)${file}`)
     return out.slice(0, MAX_DIFF)
   }
 
