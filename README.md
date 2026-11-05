@@ -203,7 +203,7 @@ or know how it works inside.
 
 ## Status
 
-**Version 0.7.4.** Desktop app for macOS (Apple silicon) and Windows (x64), VS Code / Cursor extension,
+**Version 0.7.5.** Desktop app for macOS (Apple silicon) and Windows (x64), VS Code / Cursor extension,
 CLI and Claude Code plugin, all built from this repository.
 
 - **Tested:** 96 core tests, 5 end-to-end UI tests in a real browser and 103 CLI tests run on every push; the core
