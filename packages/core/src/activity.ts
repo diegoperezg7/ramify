@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
-import { closeSync, existsSync, fstatSync, openSync, readdirSync, readFileSync, readSync, statSync } from 'node:fs'
-import { homedir } from 'node:os'
+import { closeSync, existsSync, fstatSync, openSync, readdirSync, readFileSync, readSync, realpathSync, statSync } from 'node:fs'
+import { homedir, tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { AI_APP_LIST, EDITORS, TERMINALS } from './catalog.ts'
 import { agentOf } from './projects.ts'
@@ -162,6 +162,22 @@ async function tmuxMap(env?: NodeJS.ProcessEnv) {
 // --- IDE chat ---------------------------------------------------------------------
 
 export const IDE_IDLE_MS = 5 * 60_000
+
+/**
+ * A folder inside the system's temporary directory (or /tmp): throwaway repositories of test runs and scripts, whose
+ * stub agents are not conversations worth keeping. macOS spells $TMPDIR both /var/folders/… and /private/var/folders/….
+ */
+export function inTempDir(cwd: string | null, tmp = tmpdir()): boolean {
+  if (!cwd) return false
+  const norm = (p: string) => { const s = p.replace(/\\/g, '/').replace(/\/+$/, ''); return process.platform === 'win32' ? s.toLowerCase() : s }
+  const roots = new Set([tmp, '/tmp', '/private/tmp'].flatMap((r) => {
+    let real = r
+    try { real = realpathSync(r) } catch { /* missing */ }
+    return [r, real, real.replace(/^\/private(?=\/)/, '')]
+  }).map(norm).filter(Boolean))
+  const here = norm(cwd)
+  return [...roots].some((r) => here === r || here.startsWith(`${r}/`))
+}
 
 function mtime(p: string): number {
   try { return statSync(p).mtimeMs } catch { return 0 }

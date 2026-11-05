@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url'
 import {
   cloneGithub, createHandlers, defaultProjectsDir, dispatch, Engine, EngineError, githubRepos, idesFor, openInTerminal, originSlug,
   accessibleRepos, AuthError, currentUser, hardenedGitEnv, isSafeExternal, normPath, pullRequestsWithToken, riskyGitConfig, sanitizeSettings, strings, installedTools, pollForTokens, publishGithub, pullRequestFor, pullRequestWithToken,
-  refreshTokens, requestDeviceCode, codexThreads, IDE_IDLE_MS, isActive, scanRepos, scanSessions, SessionLog, sessionsCsv, type Resolved, type Tokens,
+  refreshTokens, requestDeviceCode, codexThreads, IDE_IDLE_MS, inTempDir, isActive, scanRepos, scanSessions, SessionLog, sessionsCsv, type Resolved, type Tokens,
   gitBash, setupApply, setupStatus, setupUndo, type SetupContext,
 } from '../../../packages/core/src/index.ts'
 import { GITHUB_APP } from './github-app.ts'
@@ -163,7 +163,8 @@ async function resolveCwd(cwd: string | null): Promise<Resolved & { worktree: st
 
 async function scan(): Promise<Live[]> {
   const ignored = new Set(config.settings.ignored ?? [])
-  const scanned = (await scanSessions(env)).filter((s) => !ignored.has(s.agent) && !ignored.has(s.host.split(' · ')[0]))
+  // Agents in throwaway folders under the system's temp directory (test runs, scripts) are not kept or shown.
+  const scanned = (await scanSessions(env)).filter((s) => !ignored.has(s.agent) && !ignored.has(s.host.split(' · ')[0]) && !inTempDir(s.cwd))
   // Teammates in panes of their own belong to their lead's session: shown under it, never kept in the history.
   const seen = scanned.filter((s) => !s.parentSessionId)
   const sessions = await Promise.all(seen.map(async (s) => ({ ...s, ...(await resolveCwd(s.cwd)) })))

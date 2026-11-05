@@ -266,6 +266,26 @@ describe('where an agent really works', () => {
   })
 })
 
+describe('throwaway folders', () => {
+  it('tells folders in the temp directory from real projects', async () => {
+    const { inTempDir } = await import('../src/activity.ts')
+    const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'ramify-tmp-')))
+    assert.equal(inTempDir(join(tmp, 'demo'), tmp), true)
+    assert.equal(inTempDir(tmp, tmp), true)
+    assert.equal(inTempDir('/tmp/x/demo', tmp), true)
+    // A sibling whose name only starts like the temp directory is not inside it.
+    assert.equal(inTempDir(`${tmp}-other/demo`, tmp), false)
+    assert.equal(inTempDir('/Users/d/code/shop', tmp), false)
+    assert.equal(inTempDir(null, tmp), false)
+    if (process.platform === 'darwin') {
+      // $TMPDIR is /var/folders/…, which resolves to /private/var/folders/…: both spellings count.
+      const sys = tmpdir()
+      assert.equal(inTempDir(join(realpathSync(sys), 'tmp.X', 'demo')), true)
+      assert.equal(inTempDir(join(realpathSync(sys).replace(/^\/private/, ''), 'tmp.X', 'demo')), true)
+    }
+  })
+})
+
 describe('agents started by an agent', () => {
   it('recognises a Claude Code teammate in a pane of its own', async () => {
     const { teammateOf } = await import('../src/activity.ts')
