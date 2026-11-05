@@ -829,7 +829,11 @@ cmd_move() {
   git -C "$main" stash push --include-untracked -m "ramify: moved to $branch" >/dev/null || die "could not stash the changes"
   stash=$(git -C "$main" rev-parse 'stash@{0}')
   # The branch starts where the work started: the commit the changes were made on.
-  create "$branch" "" 1 "$agent"; wt=$CREATED_WT
+  # In a subshell: when create stops (the folder exists, a bad name…) the work comes back before ramify exits.
+  if ! wt=$(create "$branch" "" 1 "$agent" >&2 && printf '%s' "$CREATED_WT"); then
+    git -C "$main" stash pop --index >/dev/null 2>&1 || git -C "$main" stash pop >/dev/null 2>&1
+    die "could not create $branch; the changes are back in the main checkout"
+  fi
   if ! git -C "$wt" stash apply --index "$stash" >/dev/null 2>&1 && ! git -C "$wt" stash apply "$stash" >/dev/null 2>&1; then
     git -C "$main" stash pop >/dev/null 2>&1
     die "the changes did not apply to $branch; they are back in the main checkout"

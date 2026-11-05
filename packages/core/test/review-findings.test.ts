@@ -74,7 +74,7 @@ describe('CLI (ramify)', () => {
     assert.match(guard({ tool_name: 'Edit', tool_input: { file_path: join(r, '.git', 'config') } }), /deny/)
   })
 
-  it('ramify move leaves the changes in place when it cannot create the worktree', { todo: 'ramify:811 stashes before create and does not pop on failure' }, () => {
+  it('ramify move leaves the changes in place when it cannot create the worktree', () => {
     const r = repo()
     writeFileSync(join(r, 'f.txt'), 'work\n')
     mkdirSync(join(T, 'wts', r.split('/').pop()!, 'feat-m'), { recursive: true })
