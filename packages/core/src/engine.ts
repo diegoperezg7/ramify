@@ -314,7 +314,7 @@ export class Engine {
     }
     // -z everywhere: paths with spaces, accents or renames come through verbatim.
     const files = new Map<string, FileChange>()
-    const numstat = (await this.git(path, 'diff', '--no-ext-diff', '--no-textconv', '-z', '--numstat', mb)).split('\0')
+    const numstat = (await this.git(path, 'diff', '--no-ext-diff', '--no-textconv', '-z', '--numstat', mb, '--')).split('\0')
     for (let i = 0; i < numstat.length; i++) {
       const rec = numstat[i]
       if (!rec) continue
@@ -323,7 +323,7 @@ export class Engine {
       if (name === '') { i += 2; file = numstat[i] } // rename: "add\tdel\t" then old\0new\0
       if (file) files.set(file, { file, status: 'M', add, del, uncommitted: false })
     }
-    const nameStatus = (await this.git(path, 'diff', '--no-ext-diff', '--no-textconv', '-z', '--name-status', mb)).split('\0')
+    const nameStatus = (await this.git(path, 'diff', '--no-ext-diff', '--no-textconv', '-z', '--name-status', mb, '--')).split('\0')
     for (let i = 0; i < nameStatus.length; i++) {
       const st = nameStatus[i]
       if (!st) continue
@@ -516,7 +516,7 @@ export class Engine {
       let added = 0
       let deleted = 0
       const touched = new Set<string>()
-      const numstat = (await this.git(at, 'diff', '--no-ext-diff', '--no-textconv', '-z', '--numstat', mb)).split('\0')
+      const numstat = (await this.git(at, 'diff', '--no-ext-diff', '--no-textconv', '-z', '--numstat', mb, '--')).split('\0')
       for (let i = 0; i < numstat.length; i++) {
         const m = /^(\d+|-)\t(\d+|-)\t(.*)$/s.exec(numstat[i])
         if (!m) continue

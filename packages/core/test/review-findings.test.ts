@@ -180,6 +180,18 @@ describe('merging generated files', () => {
   })
 })
 
+describe('a file named like a revision', () => {
+  it('a repository with a file called HEAD still lists its changes', async () => {
+    const own = new Engine({ bin: BIN, env: { RAMIFY_ROOT: join(T, 'wts-head') } })
+    const R = repo()
+    writeFileSync(join(R, 'HEAD'), 'x\n'); writeFileSync(join(R, 'a.txt'), 'a\n')
+    git(R, 'add', '.'); git(R, 'commit', '-qm', 'files')
+    writeFileSync(join(R, 'a.txt'), 'changed\n')
+    const d = await own.worktree(R, R)
+    assert.deepEqual(d.files.map((f) => f.file), ['a.txt'])
+  })
+})
+
 describe('setup undo', () => {
   it('removing a block whose end line the user deleted keeps the rest of the file', () => {
     const text = ['export A=1', '# >>> ramify >>>', 'export PATH=x', 'alias ll="ls -l"', 'export B=2'].join('\n')
