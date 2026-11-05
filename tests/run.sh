@@ -257,6 +257,43 @@ echo 'export KEEP=1' >> "$HOME/.zshrc"
 SHELL=/bin/zsh "$AW" uninstall shell 2>/dev/null
 check "uninstall shell removes the block and keeps the rest" '! grep -q "ramify" "$HOME/.zshrc" && grep -qx "export KEEP=1" "$HOME/.zshrc"'
 
+echo "secret scan before commit and push"
+if command -v gitleaks >/dev/null; then
+  git init -q --bare "$T/sec-origin.git"
+  git clone -q "$T/sec-origin.git" "$T/sec" 2>/dev/null
+  cd "$T/sec" || exit 1
+  git checkout -q -b main
+  echo hi > a.txt; git add a.txt; git commit -qm init; git push -q origin main 2>/dev/null
+  "$AW" install secrets 2>/dev/null
+  check "install secrets adds pre-commit and pre-push" '[ -x .git/hooks/pre-commit ] && [ -x .git/hooks/pre-push ]'
+  # A token made up now: no secret, real or fake, is ever written into this repository.
+  fake="ghp_$(LC_ALL=C tr -dc 'A-Za-z0-9' </dev/urandom | head -c 36)"
+  printf 'TOKEN=%s\n' "$fake" > config.js; git add config.js
+  git commit -qm leak 2>"$T/sec-commit.err"; c=$?
+  check "a commit with a token fails (exit $c) and is not made" '[ "$c" != 0 ] && [ "$(git rev-list --count HEAD)" = 1 ]'
+  check "the commit message names rule, file and line" 'grep -q "github-pat  config.js:1" "$T/sec-commit.err"'
+  check "the token is never printed at commit" '! grep -qF "$fake" "$T/sec-commit.err"'
+  git reset -q config.js; rm config.js
+  echo clean > b.txt; git add b.txt
+  git commit -qm clean 2>"$T/sec-clean.err"; c=$?
+  check "a clean commit passes without a word (exit $c)" '[ "$c" = 0 ] && [ ! -s "$T/sec-clean.err" ]'
+  git push -q origin main 2>"$T/sec-push-clean.err"; c=$?
+  check "a clean push passes (exit $c)" '[ "$c" = 0 ] && [ "$(git --git-dir="$T/sec-origin.git" rev-parse main)" = "$(git rev-parse HEAD)" ]'
+  # A token committed past the hook (--no-verify) is stopped at push.
+  printf 'TOKEN=%s\n' "$fake" > config.js; git add config.js; git commit -qm leak --no-verify
+  git push -q origin main 2>"$T/sec-push.err"; c=$?
+  check "a push with the token is blocked (exit $c) and nothing reaches origin" '[ "$c" != 0 ] && [ -z "$(git --git-dir="$T/sec-origin.git" log --oneline --grep=leak main)" ]'
+  check "the push message names rule, file, line and commit" 'grep -q "github-pat  config.js:1  (commit " "$T/sec-push.err"'
+  check "the token is never printed at push" '! grep -qF "$fake" "$T/sec-push.err"'
+  git checkout -q -b feat/sec; git push -q origin feat/sec 2>/dev/null; c=$?
+  check "a new branch carrying the token is blocked too (exit $c)" '[ "$c" != 0 ] && ! git --git-dir="$T/sec-origin.git" show-ref -q refs/heads/feat/sec'
+  printf '#!/bin/sh\nexit 0\n' > .git/hooks/pre-commit
+  "$AW" install secrets 2>/dev/null
+  check "a pre-commit hook that is not ramify's is left as it is" '! grep -q "ramify: secret scan" .git/hooks/pre-commit'
+else
+  echo "  skip: gitleaks is not installed"
+fi
+
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" = 0 ]

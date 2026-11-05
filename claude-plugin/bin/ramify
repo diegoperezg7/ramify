@@ -39,7 +39,7 @@ ${B}Usage${N}
   ramify path <name>            print a worktree path
   ramify rm <name> [--force]    remove a worktree (never deletes unmerged commits)
   ramify prune                  remove clean, merged worktrees
-  ramify install [claude-hooks|instructions|shell|all]
+  ramify install [claude-hooks|instructions|shell|secrets|all]
   ramify uninstall [shell|instructions]  undo install shell / install instructions
   ramify run <agent> [args]     open an agent; from a main checkout it gets its own branch first
   ramify move <branch> [-a agent]  move the main checkout's uncommitted work to a branch of its own
@@ -687,6 +687,26 @@ install_claude_hooks() {
   log "${G}+${N} Claude Code hooks in $f (backup: $f.bak-ramify)"
 }
 
+# The secret scan as this repository's pre-commit and pre-push hooks (shared by all its worktrees).
+# A hook that is not ramify's is left alone; ramify's own is updated.
+install_secrets() {
+  local src="$SELF_DIR/snippets/git-hooks/ramify-secrets" dir h
+  [ -f "$src" ] || die "missing $src"
+  git rev-parse --git-dir >/dev/null 2>&1 || die "not a git repository: $PWD"
+  [ -z "$(git config --get core.hooksPath)" ] || die "core.hooksPath is set ($(git config --get core.hooksPath)): add $src to those hooks as pre-commit and pre-push"
+  dir=$(git rev-parse --path-format=absolute --git-path hooks)
+  mkdir -p "$dir"
+  for h in pre-commit pre-push; do
+    if [ -e "$dir/$h" ] && ! grep -q '^# ramify: secret scan' "$dir/$h"; then
+      log "${Y}! $dir/$h exists and is not ramify's: left as it is (call $src from it)${N}"
+      continue
+    fi
+    cp "$src" "$dir/$h" && chmod +x "$dir/$h"
+    log "${G}+${N} $dir/$h"
+  done
+  command -v gitleaks >/dev/null || log "${Y}gitleaks is not installed: the hooks warn but check nothing until it is (brew install gitleaks)${N}"
+}
+
 install_instructions() {
   local snippet="$SELF_DIR/snippets/agent-instructions.md" f
   [ -f "$snippet" ] || die "missing $snippet"
@@ -903,8 +923,9 @@ case "$sub" in
       claude-hooks) install_claude_hooks ;;
       instructions) install_instructions ;;
       shell) install_shell ;;
+      secrets) install_secrets ;;
       all) install_claude_hooks; install_instructions ;;
-      *) die "usage: ramify install [claude-hooks|instructions|shell|all]" ;;
+      *) die "usage: ramify install [claude-hooks|instructions|shell|secrets|all]" ;;
     esac ;;
   uninstall)
     case "${1:-}" in
