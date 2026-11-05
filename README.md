@@ -206,12 +206,12 @@ or know how it works inside.
 **Version 0.7.4.** Desktop app for macOS (Apple silicon) and Windows (x64), VS Code / Cursor extension,
 CLI and Claude Code plugin, all built from this repository.
 
-- **Tested:** 96 core tests, 5 end-to-end UI tests in a real browser and 79 CLI tests run on every push; the core
+- **Tested:** 96 core tests, 5 end-to-end UI tests in a real browser and 103 CLI tests run on every push; the core
   suite, the Windows installer and a smoke test that opens the packaged app also run on Windows.
-- **First release on its way:** until the downloads appear in [Releases](https://github.com/diegoperezg7/ramify/releases), build the app from
-  source: `npm ci && npm run build:desktop` (the installers land in `apps/desktop/release/`).
-- **Not signed yet:** macOS and Windows show a warning the first time (see below). Signing and notarization switch on
-  by themselves once the release has certificates.
+- **Downloads:** every version is in [Releases](https://github.com/diegoperezg7/ramify/releases). To build it yourself:
+  `npm ci && npm run build:desktop` (the installers land in `apps/desktop/release/`).
+- **Signing:** the macOS app is signed with a Developer ID and notarized. The Windows installer is not signed yet and
+  shows a warning the first time (see below).
 - **GitHub sign-in** needs the Ramify GitHub App to be registered for the build; until then GitHub features use the
   `gh` CLI you are signed in to.
 - **Windows:** terminal agents are listed without their repository (Windows does not expose another process's folder),
@@ -220,8 +220,8 @@ CLI and Claude Code plugin, all built from this repository.
 ## Install
 
 **Desktop app** (macOS 12+ on Apple silicon, Windows 10+): download it from the
-[latest release](https://github.com/diegoperezg7/ramify/releases/latest). It is not signed yet: on macOS right-click it the first time and choose *Open*;
-on Windows choose *More info* → *Run anyway*. Windows needs [Git for Windows](https://git-scm.com/download/win).
+[latest release](https://github.com/diegoperezg7/ramify/releases/latest). On macOS it opens like any other app. On Windows,
+which is not signed yet, choose *More info* → *Run anyway*. Windows needs [Git for Windows](https://git-scm.com/download/win).
 
 **VS Code / Cursor extension**: the `.vsix` in the [latest release](https://github.com/diegoperezg7/ramify/releases/latest), then
 `code --install-extension ramify-*.vsix` (or `cursor --install-extension …`).
@@ -233,7 +233,8 @@ git clone https://github.com/diegoperezg7/ramify.git
 cd ramify && ./install.sh          # puts ramify in ~/.local/bin
 ```
 
-Requires `git` 2.20+ and `bash` 3.2+. Optional: `python3` for `ramify ui`, `jq` for the Claude Code hooks, `tmux` for `--tmux`.
+Requires `git` 2.20+ and `bash` 3.2+, plus `jq` for the Claude Code plugin's hooks (it comes with macOS 15+; `brew install jq`
+on older versions). Optional: `python3` for `ramify ui`, `tmux` for `--tmux`.
 
 **Claude Code plugin**: every worktree Claude Code creates (`--worktree`, background sessions, `/batch`,
 subagents) goes through Ramify.
@@ -246,6 +247,44 @@ subagents) goes through Ramify.
 It adds good-practice skills: `/ramify:nueva-rama` (start a task on its own branch), `/ramify:portar-tarea` (move work
 off main), `/ramify:preparar-pr` (up to date, small, conventional commits, draft PR) and `/ramify:terminar-tarea`
 (check it is merged, remove worktree and branch), plus `/ramify:status` and `/ramify:ui`.
+
+## Set up a Mac with your AI agent
+
+Hand this repository to Claude Code (or any agent with a terminal) on a new Mac and ask it to *"set up Ramify on this
+Mac following the README"*. These are the steps it runs; they do the same as the app's *Set up this computer*, with no
+clicks. Apple silicon, macOS 12 or later.
+
+```bash
+# 1. The app, from the latest release (signed and notarized: no Gatekeeper warning)
+v=$(curl -fsSL https://api.github.com/repos/diegoperezg7/ramify/releases/latest | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
+d=$(mktemp -d)
+curl -fL -o "$d/ramify.dmg" "https://github.com/diegoperezg7/ramify/releases/download/v$v/ramify-$v-arm64.dmg"
+hdiutil attach -nobrowse -readonly -quiet "$d/ramify.dmg" -mountpoint "$d/mnt"
+rm -rf /Applications/Ramify.app && ditto "$d/mnt/Ramify.app" /Applications/Ramify.app
+hdiutil detach -quiet "$d/mnt"
+
+# 2. The ramify command, from inside the app (it updates with the app)
+mkdir -p ~/.local/bin
+ln -sf /Applications/Ramify.app/Contents/Resources/bin/ramify ~/.local/bin/ramify
+case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc ;; esac
+export PATH="$HOME/.local/bin:$PATH"
+
+# 3. Claude Code: the plugin (worktree hooks, the guard on main, the skills)
+command -v jq >/dev/null || brew install jq
+claude plugin marketplace add /Applications/Ramify.app/Contents/Resources/claude-marketplace
+claude plugin install ramify@ramify
+
+# 4. Every installed agent learns the rules; agents typed in a main checkout get their own branch
+ramify install instructions
+ramify install shell
+
+# 5. Check
+ramify --version && claude plugin list | grep -A2 ramify@ramify
+```
+
+Then open a new terminal (or restart Claude Code) so the plugin and the shell integration load, and open `/Applications/Ramify.app` once: it finds
+everything already set up. The projects need nothing; optionally add a `.worktreeinclude` (such as `.env`) and a
+`.worktree/setup.sh` per repository, see [Project setup](#project-setup).
 
 ## Quick start
 
@@ -342,12 +381,10 @@ See [`examples/`](examples):
 
 ### Claude Code integration
 
-```bash
-ramify install claude-hooks
-```
-
-This registers Ramify as Claude Code's `WorktreeCreate` and `WorktreeRemove` hooks (with a backup
-of `~/.claude/settings.json`). From then on `claude --worktree`, background sessions, `/batch`,
+The plugin (see [Install](#install), or `ramify install claude-plugin`) registers Ramify as Claude Code's
+`WorktreeCreate` and `WorktreeRemove` hooks, plus a guard that refuses edits and commits on the shared branch.
+Without the plugin, `ramify install claude-hooks` writes just the two worktree hooks into `~/.claude/settings.json`
+(with a backup); installing the plugin later removes them, so they never run twice. From then on `claude --worktree`, background sessions, `/batch`,
 workflows and subagents with `isolation: worktree` all create their worktrees through Ramify,
 with the same layout, ports and setup as every other agent. Claude Code keeps subagent worktrees
 after they finish, so run `ramify prune` now and then.

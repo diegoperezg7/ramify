@@ -142,9 +142,13 @@ check "hook remove deletes it" '[ ! -d "$path" ]'
 echo "install"
 mkdir -p "$HOME/.claude" "$HOME/.codex"
 echo '{"model":"opus","hooks":{"Stop":[]}}' > "$HOME/.claude/settings.json"
-"$AW" install all 2>/dev/null
+"$AW" install claude-hooks 2>/dev/null
 check "claude hooks added, other settings kept" \
   'jq -e ".model == \"opus\" and (.hooks.Stop | type) == \"array\" and (.hooks.WorktreeCreate[0].hooks[0].command | endswith(\"hook create\"))" "$HOME/.claude/settings.json" >/dev/null'
+"$AW" install all 2>/dev/null
+check "install all installs the Claude Code plugin" 'grep -q "|plugin install ramify@ramify" "$T/last-agent"'
+check "the plugin replaces the older hooks, other settings kept" \
+  'jq -e ".model == \"opus\" and (.hooks.Stop | type) == \"array\" and .hooks.WorktreeCreate == null" "$HOME/.claude/settings.json" >/dev/null'
 "$AW" install instructions 2>/dev/null
 check "instructions installed once per agent" '[ "$(grep -c "(ramify)" "$HOME/.codex/AGENTS.md")" = 1 ] && [ "$(grep -c "(ramify)" "$HOME/.claude/CLAUDE.md")" = 1 ]'
 check "agents without a config dir are skipped" '[ ! -e "$HOME/.gemini" ]'

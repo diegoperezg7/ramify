@@ -200,12 +200,12 @@ instalar esas piezas, compilar desde el código o saber cómo funciona por dentr
 **Versión 0.7.4.** App de escritorio para macOS (Apple silicon) y Windows (x64), extensión de VS Code / Cursor,
 CLI y plugin de Claude Code, todo compilado desde este repositorio.
 
-- **Probado:** 96 tests del núcleo, 5 tests de la interfaz en un navegador real y 79 del CLI en cada push; la batería
+- **Probado:** 96 tests del núcleo, 5 tests de la interfaz en un navegador real y 103 del CLI en cada push; la batería
   del núcleo, el instalador de Windows y una prueba de humo que abre la app empaquetada también corren en Windows.
-- **Primera release en camino:** hasta que aparezcan las descargas en [Releases](https://github.com/diegoperezg7/ramify/releases), compila la app
-  desde el código: `npm ci && npm run build:desktop` (los instaladores quedan en `apps/desktop/release/`).
-- **Aún sin firmar:** macOS y Windows avisan la primera vez (ver abajo). La firma y la notarización se activan solas
-  cuando la release tenga certificados.
+- **Descargas:** todas las versiones están en [Releases](https://github.com/diegoperezg7/ramify/releases). Para compilarla
+  tú: `npm ci && npm run build:desktop` (los instaladores quedan en `apps/desktop/release/`).
+- **Firma:** la app de macOS está firmada con Developer ID y notarizada. El instalador de Windows aún no está firmado y
+  avisa la primera vez (ver abajo).
 - **Login con GitHub:** necesita que la GitHub App de Ramify esté registrada para la build; mientras tanto, las funciones
   de GitHub usan el CLI `gh` con el que ya hayas iniciado sesión.
 - **Windows:** los agentes de terminal salen sin su repositorio (Windows no deja leer la carpeta de otro proceso) y la
@@ -214,8 +214,8 @@ CLI y plugin de Claude Code, todo compilado desde este repositorio.
 ## Instalación
 
 **App de escritorio** (macOS 12+ en Apple silicon, Windows 10+): descárgala de la
-[última release](https://github.com/diegoperezg7/ramify/releases/latest). Todavía no está firmada: en macOS, la primera vez, clic derecho y *Abrir*; en Windows,
-*Más información* → *Ejecutar de todas formas*. En Windows necesita [Git para Windows](https://git-scm.com/download/win).
+[última release](https://github.com/diegoperezg7/ramify/releases/latest). En macOS se abre como cualquier otra app. En Windows,
+que aún no está firmado, *Más información* → *Ejecutar de todas formas*. En Windows necesita [Git para Windows](https://git-scm.com/download/win).
 
 **Extensión VS Code / Cursor**: el `.vsix` de la [última release](https://github.com/diegoperezg7/ramify/releases/latest) y luego
 `code --install-extension ramify-*.vsix` (o `cursor --install-extension …`).
@@ -227,7 +227,8 @@ git clone https://github.com/diegoperezg7/ramify.git
 cd ramify && ./install.sh          # deja ramify en ~/.local/bin
 ```
 
-Necesita `git` 2.20+ y `bash` 3.2+. Opcional: `python3` para `ramify ui`, `jq` para los hooks de Claude Code y `tmux` para `--tmux`.
+Necesita `git` 2.20+ y `bash` 3.2+, y `jq` para los hooks del plugin de Claude Code (viene con macOS 15+; `brew install jq`
+en versiones anteriores). Opcional: `python3` para `ramify ui` y `tmux` para `--tmux`.
 
 **Plugin de Claude Code**: todos los worktrees que crea Claude Code (`--worktree`, sesiones en segundo plano,
 `/batch`, subagentes) pasan por Ramify.
@@ -240,6 +241,44 @@ Necesita `git` 2.20+ y `bash` 3.2+. Opcional: `python3` para `ramify ui`, `jq` p
 Añade skills de buenas prácticas: `/ramify:nueva-rama` (empezar una tarea en su rama), `/ramify:portar-tarea` (sacar el
 trabajo de main), `/ramify:preparar-pr` (al día, pequeña, commits convencionales, PR en borrador) y
 `/ramify:terminar-tarea` (comprobar que está mergeada y quitar worktree y rama), además de `/ramify:status` y `/ramify:ui`.
+
+## Preparar un Mac con tu agente de IA
+
+Pásale este repositorio a Claude Code (o a cualquier agente con terminal) en un Mac nuevo y pídele que *"prepare Ramify
+en este Mac siguiendo el README"*. Estos son los pasos que ejecuta; hacen lo mismo que *Preparar este ordenador* de la
+app, sin clics. Apple silicon, macOS 12 o posterior.
+
+```bash
+# 1. La app, de la última release (firmada y notarizada: sin aviso de Gatekeeper)
+v=$(curl -fsSL https://api.github.com/repos/diegoperezg7/ramify/releases/latest | sed -n 's/.*"tag_name": *"v\([^"]*\)".*/\1/p')
+d=$(mktemp -d)
+curl -fL -o "$d/ramify.dmg" "https://github.com/diegoperezg7/ramify/releases/download/v$v/ramify-$v-arm64.dmg"
+hdiutil attach -nobrowse -readonly -quiet "$d/ramify.dmg" -mountpoint "$d/mnt"
+rm -rf /Applications/Ramify.app && ditto "$d/mnt/Ramify.app" /Applications/Ramify.app
+hdiutil detach -quiet "$d/mnt"
+
+# 2. El comando ramify, el de dentro de la app (se actualiza con ella)
+mkdir -p ~/.local/bin
+ln -sf /Applications/Ramify.app/Contents/Resources/bin/ramify ~/.local/bin/ramify
+case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) echo 'export PATH="$HOME/.local/bin:$PATH"' >> ~/.zshrc ;; esac
+export PATH="$HOME/.local/bin:$PATH"
+
+# 3. Claude Code: el plugin (hooks de worktree, la guarda sobre main, las skills)
+command -v jq >/dev/null || brew install jq
+claude plugin marketplace add /Applications/Ramify.app/Contents/Resources/claude-marketplace
+claude plugin install ramify@ramify
+
+# 4. Cada agente instalado aprende las reglas; los que se abren en un checkout principal reciben su rama
+ramify install instructions
+ramify install shell
+
+# 5. Comprobar
+ramify --version && claude plugin list | grep -A2 ramify@ramify
+```
+
+Después abre una terminal nueva (o reinicia Claude Code) para que carguen el plugin y la integración con la shell, y abre `/Applications/Ramify.app`
+una vez: encontrará todo ya preparado. Los proyectos no necesitan nada; si quieres, añade en cada repositorio un
+`.worktreeinclude` (por ejemplo `.env`) y un `.worktree/setup.sh`, ver [Preparación por proyecto](#preparación-por-proyecto).
 
 ## Empezar
 
@@ -336,12 +375,10 @@ checkout principal. Ejemplos en [`examples/`](examples):
 
 ### Integración con Claude Code
 
-```bash
-ramify install claude-hooks
-```
-
-Registra Ramify como hooks `WorktreeCreate` y `WorktreeRemove` de Claude Code (con copia de
-`~/.claude/settings.json`). Desde entonces `claude --worktree`, las sesiones en segundo plano,
+El plugin (ver [Instalación](#instalación), o `ramify install claude-plugin`) registra Ramify como hooks
+`WorktreeCreate` y `WorktreeRemove` de Claude Code, más una guarda que rechaza ediciones y commits en la rama
+compartida. Sin el plugin, `ramify install claude-hooks` escribe solo los dos hooks de worktree en
+`~/.claude/settings.json` (con copia); al instalar el plugin después se quitan, así nunca se ejecutan dos veces. Desde entonces `claude --worktree`, las sesiones en segundo plano,
 `/batch`, los workflows y los subagentes con `isolation: worktree` crean sus worktrees con Ramify,
 con la misma estructura, puertos y preparación que el resto de agentes. Claude Code conserva los
 worktrees de los subagentes al terminar, así que conviene lanzar `ramify prune` de vez en cuando.

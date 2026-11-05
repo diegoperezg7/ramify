@@ -39,7 +39,7 @@ ${B}Usage${N}
   ramify path <name>            print a worktree path
   ramify rm <name> [--force]    remove a worktree (never deletes unmerged commits)
   ramify prune                  remove clean, merged worktrees
-  ramify install [claude-hooks|instructions|shell|secrets|all]
+  ramify install [claude-plugin|claude-hooks|instructions|shell|secrets|all]
   ramify uninstall [shell|instructions]  undo install shell / install instructions
   ramify run <agent> [args]     open an agent; from a main checkout it gets its own branch first
   ramify move <branch> [-a agent]  move the main checkout's uncommitted work to a branch of its own
@@ -742,6 +742,26 @@ install_claude_hooks() {
   log "${G}+${N} Claude Code hooks in $f (backup: $f.bak-ramify)"
 }
 
+# The Claude Code plugin from the marketplace next to this script: the repository (.claude-plugin/) or the
+# app bundle (Resources/claude-marketplace). The plugin brings the hooks, so the ones claude-hooks wrote go.
+install_claude_plugin() {
+  local market f="$HOME/.claude/settings.json"
+  command -v claude >/dev/null || die "claude is not installed (or not on PATH)"
+  if [ -f "$SELF_DIR/.claude-plugin/marketplace.json" ]; then market=$SELF_DIR
+  elif [ -f "$SELF_DIR/../claude-marketplace/.claude-plugin/marketplace.json" ]; then market=$(cd "$SELF_DIR/../claude-marketplace" && pwd)
+  else die "no Claude Code marketplace next to $SELF_DIR"; fi
+  claude plugin marketplace add "$market" >/dev/null || die "claude plugin marketplace add $market failed"
+  claude plugin install ramify@ramify >/dev/null || die "claude plugin install ramify@ramify failed"
+  log "${G}+${N} Claude Code plugin ramify@ramify (from $market)"
+  if [ -f "$f" ] && command -v jq >/dev/null && jq -e '[.hooks // {} | .[][]? | .hooks[]?.command // "" | select(test("ramify[\"'"'"']?\\s+hook\\s"))] | length > 0' "$f" >/dev/null 2>&1; then
+    cp "$f" "$f.bak-ramify"
+    jq '.hooks |= with_entries(.value as $was | .value |= map(select(([.hooks[]?.command // "" | test("ramify[\"'"'"']?\\s+hook\\s")] | any) | not))
+                               | select((.value | length > 0) or ($was | length == 0)))
+        | if .hooks == {} then del(.hooks) else . end' "$f.bak-ramify" > "$f"
+    log "${G}-${N} older ramify hooks in $f: the plugin has them now (backup: $f.bak-ramify)"
+  fi
+}
+
 # The secret scan as this repository's pre-commit and pre-push hooks (shared by all its worktrees).
 # A hook that is not ramify's is left alone; ramify's own is updated.
 install_secrets() {
@@ -979,12 +999,13 @@ case "$sub" in
   shell-init) cmd_shell_init ;;
   install)
     case "${1:-all}" in
+      claude-plugin) install_claude_plugin ;;
       claude-hooks) install_claude_hooks ;;
       instructions) install_instructions ;;
       shell) install_shell ;;
       secrets) install_secrets ;;
-      all) install_claude_hooks; install_instructions ;;
-      *) die "usage: ramify install [claude-hooks|instructions|shell|secrets|all]" ;;
+      all) if command -v claude >/dev/null; then install_claude_plugin; else install_claude_hooks; fi; install_instructions ;;
+      *) die "usage: ramify install [claude-plugin|claude-hooks|instructions|shell|secrets|all]" ;;
     esac ;;
   uninstall)
     case "${1:-}" in

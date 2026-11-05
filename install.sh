@@ -7,5 +7,5 @@ mkdir -p "$bin"
 ln -sf "$dir/ramify" "$bin/ramify"
 echo "ramify -> $bin/ramify"
 case ":$PATH:" in *":$bin:"*) ;; *) echo "add $bin to your PATH" ;; esac
-echo "optional: ramify install claude-hooks   # Claude Code uses ramify for its worktrees"
-echo "optional: ramify install instructions   # teach every installed agent the worktree rules"
+echo "next: ramify install all     # Claude Code plugin + the worktree rules for every installed agent"
+echo "      ramify install shell   # optional: agents typed in a main checkout get their own branch"
