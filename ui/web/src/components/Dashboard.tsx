@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { agentName, agentVar } from '../agents'
 import { bridge } from '../bridge'
 import { relTime } from '../i18n'
-import { agentTimeByDay, dayLanes, lastActivity, lastDays, peakParallel, splitMinor, timeBy, unionMs } from '../logic'
+import { agentTimeByDay, dayLanes, isActive, lastActivity, lastDays, peakParallel, splitMinor, timeBy, unionMs } from '../logic'
 import { useStore } from '../store'
 import type { AgentSession, BranchHealth, TimelineCommit } from '../types'
 import { AgentBadge } from './AgentBadge'
@@ -32,13 +32,15 @@ export function NowPanel({ sessions, branches, now }: { sessions: AgentSession[]
 
   const live = useMemo(() => (sessions ?? []).filter((s) => s.end === null && !s.inferred && isWork(s))
     .sort((a, b) => Number(b.state === 'waiting') - Number(a.state === 'waiting') || a.start - b.start), [sessions])
+  // The count is what is running: sessions idle at their prompt are listed but not counted.
+  const active = live.filter(isActive).length
   const recent = useMemo(() => lastActivity(sessions ?? [], now - 7 * DAY, now).slice(0, 6), [sessions, now])
 
   if (sessions === null) return <section className="cc-now" aria-busy="true"><i className="skel" style={{ width: 160, height: 14 }} /></section>
 
   return (
     <section className="cc-now" aria-label={t('ccNowTitle')}>
-      <h2 className={`cc-h2${live.length > 0 ? ' is-live' : ''}`}>{live.length > 0 && <i className="pulse" />}{t('ccNowTitle')}{live.length > 0 && <span className="muted"> · {live.length}</span>}</h2>
+      <h2 className={`cc-h2${active > 0 ? ' is-live' : ''}`}>{active > 0 && <i className="pulse" />}{t('ccNowTitle')}{active > 0 && <span className="muted"> · {active}</span>}</h2>
       {live.length > 0 ? (
         <div className="now-grid">
           {live.map((s) => {

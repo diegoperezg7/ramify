@@ -1,5 +1,5 @@
 // Pure helpers of the interface, kept apart from React so they can be tested on their own.
-import type { BranchHealth, PullRequest } from './types.ts'
+import type { AgentSession, BranchHealth, PullRequest } from './types.ts'
 
 export type Action = 'move' | 'update' | 'pr' | 'merge' | 'remove' | 'open' | 'launch' | 'view-pr'
 
@@ -203,3 +203,6 @@ export async function friendlyMerge(merge: () => Promise<unknown>, ctx: { branch
   const rebuilt = /regenerated: /.test(said)
   return { message: rebuilt ? okRebuilt : ok, rebuilt }
 }
+
+/** Running now: open and not idle at its prompt (a conversation left open in a tab is not running). */
+export const isActive = (s: AgentSession) => s.end === null && s.state !== 'idle'

@@ -369,6 +369,18 @@ export function claudeContext(pid: number, home = homedir()): { cwd: string | nu
 
 export interface Resolved { repo: string | null; branch: string | null; github: string | null }
 
+/**
+ * A finished session that the scan still sees was closed by the user: a session that ends on its own
+ * is gone from the scan (its process exited, or its IDE chat went quiet until newer activity).
+ */
+function closedByUser(prev: AgentSession | undefined, l: LiveSession): boolean {
+  if (!prev || prev.end === null) return false
+  return l.via === 'ide' ? l.start <= prev.end : Math.abs(prev.start - l.start) <= 5000
+}
+
+/** Active means doing something: a session idle at its prompt is open, not running. */
+export const isActive = (s: AgentSession) => s.end === null && s.state !== 'idle'
+
 /** Keeps the history: opens a session when it appears, closes it when it is gone. */
 export class SessionLog {
   sessions: AgentSession[]
@@ -391,6 +403,9 @@ export class SessionLog {
     const started: AgentSession[] = []
     const ended: AgentSession[] = []
     const seen = new Set<string>()
+    // Latest finished session per key: one the user closed stays closed while it is the same process.
+    const closed = new Map<string, AgentSession>()
+    for (const s of this.sessions) if (s.end !== null && s.key && (closed.get(s.key)?.start ?? -1) < s.start) closed.set(s.key, s)
     for (const l of live) {
       seen.add(l.key)
       const lastSeen = l.via === 'ide' ? Math.max(l.start, this.open.get(l.key)?.lastSeen ?? 0) : now
@@ -400,6 +415,7 @@ export class SessionLog {
       const back = this.resumable?.get(l.key)
       if (back && same(back)) { back.end = null; this.open.set(l.key, back) }
       let cur = this.open.get(l.key)
+      if (!cur && !(back && same(back)) && closedByUser(closed.get(l.key), l)) continue
       if (cur && !same(cur)) { cur.end = now; ended.push(cur); this.open.delete(l.key); cur = undefined }
       if (cur) {
         cur.lastSeen = lastSeen
@@ -426,6 +442,19 @@ export class SessionLog {
       ended.push(s)
     }
     return { started, ended }
+  }
+
+  /**
+   * The user closes a session that is still open (a conversation left in a terminal tab): it ends now and
+   * the scans do not bring it back while the same process (or, in an IDE, no newer chat activity) is there.
+   */
+  close(id: string, now = Date.now()): AgentSession | null {
+    const s = this.sessions.find((x) => x.id === id && x.end === null)
+    if (!s) return null
+    s.end = now
+    delete s.state
+    if (s.key) this.open.delete(s.key)
+    return s
   }
 
   /** Forget every finished session (the ones still running stay). */

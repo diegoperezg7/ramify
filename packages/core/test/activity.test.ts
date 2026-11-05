@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { aiAppMain, appOf, folderOf, hostOf, parseWinPs, winAppOf, ideSessions, parseEtime, parsePs, SessionLog, sessionsCsv, type LiveSession, type Resolved } from '../src/activity.ts'
+import { aiAppMain, appOf, folderOf, hostOf, isActive, parseWinPs, winAppOf, ideSessions, parseEtime, parsePs, SessionLog, sessionsCsv, type LiveSession, type Resolved } from '../src/activity.ts'
 
 const PS = `
     1     0  10-00:00:00 /sbin/launchd
@@ -117,6 +117,47 @@ describe('session history', () => {
     assert.match(head, /^agent,host,via/)
     assert.match(row, /"\/a,b"/)
     assert.match(row, /,2$/)
+  })
+})
+
+describe('active sessions and closing them', () => {
+  const live = (key: string, start: number, state?: 'working' | 'idle'): LiveSession & Resolved =>
+    ({ key, agent: 'claude', host: 'Ghostty', via: 'terminal', inferred: false, cwd: '/r', start, state, repo: '/r', branch: 'main', github: null })
+
+  it('counts one of two open sessions when the other is idle', () => {
+    const log = new SessionLog()
+    log.update([live('pid:1', 1000, 'working'), live('pid:2', 1000, 'idle')], 2000)
+    assert.equal(log.sessions.filter((s) => s.end === null).length, 2)
+    assert.equal(log.sessions.filter(isActive).length, 1)
+  })
+
+  it('keeps a session the user closed closed while its process lives, also after a restart', () => {
+    const log = new SessionLog()
+    log.update([live('pid:1', 1000, 'working'), live('pid:2', 1000, 'idle')], 2000)
+    const idle = log.sessions.find((s) => s.key === 'pid:2')!
+    assert.ok(log.close(idle.id, 3000))
+    assert.equal(log.close(idle.id, 3000), null)
+    let r = log.update([live('pid:1', 1000, 'working'), live('pid:2', 1001, 'idle')], 4000)
+    assert.equal(r.started.length, 0)
+    assert.deepEqual(log.sessions.filter((s) => s.end === null).map((s) => s.key), ['pid:1'])
+    assert.equal(log.sessions.find((s) => s.key === 'pid:2')!.end, 3000)
+
+    const reopened = new SessionLog(JSON.parse(JSON.stringify(log.sessions)), 9000)
+    r = reopened.update([live('pid:1', 1000, 'working'), live('pid:2', 1000, 'idle')], 10_000)
+    assert.equal(r.started.length, 0)
+    assert.deepEqual(reopened.sessions.filter((s) => s.end === null).map((s) => s.key), ['pid:1'])
+    // The same pid reused by a new process is a new conversation.
+    r = reopened.update([live('pid:2', 60_000, 'working')], 61_000)
+    assert.equal(r.started.length, 1)
+  })
+
+  it('reopens a closed IDE chat only with newer activity', () => {
+    const ide = (start: number): LiveSession & Resolved => ({ ...live('ide:Cursor:/r', start), via: 'ide', inferred: true })
+    const log = new SessionLog()
+    log.update([ide(1000)], 2000)
+    log.close(log.sessions[0].id, 3000)
+    assert.equal(log.update([ide(1000)], 4000).started.length, 0)
+    assert.equal(log.update([ide(5000)], 6000).started.length, 1)
   })
 })
 

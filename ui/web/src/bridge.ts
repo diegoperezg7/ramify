@@ -71,6 +71,7 @@ function rpc(invoke: Invoke, subscribe: (cb: (e: HostEvent) => void) => void): B
     addRepos: (paths) => call<void>('addRepos', paths),
     exportSessions: (format) => call<{ message: string }>('exportSessions', format),
     clearSessions: () => call<void>('clearSessions'),
+    closeSession: (id) => call<void>('closeSession', id),
     publishRepo: (path, name, isPrivate) => call<{ message: string; github: string }>('publishRepo', path, name, isPrivate),
     onEvent: subscribe,
   }
@@ -174,6 +175,7 @@ function httpBridge(): Bridge {
     addRepos: unsupported,
     exportSessions: unsupported,
     clearSessions: unsupported,
+    closeSession: unsupported,
     publishRepo: unsupported,
     onEvent: () => {},
   }

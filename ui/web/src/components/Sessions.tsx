@@ -1,6 +1,7 @@
-import { AppWindow, Code2, Download, FolderGit2, GitBranch, GitPullRequest, MoreHorizontal, SquareTerminal, Trash2, Upload } from 'lucide-react'
+import { AppWindow, Code2, Download, FolderGit2, GitBranch, GitPullRequest, MoreHorizontal, SquareTerminal, Trash2, Upload, X } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { bridge } from '../bridge'
+import { isActive } from '../logic'
 import { useStore } from '../store'
 import type { AgentSession } from '../types'
 import { AgentBadge } from './AgentBadge'
@@ -43,17 +44,24 @@ export function Sessions() {
   const [clearing, setClearing] = useState(false)
   const [moving, setMoving] = useState<{ repo: string; agent: string } | null>(null)
   const refreshSessions = useStore((s) => s.refreshSessions)
+  const [closing, setClosing] = useState<string | null>(null)
+  const closeSession = async (key: string, ids: string[]) => {
+    setClosing(key)
+    try { for (const id of ids) await bridge.closeSession(id); await refreshSessions() } catch (e) { toast('error', (e as Error).message) } finally { setClosing(null) }
+  }
   const now = Date.now()
 
   const live = useMemo(() => (sessions ?? []).filter((s) => s.end === null), [sessions])
+  // Running now: open and not idle at its prompt.
+  const active = useMemo(() => live.filter(isActive).length, [live])
   // Identical sessions (same agent, same place, same folder) read as one card with a count.
   const groups = useMemo(() => {
-    const m = new Map<string, { s: AgentSession; n: number }>()
+    const m = new Map<string, { s: AgentSession; n: number; ids: string[] }>()
     for (const s of [...live].sort((a, b) => a.start - b.start)) {
       const k = [s.agent, s.host, s.via, s.cwd, s.branch, s.state].join('\u0000')
       const g = m.get(k)
-      if (g) g.n++
-      else m.set(k, { s, n: 1 })
+      if (g) { g.n++; g.ids.push(s.id) }
+      else m.set(k, { s, n: 1, ids: [s.id] })
     }
     // Real conversations first, then inferred ones; busiest first.
     return [...m.values()].sort((a, b) => Number(a.s.inferred) - Number(b.s.inferred) || Number(!!b.s.repo) - Number(!!a.s.repo) || a.s.start - b.s.start)
@@ -119,11 +127,11 @@ export function Sessions() {
 
   // Live sessions by repository: one card per place, one row per agent (identical sessions folded with ×n).
   const liveByRepo = useMemo(() => {
-    const cards = new Map<string, { key: string; repo: string | null; github: string | null; title: string; rows: { s: AgentSession; n: number }[] }>()
-    for (const { s, n } of groups) {
+    const cards = new Map<string, { key: string; repo: string | null; github: string | null; title: string; rows: { s: AgentSession; n: number; ids: string[] }[] }>()
+    for (const { s, n, ids } of groups) {
       const key = s.via === 'app' ? '~apps' : s.repo ?? '~outside'
       const card = cards.get(key) ?? { key, repo: s.repo, github: s.github, title: s.via === 'app' ? t('aiApps') : s.repo ? base(s.repo) : t('outsideRepo'), rows: [] }
-      card.rows.push({ s, n })
+      card.rows.push({ s, n, ids })
       cards.set(key, card)
     }
     const busy = (c: { rows: { s: AgentSession }[] }) => c.rows.some((r) => r.s.state === 'working' || r.s.state === 'waiting')
@@ -179,7 +187,7 @@ export function Sessions() {
         <p className="sess-summary" aria-hidden="true"><span><Bar w={70} /></span><span><Bar w={100} /></span><span><Bar w={90} /></span><span><Bar w={70} /></span></p>
       )}
       {sessions !== null && <p className="sess-summary">
-        <span className={live.length ? 'is-live' : ''}>{live.length > 0 && <i className="pulse" />}<b>{live.length}</b> {t('sumNow')}</span>
+        <span className={active ? 'is-live' : ''}>{active > 0 && <i className="pulse" />}<b>{active}</b> {t('sumNow')}</span>
         <span><b>{history.length}</b> {t('sumSessions')}</span>
         <span><b>{duration(stats.time)}</b> {t('sumTime')}</span>
         <span><b>{stats.projects}</b> {t('sumRepos')}</span>
@@ -244,7 +252,7 @@ export function Sessions() {
                     </span>
                   </header>
                   <ul>
-                    {c.rows.map(({ s, n }) => (
+                    {c.rows.map(({ s, n, ids }) => (
                       <li key={s.id} className={s.inferred ? 'is-inferred' : ''} title={s.cwd ?? undefined}>
                         <AgentBadge agent={s.agent} size={22} live={s.state === 'working'} />
                         <span className="row-main">
@@ -262,6 +270,8 @@ export function Sessions() {
                           </span>
                         </span>
                         <span className="row-time mono">{duration(now - s.start)}</span>
+                        <button type="button" className="icon-btn row-close" title={t('closeSession')} aria-label={t('closeSession')}
+                          disabled={closing === s.id} onClick={() => void closeSession(s.id, ids)}><X size={13} /></button>
                       </li>
                     ))}
                   </ul>
