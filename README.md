@@ -72,11 +72,12 @@ own space and shows them in the control center. When one finishes, review its ch
 
 ### See who is working right now
 
-<img src="docs/app-control.png" alt="Control center: five agents working right now, each with its project, branch, how long it has been working and what it has changed">
+<img src="docs/app-control.png" alt="Control center: six agents working right now, each with its project, branch, how long it has been working and what it has changed; one marked as needing you">
 
 One card per assistant at work: which one, in which project and branch, since when, and what it has changed so far.
-With nobody working, it shows where and with which assistants you worked last. A warning appears if one starts
-changing the main version of your project directly, with a button to move it to its own branch.
+The one that stopped to ask you something says so. With nobody working, it shows where and with which assistants you
+worked last. A warning appears if one starts changing the main version of your project directly, with a button to
+move it to its own branch.
 
 ### See how much, and when, your assistants work
 
@@ -87,19 +88,30 @@ each assistant, and any day hour by hour: who worked when, and how many were wor
 
 ### Your work history at a glance, any day in detail
 
-<img src="docs/app-heatmap.png" alt="A year of commits as a grid of squares, the current streak and the busiest day, and one day opened with its commits per project and its AI sessions">
+<img src="docs/app-heatmap.png" alt="A year of commits as a grid of squares, the current streak and the busiest day, and one day opened: its figures, commits hour by hour, a lane per project with its commits and AI sessions, and the commits of each project">
 
 A year of work as a grid of squares, your current streak and your busiest day. Click any square to open that day:
-what was saved in each project and which assistants worked on it.
+how much was saved and when, one lane per project with its commits and the assistants that worked on it, and what
+was saved in each one.
 
 ### Every AI conversation on your computer
 
-<img src="docs/app-sessions.png" alt="AI sessions: every agent working now with its terminal, project and branch, plus the history of past sessions">
+<img src="docs/app-sessions.png" alt="AI sessions: a card per agent working now with its task, its last step, its activity in the last hour, the files it edited and its branch's commits and changes, and one that needs you">
 
-Assistants in any terminal, the chat in your editor and the AI desktop apps, found on their own. Under each one, the
-agents it started and the branch each works on: Claude Code subagents mid-task, agent-team teammates in their own pane,
-worktrees a subagent made, and the Codex threads of the ChatGPT app. A history of every session (where, which project,
-how long), exportable to a spreadsheet.
+Assistants in any terminal, the chat in your editor and the AI desktop apps, found on their own. One card per
+conversation: what it was asked to do, its last step, how busy it was in the last hour, the files it edited and what
+its branch holds. Inside each one, the agents it started and the branch each works on: Claude Code subagents mid-task,
+agent-team teammates in their own pane, worktrees a subagent made, and the Codex threads of the ChatGPT app. Below,
+the hours with AI per day, the projects of the week and a history of every session grouped by day, exportable to a
+spreadsheet.
+
+### Know when an assistant needs you
+
+The menu bar counts, in amber, the assistants that need you: one waiting for an answer, two working on the same
+branch, one changing the main version directly, or one that finished on a branch ready to bring in. In violet, the
+ones at work; open it to see what each one is doing. The Dock shows the same count, the sidebar flags the projects
+with something to look at, and a notification tells you once when a branch is ready (Ramify asks first, and you can
+turn it off in Settings).
 
 ### See exactly what each assistant changed
 
@@ -162,6 +174,7 @@ Any other agent works too: Ramify launches whatever command you give it.
 | A new branch for an agent | Copy `.env`, install dependencies, pick a free port… | One command or one click |
 | Which agent is doing what | Switch between terminal tabs | One screen, live, detected by itself |
 | An agent working on `main` | You find out later | A warning and a one-click branch |
+| An agent waiting for an answer | You find it when you switch tabs | An amber count in the menu bar |
 | What each agent changed | `git diff` in each folder | GitHub-style diff per branch |
 | Last month's branches | Gone from memory | A timeline, merged ones included |
 
