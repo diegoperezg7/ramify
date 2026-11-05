@@ -7,7 +7,7 @@ import { pathToFileURL } from 'node:url'
 import {
   cloneGithub, createHandlers, defaultProjectsDir, dispatch, Engine, EngineError, githubRepos, idesFor, openInTerminal, originSlug,
   accessibleRepos, AuthError, currentUser, hardenedGitEnv, isSafeExternal, normPath, pullRequestsWithToken, riskyGitConfig, sanitizeSettings, strings, installedTools, pollForTokens, publishGithub, pullRequestFor, pullRequestWithToken,
-  refreshTokens, requestDeviceCode, scanRepos, scanSessions, SessionLog, sessionsCsv, type Resolved, type Tokens,
+  refreshTokens, requestDeviceCode, isActive, scanRepos, scanSessions, SessionLog, sessionsCsv, type Resolved, type Tokens,
   gitBash, setupApply, setupStatus, setupUndo, type SetupContext,
 } from '../../../packages/core/src/index.ts'
 import { GITHUB_APP } from './github-app.ts'
@@ -89,7 +89,8 @@ function addRepoToConfig(path: string) {
 // One `ps` + `lsof` for the whole machine every few seconds: which agents run in which
 // worktree. Feeds the sidebar, the Dock badge, the menu bar and the "agent finished" notification.
 
-interface Live { repo: string; path: string; branch: string; agents: string[] }
+/** `working`: how many of its sessions are doing something (not idle at their prompt). */
+interface Live { repo: string; path: string; branch: string; agents: string[]; working: number }
 let live: Live[] = []
 const worktreeCache = new Map<string, { at: number; list: { path: string; branch: string }[] }>()
 const mainOf = new Map<string, { main: string | null; at: number }>()
@@ -159,15 +160,18 @@ async function scan(): Promise<Live[]> {
   warnSharedBranches(sessions)
   const { started, ended } = sessionLog.update(sessions)
   saveSessions(started.length > 0 || ended.length > 0)
+  // Sessions the user closed are still in the scan: only the ones open in the log count.
+  const open = new Map(sessionLog.sessions.filter((s) => s.end === null && s.key).map((s) => [s.key!, s]))
   // Worktree view, Dock badge and notifications: agent CLIs at work in a repository.
   const found = new Map<string, Live>()
   for (const s of sessions) {
-    if (s.inferred || !s.repo || !s.worktree) continue
+    if (s.inferred || !s.repo || !s.worktree || !open.has(s.key)) continue
     // Throwaway repositories in the system's temporary folders (tests, demos) are not followed by themselves.
     if (config.settings.autoDetect && !isTemporary(s.repo)) addRepoToConfig(s.repo)
     if (!config.repos.includes(s.repo)) continue
-    const entry = found.get(s.worktree) ?? { repo: s.repo, path: s.worktree, branch: s.branch ?? '', agents: [] }
+    const entry = found.get(s.worktree) ?? { repo: s.repo, path: s.worktree, branch: s.branch ?? '', agents: [], working: 0 }
     if (!entry.agents.includes(s.agent)) entry.agents.push(s.agent)
+    if (isActive(open.get(s.key)!)) entry.working++
     found.set(s.worktree, entry)
   }
   return [...found.values()]
@@ -231,6 +235,8 @@ function withPrs(list: AgentSession[]): AgentSession[] {
   })
 }
 
+const workingCount = () => live.reduce((sum, l) => sum + l.working, 0)
+
 let firstScan = true
 let scanning = false
 async function monitor() {
@@ -241,7 +247,7 @@ async function monitor() {
   const finished = firstScan ? [] : live.filter((l) => !next.some((n) => n.path === l.path))
   firstScan = false
   live = next
-  const n = live.reduce((sum, l) => sum + l.agents.length, 0)
+  const n = workingCount()
   if (process.platform === 'darwin') app.dock?.setBadge(n ? String(n) : '')
   updateTray(n)
   if (config.settings.notifications && Notification.isSupported()) for (const f of finished) void notifyFinished(f)
@@ -640,6 +646,12 @@ const handlers = {
     return list.map((s) => (s.repo && slugs.has(s.repo) ? { ...s, github: slugs.get(s.repo) ?? null } : s))
   },
   clearSessions: () => { sessionLog.clear(); saveSessions(true) },
+  closeSession: async (id: string) => {
+    strings(id)
+    if (!sessionLog.close(id)) throw new EngineError('unknown session')
+    saveSessions(true)
+    await monitor()
+  },
   pullRequests: (r: string) => { strings(r); return repoPullRequests(knownRepo(r)) },
   shellIntegration: () => shellStatus(),
   // Through core/setup.ts: on Windows the script runs in Git Bash and PowerShell gets the same integration.
@@ -712,7 +724,7 @@ const handlers = {
     writeConfig()
     githubCache = null
     applyLoginItem()
-    updateTray(live.reduce((sum, l) => sum + l.agents.length, 0))
+    updateTray(workingCount())
   },
 }
 

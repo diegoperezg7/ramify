@@ -342,6 +342,8 @@ export interface Bridge {
   moveToBranch(repo: string, agent: string): Promise<{ message: string; path: string }>
   /** Forget the finished sessions. */
   clearSessions(): Promise<void>
+  /** Close a session that is still open (it stops counting as running and is not reopened). */
+  closeSession(id: string): Promise<void>
   /** Save the whole history to a file the user picks. */
   exportSessions(format: 'csv' | 'json'): Promise<{ message: string }>
   /** Create a GitHub repository for a local repository without a remote, and push it. */
