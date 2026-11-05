@@ -171,6 +171,8 @@ export interface Settings {
   autoDraftPr?: boolean
   /** Desktop: remove worktrees that are clean and already merged. */
   autoClean?: boolean
+  /** Desktop: look for a newer release on GitHub now and then, and offer it. */
+  autoUpdate?: boolean
   /** Desktop: start at login (hidden, in the menu bar). */
   openAtLogin?: boolean
   /** Desktop: show the agent count in the menu bar. */
@@ -299,7 +301,19 @@ export interface Capabilities {
   control?: boolean
   /** One-click setup of this computer (agents, terminal, ramify command). */
   setup?: boolean
+  /** The app updates itself from GitHub releases. */
+  update?: boolean
   ides: string[]
+}
+
+/** The app's own update: a newer release found, downloading, ready to install on restart, or failed. */
+export interface UpdateState {
+  status: 'none' | 'available' | 'downloading' | 'ready' | 'error'
+  /** Version on offer. */
+  version?: string
+  /** Download progress, 0 to 100. */
+  percent?: number
+  error?: string
 }
 
 /** Every call the UI can make. Each host implements it: HTTP, Electron IPC or VS Code messages. */
@@ -370,6 +384,11 @@ export interface Bridge {
   exportSessions(format: 'csv' | 'json'): Promise<{ message: string }>
   /** Create a GitHub repository for a local repository without a remote, and push it. */
   publishRepo(path: string, name: string, isPrivate: boolean): Promise<{ message: string; github: string }>
+  /** Desktop only (capabilities.update): the app's own update. */
+  updateState?(): Promise<UpdateState>
+  updateDownload?(): Promise<void>
+  /** Quit, install the downloaded version and open it again. */
+  updateInstall?(): Promise<void>
   /** Host-initiated events: open a repository/worktree, show the "new worktree" form. */
   /** Editor only: open the dashboard panel, on a commit (`open`) or on the new worktree form (`new`). */
   dashboard?(action: 'open' | 'new', hash?: string): Promise<void>

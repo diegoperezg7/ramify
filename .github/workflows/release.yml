@@ -13,10 +13,18 @@ jobs:
         include:
           - os: macos-latest
             script: dist
-            files: apps/desktop/release/*.dmg
+            # The zip, latest-mac.yml and the blockmaps are what the app's updater downloads.
+            files: |
+              apps/desktop/release/*.dmg
+              apps/desktop/release/*.zip
+              apps/desktop/release/*.blockmap
+              apps/desktop/release/latest-mac.yml
           - os: windows-latest
             script: dist:win
-            files: apps/desktop/release/*.exe
+            files: |
+              apps/desktop/release/*.exe
+              apps/desktop/release/*.blockmap
+              apps/desktop/release/latest.yml
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5

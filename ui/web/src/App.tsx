@@ -9,6 +9,7 @@ import { Sidebar } from './components/Sidebar'
 import { StatusBar } from './components/Stats'
 import { CommandPalette } from './components/CommandPalette'
 import { TopBar } from './components/TopBar'
+import { UpdateNotice } from './components/UpdateNotice'
 import { Sessions } from './components/Sessions'
 import { MergeDoneDialog, MergeProblemDialog } from './components/MergeProblem'
 import { RepoSkeleton } from './components/Skeletons'
@@ -111,6 +112,7 @@ export function App() {
       // A commit picked in the editor's side bar opens beside the graph.
       if (e.event === 'commit' && e.hash) { const st = useStore.getState(); if (st.view !== 'repo') st.setView('repo'); st.selectCommit(e.hash) }
       if (e.event === 'sessions') useStore.getState().setView('sessions')
+      if (e.event === 'update') void useStore.getState().refreshUpdate()
     })
   }, [])
 
@@ -190,6 +192,7 @@ export function App() {
       {mergeProblem && <MergeProblemDialog />}
       {mergeDone && <MergeDoneDialog />}
       <div className="toasts" aria-live="polite">
+        {caps?.update && <UpdateNotice />}
         {toasts.map((x) => (
           <div key={x.id} className={`toast toast-${x.kind}`}>
             {x.kind === 'ok' ? <CheckCircle2 size={16} /> : <XCircle size={16} />}

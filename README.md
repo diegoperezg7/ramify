@@ -181,7 +181,8 @@ changes nothing and explains what to do.
 Use `ramify new` (or the app's *New agent*) when you want a fresh branch for a task.
 
 **Does it send my code anywhere?** No. Everything runs on your computer. The only network calls are to
-github.com, and only if you sign in (or through the `gh` CLI you already use).
+github.com: the app looking for a new version of itself (you can turn it off in Settings), and GitHub features only
+if you sign in (or through the `gh` CLI you already use).
 
 **Which agents does it support?** The 40 it recognises are detected and shown with their logos; any other
 command can be launched in a worktree all the same.
@@ -206,7 +207,7 @@ or know how it works inside.
 **Version 0.7.5.** Desktop app for macOS (Apple silicon) and Windows (x64), VS Code / Cursor extension,
 CLI and Claude Code plugin, all built from this repository.
 
-- **Tested:** 96 core tests, 5 end-to-end UI tests in a real browser and 103 CLI tests run on every push; the core
+- **Tested:** 131 core tests, 10 end-to-end UI tests in a real browser and 103 CLI tests run on every push; the core
   suite, the Windows installer and a smoke test that opens the packaged app also run on Windows.
 - **Downloads:** every version is in [Releases](https://github.com/diegoperezg7/ramify/releases). To build it yourself:
   `npm ci && npm run build:desktop` (the installers land in `apps/desktop/release/`).
@@ -222,6 +223,11 @@ CLI and Claude Code plugin, all built from this repository.
 **Desktop app** (macOS 12+ on Apple silicon, Windows 10+): download it from the
 [latest release](https://github.com/diegoperezg7/ramify/releases/latest). On macOS it opens like any other app. On Windows,
 which is not signed yet, choose *More info* → *Run anyway*. Windows needs [Git for Windows](https://git-scm.com/download/win).
+
+**Updates** (from 0.7.6): when a new release is out, the app says so in a corner with a *Download* button. It downloads in
+the background, then *Restart and update* installs it (or it installs the next time you quit). The `ramify` command and the
+Claude Code plugin installed from the app come along, since they live inside it. Settings → *Look for new versions of Ramify*
+turns the check off.
 
 **VS Code / Cursor extension**: the `.vsix` in the [latest release](https://github.com/diegoperezg7/ramify/releases/latest), then
 `code --install-extension ramify-*.vsix` (or `cursor --install-extension …`).

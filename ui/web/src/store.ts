@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { bridge, BridgeError } from './bridge'
 import { dict, format, type Key, type Lang } from './i18n'
-import type { AgentChild, AgentSession, Capabilities, CreateRequest, Detail, RepoInfo, Settings, State } from './types'
+import type { AgentChild, AgentSession, Capabilities, CreateRequest, Detail, RepoInfo, Settings, State, UpdateState } from './types'
 import { MergeError, type MergeProblem } from './logic'
 
 export type Theme = 'system' | 'light' | 'dark'
@@ -49,6 +49,9 @@ interface Store {
   children: Record<string, AgentChild[]>
   /** Values the "new worktree" form opens with (from a shared-branch warning). */
   createPrefill: { branch: string; agent: string } | null
+  /** The desktop app's own update (capabilities.update). */
+  update: UpdateState | null
+  refreshUpdate: () => Promise<void>
 
   t: (key: Key, vars?: Record<string, string | number>) => string
   init: () => Promise<void>
@@ -128,6 +131,12 @@ export const useStore = create<Store>((set, get) => ({
   sessions: null,
   children: {},
   createPrefill: null,
+  update: null,
+
+  refreshUpdate: async () => {
+    const update = await bridge.updateState?.().catch(() => null)
+    if (update) set({ update })
+  },
 
   t: (key, vars) => format(dict[get().lang][key], vars),
 
@@ -135,6 +144,7 @@ export const useStore = create<Store>((set, get) => ({
     const caps = await bridge.capabilities().catch(() => null)
     set({ caps })
     if (caps?.settings) set({ settings: await bridge.settings().catch(() => null) })
+    if (caps?.update) void get().refreshUpdate()
     const savedView = load<View>('ramify-view', 'repo', ['repo', 'sessions', 'timeline', 'control'])
     if ((caps?.sessions && savedView === 'sessions') || (caps?.control && savedView === 'control')) get().setView(savedView)
     // First run of the desktop app: a short introduction built from what is installed here.

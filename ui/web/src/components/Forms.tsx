@@ -206,6 +206,14 @@ export function SettingsDialog() {
             </label>
           </fieldset>
         )}
+        {caps?.update && (
+          <fieldset className="toggles">
+            <label className="check">
+              <input type="checkbox" checked={draft.autoUpdate ?? true} onChange={(e) => setDraft({ ...draft, autoUpdate: e.target.checked })} />
+              {t('autoUpdate')}
+            </label>
+          </fieldset>
+        )}
         <fieldset className="toggles">
           <label className="check">
             <input type="checkbox" checked={draft.autoDetect} onChange={(e) => setDraft({ ...draft, autoDetect: e.target.checked })} />

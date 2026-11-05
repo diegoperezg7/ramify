@@ -484,6 +484,17 @@ html, body, #root { height: 100%; }
 .toast-error { border-color: color-mix(in srgb, var(--bad) 45%, var(--border)); }
 .toast-error svg { color: var(--bad); }
 
+/* The app's own update, in the toasts' corner until it is installed or put off. */
+.update-notice { width: 340px; max-width: 100%; white-space: normal; border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
+.update-notice > svg { color: var(--accent-text); }
+.update-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.update-note { color: var(--muted); font-size: 12px; }
+.update-actions { display: flex; gap: 8px; margin-top: 6px; }
+.update-actions .btn { height: 30px; padding: 0 12px; }
+.update-bar { height: 6px; border-radius: 999px; background: var(--accent-soft); overflow: hidden; margin-top: 4px; }
+.update-bar > span { display: block; height: 100%; background: var(--accent); border-radius: inherit; transition: width 0.3s ease; }
+.icon-btn.update-close { width: 24px; height: 24px; border-color: transparent; background: none; margin: -2px -6px 0 0; }
+
 /* ---------- responsive ---------- */
 
 /* Medium content width: two columns, detail slides in from the right. */

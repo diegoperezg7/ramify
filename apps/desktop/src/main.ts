@@ -11,6 +11,7 @@ import {
   gitBash, setupApply, setupStatus, setupUndo, type SetupContext,
 } from '../../../packages/core/src/index.ts'
 import { GITHUB_APP } from './github-app.ts'
+import { createUpdater } from './updater.ts'
 import type { AgentChild, AgentSession, GithubAccount, GithubRepo, GithubSync, PullRequest, RepoInfo, Settings, SetupItemId } from '../../../packages/core/src/types.ts'
 
 // Apps started from Finder get a minimal PATH: borrow the login shell's so agents,
@@ -51,7 +52,7 @@ if (!existsSync(configFile) && existsSync(legacyConfig)) {
 }
 const defaultSettings: Settings = {
   terminal: 'Terminal', defaultAgent: 'claude', projectsDir: defaultProjectsDir(), autoDetect: true,
-  notifications: true, openAtLogin: false, menuBar: true, historyDays: 90, watchBranches: true, autoDraftPr: true, autoClean: true,
+  notifications: true, openAtLogin: false, menuBar: true, historyDays: 90, watchBranches: true, autoDraftPr: true, autoClean: true, autoUpdate: true,
 }
 
 function readConfig(): Config {
@@ -681,11 +682,14 @@ async function addPath(path: string): Promise<RepoInfo> {
   return engine.repoInfo(main)
 }
 
+// Only a packaged app can replace itself; in development there is nothing to update.
+const updater = createUpdater({ enabled: () => app.isPackaged && config.settings.autoUpdate !== false, onChange: () => send({ event: 'update' }) })
+
 const handlers = {
   ...createHandlers({
     engine,
     // Only the editors installed on this machine, the chosen default first.
-    capabilities: () => ({ host: 'desktop', platform: process.platform, multiRepo: true, create: true, settings: true, github: true, sessions: true, timeline: true, control: true, setup: true, ides: installedIdes() }),
+    capabilities: () => ({ host: 'desktop', platform: process.platform, multiRepo: true, create: true, settings: true, github: true, sessions: true, timeline: true, control: true, setup: true, update: app.isPackaged, ides: installedIdes() }),
     repo: knownRepo,
     runInTerminal: (_name, cwd, command) => openInTerminal(config.settings.terminal, command, cwd),
   }),
@@ -811,7 +815,11 @@ const handlers = {
     githubCache = null
     applyLoginItem()
     updateTray(workingCount())
+    updater.check()
   },
+  updateState: () => updater.state(),
+  updateDownload: () => updater.download(),
+  updateInstall: () => updater.install(),
 }
 
 const rendererUrl = () => pathToFileURL(join(__dirname, '../renderer/index.html')).href
@@ -967,6 +975,7 @@ if (!app.requestSingleInstanceLock()) {
     setInterval(() => void monitor(), 4000)
     setTimeout(() => void careForBranches(), 20_000)
     setInterval(() => void careForBranches(), 120_000)
+    updater.start()
     app.on('activate', () => focus())
   })
   // On macOS the app keeps running in the menu bar after the window closes, like other background tools.

@@ -1,4 +1,4 @@
-import type { AgentChild, AgentSession, Bridge, Capabilities, CommitDetail, GithubAccount, GithubSync, Health, InstalledTools, PullRequest, Timeline, TimelineCommit, Detail, GithubRepo, RepoInfo, Settings, SetupState, State } from './types'
+import type { AgentChild, AgentSession, Bridge, Capabilities, CommitDetail, GithubAccount, GithubSync, Health, InstalledTools, PullRequest, Timeline, TimelineCommit, Detail, GithubRepo, RepoInfo, Settings, SetupState, State, UpdateState } from './types'
 
 // One UI, three hosts:
 //  - desktop app: Electron preload exposes window.ramify.invoke
@@ -74,6 +74,9 @@ function rpc(invoke: Invoke, subscribe: (cb: (e: HostEvent) => void) => void): B
     closeSession: (id) => call<void>('closeSession', id),
     agentChildren: () => call<Record<string, AgentChild[]>>('agentChildren'),
     publishRepo: (path, name, isPrivate) => call<{ message: string; github: string }>('publishRepo', path, name, isPrivate),
+    updateState: () => call<UpdateState>('updateState'),
+    updateDownload: () => call<void>('updateDownload'),
+    updateInstall: () => call<void>('updateInstall'),
     onEvent: subscribe,
   }
 }
