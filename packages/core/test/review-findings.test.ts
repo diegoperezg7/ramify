@@ -106,7 +106,7 @@ describe('session history and export', () => {
     assert.doesNotMatch(row, /(^|,)"?=/)
   })
 
-  it('a session id with path segments does not lead the scanner out of ~/.claude/projects', { todo: 'claudeContext (activity.ts:399) joins sessionId unchecked' }, () => {
+  it('a session id with path segments does not lead the scanner out of ~/.claude/projects', () => {
     const home = join(T, 'home')
     mkdirSync(join(home, '.claude', 'sessions'), { recursive: true })
     mkdirSync(join(home, '.claude', 'projects', 'p'), { recursive: true })

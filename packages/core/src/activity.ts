@@ -385,6 +385,8 @@ const missingSince = new Map<string, number>()
 export function claudeContext(pid: number, home = homedir()): { cwd: string | null; state?: SessionState; sessionId?: string; transcript?: string } | null {
   let info: { sessionId?: string; status?: string; cwd?: string }
   try { info = JSON.parse(readFileSync(join(home, '.claude', 'sessions', `${pid}.json`), 'utf8')) } catch { return null }
+  // A session id names a file in ~/.claude/projects: anything with path parts would read from elsewhere.
+  if (typeof info.sessionId !== 'string' || !/^[\w-]+$/.test(info.sessionId)) info.sessionId = undefined
   const state: SessionState | undefined = info.status === 'busy' ? 'working' : info.status === 'idle' ? 'idle' : info.status === 'waiting' ? 'waiting' : undefined
   let cwd: string | null = null
   let file: string | undefined
