@@ -1,7 +1,7 @@
 // Bugs confirmed in the review of 2026-11-05. Each test states the behaviour the code should have and fails today,
 // so it is marked `todo`: the run reports it without failing. Drop the `todo` when its fix lands: the test then
 // guards against the bug coming back.
-import { execFileSync, spawnSync } from 'node:child_process'
+import { execFile, execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
@@ -87,6 +87,18 @@ describe('CLI (ramify)', () => {
     // A name git refuses: create stops, and its claim does not stay behind.
     cli(r, ['hook', 'create'], JSON.stringify({ name: 'bad..name', cwd: r, session_id: 'C' }))
     assert.equal(existsSync(join(T, 'wts', name, '.claims', 'worktree-bad..name')), false)
+  })
+
+  it('worktrees made at the same time get different ports', async () => {
+    const r = repo()
+    const root = join(T, 'wts-ports')
+    const make = (b: string) => new Promise<void>((done) => {
+      execFile('bash', [BIN, 'new', b, '--no-launch'], { cwd: r, env: { ...process.env, RAMIFY_ROOT: root } }, () => done())
+    })
+    await Promise.all(['p1', 'p2', 'p3', 'p4'].map(make))
+    const name = r.split('/').pop()!
+    const ports = ['p1', 'p2', 'p3', 'p4'].map((b) => /^PORT=(\d+)$/m.exec(readFileSync(join(root, name, b, '.worktree.env'), 'utf8'))?.[1])
+    assert.equal(new Set(ports).size, 4, ports.join(' '))
   })
 
   it('ramify move leaves the changes in place when it cannot create the worktree', () => {

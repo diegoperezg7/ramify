@@ -136,6 +136,19 @@ alloc_port() {
   die "no free port block between $PORT_MIN and $PORT_MAX"
 }
 
+PORT_LOCK="$ROOT/.port-lock"
+port_lock() {
+  local i=0
+  mkdir -p "$ROOT"
+  until mkdir "$PORT_LOCK" 2>/dev/null; do
+    # Left behind by a ramify that died holding it (older than a minute): take it over.
+    if [ -n "$(find "$PORT_LOCK" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then rmdir "$PORT_LOCK" 2>/dev/null; continue; fi
+    i=$((i + 1)); [ "$i" -lt 300 ] || die "another ramify holds $PORT_LOCK; remove it if none is running"
+    sleep 0.1
+  done
+}
+port_unlock() { rmdir "$PORT_LOCK" 2>/dev/null || true; }
+
 port_busy() {
   command -v lsof >/dev/null || return 1
   lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
@@ -310,6 +323,8 @@ create() {
   fi
 
   copy_included "$main" "$wt"
+  # Choosing a port and writing it down is one step: two worktrees made at once must not both pick the same block.
+  port_lock
   port=$(alloc_port)
   cat > "$wt/.worktree.env" <<EOF
 WT_NAME=$slug
@@ -322,6 +337,7 @@ DERIVED_DATA=$ROOT/$repo/.derived-data/$slug
 EOF
   # The conversation it is for (hook create), recorded before the setup runs: another one looking now sees it taken.
   [ -z "${CREATE_SESSION:-}" ] || printf 'WT_SESSION=%s\n' "$CREATE_SESSION" >> "$wt/.worktree.env"
+  port_unlock
   exclude_env_file "$wt"
 
   if [ "$setup" = 1 ] && ! run_project_script "$wt" "$main" setup; then
