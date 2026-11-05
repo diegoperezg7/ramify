@@ -8,7 +8,7 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { after, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { SessionLog, sessionsCsv, claudeContext, parsePs, type LiveSession, type Resolved } from '../src/activity.ts'
+import { SessionLog, sessionsCsv, claudeContext, parsePs, remember, type LiveSession, type Resolved } from '../src/activity.ts'
 import { agentOf } from '../src/projects.ts'
 import { Engine, riskyGitConfig } from '../src/engine.ts'
 import { withoutBlock } from '../src/setup.ts'
@@ -232,6 +232,17 @@ describe('process list', () => {
     const procs = parsePs(`  42     1  05:00 ${exe} --model opus\n`, (p) => p === exe)
     assert.equal(procs.get(42)?.exe, exe)
     assert.equal(agentOf(procs.get(42)!.exe, procs.get(42)!.args), 'claude')
+  })
+})
+
+describe('scanner caches', () => {
+  it('keep at most their cap, dropping the oldest', () => {
+    const m = new Map<string, number>()
+    for (let i = 0; i < 10; i++) remember(m, `k${i}`, i, 4)
+    assert.deepEqual([...m.keys()], ['k6', 'k7', 'k8', 'k9'])
+    remember(m, 'k6', 60, 4) // used again: newest now
+    remember(m, 'k10', 10, 4)
+    assert.deepEqual([...m.keys()], ['k8', 'k9', 'k6', 'k10'])
   })
 })
 
