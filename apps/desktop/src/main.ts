@@ -332,7 +332,9 @@ async function careForBranches() {
     const name = repo.split('/').pop()
     for (const b of health.branches) {
       if (b.main) continue
-      if (b.merged && !b.running.length) {
+      // `running` leaves out agents idle at their prompt: an open session there (or a subagent) still lives in it.
+      const occupied = b.running.length > 0 || live.some((l) => l.path === b.path) || busyAt.has(b.path)
+      if (b.merged && !occupied) {
         if (config.settings.autoClean) {
           try {
             await engine.remove(repo, b.path, false)
