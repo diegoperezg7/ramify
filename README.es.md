@@ -17,7 +17,7 @@
 
 <p align="center"><a href="README.md">English</a></p>
 
-<p align="center"><img src="docs/ramify-new-agent.gif" width="960" alt="Crear un agente en Ramify: elegir Claude, escribir la tarea, la rama se nombra sola y el agente se abre en una terminal, en su propia carpeta"><br><sub><b><a href="docs/ramify-demo.mp4">▶ Ver la demo completa (52 s)</a></b>: agentes trabajando ahora, un agente nuevo y su terminal, horas de los agentes, cualquier día al detalle, las ramas y un merge con un clic</sub></p>
+<p align="center"><img src="docs/ramify-new-agent.gif" width="960" alt="Crear un agente en Ramify: elegir Claude, escribir la tarea, la rama se nombra sola y el agente se abre en una terminal, en su propia carpeta"><br><sub><b><a href="docs/ramify-demo.mp4">▶ Ver la demo completa (55 s)</a></b>: agentes trabajando ahora, un agente nuevo y su terminal, horas de los agentes, cualquier día al detalle, las ramas y un merge con un clic</sub></p>
 
 ## En pocas palabras
 

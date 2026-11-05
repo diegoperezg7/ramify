@@ -23,7 +23,7 @@
   <a href="README.es.md"><img alt="Español" src="https://img.shields.io/badge/lang-español-4e4e4e"></a>
 </p>
 
-<p align="center"><img src="docs/ramify-new-agent.gif" width="960" alt="Starting a new agent in Ramify: pick Claude, type the task, the branch is named for you, and the agent opens in a terminal in its own folder"><br><sub><b><a href="docs/ramify-demo.mp4">▶ Watch the full demo (52 s)</a></b>: agents working now, a new agent and its terminal, agent hours, any day in detail, the branches and a merge in one click</sub></p>
+<p align="center"><img src="docs/ramify-new-agent.gif" width="960" alt="Starting a new agent in Ramify: pick Claude, type the task, the branch is named for you, and the agent opens in a terminal in its own folder"><br><sub><b><a href="docs/ramify-demo.mp4">▶ Watch the full demo (55 s)</a></b>: agents working now, a new agent and its terminal, agent hours, any day in detail, the branches and a merge in one click</sub></p>
 
 ## In plain words
 
