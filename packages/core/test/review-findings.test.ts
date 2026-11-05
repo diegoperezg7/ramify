@@ -11,7 +11,7 @@ import assert from 'node:assert/strict'
 import { SessionLog, sessionsCsv, claudeContext, parsePs, remember, type LiveSession, type Resolved } from '../src/activity.ts'
 import { agentOf } from '../src/projects.ts'
 import { Engine, riskyGitConfig } from '../src/engine.ts'
-import { userPathScript, withoutBlock } from '../src/setup.ts'
+import { appendBlock, dropBlock, userPathScript, withoutBlock } from '../src/setup.ts'
 import { windowsLaunch } from '../src/terminal.ts'
 import type { AgentSession } from '../src/types.ts'
 
@@ -275,6 +275,21 @@ describe('Windows user PATH', () => {
       assert.doesNotMatch(script, /GetEnvironmentVariable\('Path'/)
       assert.doesNotMatch(script, /SetEnvironmentVariable\('Path'/)
     }
+  })
+})
+
+describe('PowerShell profile in UTF-16', () => {
+  it('adds and removes the block keeping the file UTF-16 with its byte order mark', () => {
+    const f = join(T, 'profile.ps1')
+    writeFileSync(f, Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from('Set-Alias ll Get-ChildItem\r\n', 'utf16le')]))
+    appendBlock(f, '# >>> ramify >>>', 'function claude { }', '# <<< ramify <<<')
+    let b = readFileSync(f)
+    assert.deepEqual([b[0], b[1]], [0xff, 0xfe])
+    assert.match(b.subarray(2).toString('utf16le'), /Set-Alias ll Get-ChildItem[\s\S]*# >>> ramify >>>\nfunction claude/)
+    dropBlock(f, '# >>> ramify >>>', '# <<< ramify <<<')
+    b = readFileSync(f)
+    assert.deepEqual([b[0], b[1]], [0xff, 0xfe])
+    assert.doesNotMatch(b.subarray(2).toString('utf16le'), /ramify/)
   })
 })
 
