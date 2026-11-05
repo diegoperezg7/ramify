@@ -54,7 +54,7 @@ describe('CLI (ramify)', () => {
     assert.equal(main.main, true)
   })
 
-  it('hook create gives two repositories with the same folder name worktrees of their own', { todo: 'ramify:615 keys the worktree folder by basename only' }, () => {
+  it('hook create gives two repositories with the same folder name worktrees of their own', () => {
     const a = repo(join(T, 'x', 'app'))
     const b = repo(join(T, 'y', 'app'))
     const pa = cli(a, ['hook', 'create'], JSON.stringify({ name: 'feat', cwd: a })).stdout.trim().split('\n').pop()!

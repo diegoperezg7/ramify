@@ -99,12 +99,15 @@ env_set() {
   printf '%s\n%s=%s\n' "$tmp" "$2" "$3" | sed '/^$/d' > "$f"
 }
 
+# A folder under $ROOT/<name> belongs to this repository: two repositories with the same folder name share it.
+of_repo() { [ "$( (main_checkout "$1") 2>/dev/null)" = "$2" ]; }
+
 # Worktree path from its folder name, branch or path.
 find_wt() {
   local main="$1" name="$2" repo path="" line cur=""
   repo=$(basename "$main")
   if [ -d "$name/.git" ] || [ -f "$name/.git" ]; then (cd "$name" && pwd); return; fi
-  if [ -d "$ROOT/$repo/$(slugify "$name")" ]; then
+  if [ -d "$ROOT/$repo/$(slugify "$name")" ] && of_repo "$ROOT/$repo/$(slugify "$name")" "$main"; then
     (cd "$ROOT/$repo/$(slugify "$name")" && abspwd); return
   fi
   while IFS= read -r line; do
@@ -514,6 +517,7 @@ cmd_prune() {
   for wt in "$ROOT/$repo"/*/; do
     wt=${wt%/}
     [ -f "$wt/.worktree.env" ] || continue
+    of_repo "$wt" "$main" || continue
     [ -z "$(git -C "$wt" status --porcelain 2>/dev/null)" ] || continue
     branch=$(git -C "$wt" branch --show-current 2>/dev/null || true)
     [ -n "$branch" ] && git -C "$main" merge-base --is-ancestor "$branch" HEAD || continue
@@ -625,7 +629,10 @@ cmd_hook() {
         slug=$(slugify "$branch"); dir="$ROOT/$repo/$slug"
         if [ -d "$dir" ]; then
           owner=$(env_get "$dir" WT_SESSION)
-          if [ -z "$session" ] || [ -z "$owner" ] || [ "$owner" = "$session" ]; then (cd "$dir" && abspwd); exit 0; fi
+          # A worktree of another repository with the same folder name is taken, whoever made it.
+          if of_repo "$dir" "$main" && { [ -z "$session" ] || [ -z "$owner" ] || [ "$owner" = "$session" ]; }; then
+            (cd "$dir" && abspwd); exit 0
+          fi
         elif mkdir "$ROOT/$repo/.claims/$slug" 2>/dev/null; then
           break  # claimed: two conversations starting at once cannot both take this name
         fi
