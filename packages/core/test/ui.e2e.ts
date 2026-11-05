@@ -284,7 +284,7 @@ describe('web UI', () => {
     const handlers = {
       ...base,
       commit: async (repo: string, hash: string) => ({
-        ...(await base.commit(repo, hash)),
+        ...(await new Engine({ bin: BIN, env }).commit(repo, hash)),
         files: [{ file: 'first.txt', status: 'A', add: '1', del: '0' }, { file: 'second.txt', status: 'A', add: '1', del: '0' }],
       }),
       // The first file's diff comes back after the second file is opened, but before the second file's diff.
