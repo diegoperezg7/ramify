@@ -35,7 +35,9 @@ function cli(cwd: string, args: string[], input?: string) {
   return spawnSync('bash', [BIN, ...args], { cwd, input, encoding: 'utf8', env: { ...process.env, RAMIFY_ROOT: join(T, 'wts') } })
 }
 
-describe('CLI (ramify)', () => {
+// The bash CLI itself is tested on macOS and Linux (as tests/run.sh): these build POSIX paths and folder names
+// Windows does not allow (a tab), and the hooks need jq, which the Windows runner lacks.
+describe('CLI (ramify)', { skip: process.platform === 'win32' }, () => {
   it('ramify ls does not run code from a PORT line of a .worktree.env shipped in a cloned repo', () => {
     const up = repo()
     const mark = join(T, 'pwned-ls')
