@@ -17,7 +17,7 @@
 
 <p align="center"><a href="README.md">English</a></p>
 
-<p align="center"><img src="docs/ramify-demo.gif" alt="Ramify trabajando: cinco agentes de IA a la vez, cada uno en su rama; un agente nuevo, creado con un clic, se abre en su propia carpeta"><br><sub><b><a href="docs/ramify-demo.mp4">▶ Ver la demo completa (48 s)</a></b>: agente nuevo, su terminal, horas de los agentes, cualquier día al detalle, los cambios de un agente y un merge con un clic</sub></p>
+<p align="center"><img src="docs/ramify-new-agent.gif" width="960" alt="Crear un agente en Ramify: elegir Claude, escribir la tarea, la rama se nombra sola y el agente se abre en una terminal, en su propia carpeta"><br><sub><b><a href="docs/ramify-demo.mp4">▶ Ver la demo completa (52 s)</a></b>: agentes trabajando ahora, un agente nuevo y su terminal, horas de los agentes, cualquier día al detalle, las ramas y un merge con un clic</sub></p>
 
 ## En pocas palabras
 
@@ -93,7 +93,7 @@ historial de cada sesión (dónde, en qué proyecto y cuánto tiempo), exportabl
 
 ### Ver exactamente qué ha cambiado cada asistente
 
-<img src="docs/app-dark.png" alt="Cuatro agentes en cuatro ramas del mismo proyecto, con los cambios línea a línea del que está haciendo Codex">
+<img src="docs/ramify-branches.gif" width="960" alt="Abrir un proyecto: cada rama con su agente, los cambios línea a línea de la que está haciendo Codex y la línea de tiempo de ramas">
 
 Cada rama con su asistente, y sus cambios línea a línea como en GitHub: verde lo añadido, rojo lo quitado. Ábrela en
 los editores que tienes instalados, vuelve a lanzar el asistente, llévala a tu proyecto o quítala. Ramify nunca borra
@@ -101,7 +101,7 @@ trabajo que no esté guardado o llevado al proyecto.
 
 ### Llevar el trabajo a tu proyecto con un clic
 
-<img src="docs/app-merge.png" alt="Un aviso corto tras el merge: feat/wishlist ya está en main, sin conflictos">
+<img src="docs/ramify-merge.gif" width="960" alt="Mergear una rama terminada: elegir feat/wishlist, Mergear en main, confirmar, y un aviso corto dice que ya está en main sin conflictos">
 
 Cuando un trabajo está listo, un clic lo lleva a tu proyecto y un mensaje corto te lo confirma. Si choca con otra
 cosa, una ventana te explica qué ha pasado, qué ficheros chocan y qué hacer. No se cambia nada.

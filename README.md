@@ -23,7 +23,7 @@
   <a href="README.es.md"><img alt="Español" src="https://img.shields.io/badge/lang-español-4e4e4e"></a>
 </p>
 
-<p align="center"><img src="docs/ramify-demo.gif" alt="Ramify at work: five AI agents working at once, each on its own branch; a new agent started with one click opens in its own folder"><br><sub><b><a href="docs/ramify-demo.mp4">▶ Watch the full demo (48 s)</a></b>: new agent, its terminal, agent hours, any day in detail, one agent's changes and a merge in one click</sub></p>
+<p align="center"><img src="docs/ramify-new-agent.gif" width="960" alt="Starting a new agent in Ramify: pick Claude, type the task, the branch is named for you, and the agent opens in a terminal in its own folder"><br><sub><b><a href="docs/ramify-demo.mp4">▶ Watch the full demo (52 s)</a></b>: agents working now, a new agent and its terminal, agent hours, any day in detail, the branches and a merge in one click</sub></p>
 
 ## In plain words
 
@@ -99,7 +99,7 @@ session (where, which project, how long), exportable to a spreadsheet.
 
 ### See exactly what each assistant changed
 
-<img src="docs/app-dark.png" alt="Four agents on four branches of the same project, with the line-by-line changes of the one Codex is working on">
+<img src="docs/ramify-branches.gif" width="960" alt="Opening a project: every branch with its agent, the line-by-line changes of the one Codex is working on, and the branch timeline">
 
 Every branch with its assistant, and its changes line by line as on GitHub: green for added, red for removed.
 Open it in the editors you have installed, start the assistant again, bring it in, or remove it. Ramify never
@@ -107,7 +107,7 @@ deletes work that has not been saved or brought in.
 
 ### Bring the work in with one click
 
-<img src="docs/app-merge.png" alt="A short confirmation after merging: feat/wishlist is in main, with no conflicts">
+<img src="docs/ramify-merge.gif" width="960" alt="Merging a finished branch: pick feat/wishlist, Merge into main, confirm, and a short message says it is in main with no conflicts">
 
 When a piece of work is ready, one click brings it into your project and a short message confirms it. If it
 clashes with something else, a window explains what happened, which files clash and what to do. Nothing is changed.
