@@ -246,6 +246,7 @@ for c in "git push" "git push -u origin feat/login" "git push origin HEAD" "git 
   check "in its worktree the guard allows: $c" '[ -z "$(gb "$p1" "$c")" ]'
 done
 check "RAMIFY_ALLOW_MAIN lets one session push to main" '[ -z "$(export RAMIFY_ALLOW_MAIN=1; gb "$p1" "git push origin HEAD:main")" ]'
+check "a command that sets ramify.allowMain is refused, from any folder" 'denied "$(gb "$p1" "git config ramify.allowMain true")"'
 check "a terminal write without git on the shared branch is not judged (documented limit)" '[ -z "$(gb "$T/demo" "echo hi > a.txt")" ]'
 g=$(printf '{"cwd":"%s","tool_name":"Write","tool_input":{"file_path":"%s/a.txt"}}' "$p1" "$p2" | "$AW" hook guard 2>/dev/null)
 check "an edit from one worktree into another is allowed (ramify who warns)" '[ -z "$g" ]'
@@ -344,6 +345,10 @@ git config ramify.allowMain true
 git push -q origin main 2>/dev/null; c=$?
 check "git config ramify.allowMain lets the push through (exit $c)" '[ "$c" = 0 ] && [ "$(git --git-dir="$T/gm-origin.git" rev-list --count main)" = 2 ]'
 git config --unset ramify.allowMain
+# The app runs git with core.hooksPath=/dev/null (hardenedGitEnv): its merges and pushes are not the agents'.
+GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null git merge -q --no-ff --no-edit feat/gm \
+  && GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null git push -q origin main 2>/dev/null; c=$?
+check "a merge into main and its push, run as the app runs git, go through (exit $c)" '[ "$c" = 0 ] && [ "$(git --git-dir="$T/gm-origin.git" rev-parse main)" = "$(git rev-parse main)" ]'
 printf '#!/bin/sh\nexit 0\n' > .git/hooks/pre-commit
 "$AW" install guard 2>"$T/gm-install.err"
 check "install guard leaves a pre-commit that is not ramify's and says so" '! grep -q "ramify: secret scan" .git/hooks/pre-commit && grep -q "not ramify" "$T/gm-install.err"'
