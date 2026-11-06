@@ -48,7 +48,7 @@ export function CommitDetail({ hash }: { hash: string }) {
   const row = state.commits.find((x) => x.hash === hash)
   const owner = row?.owner ?? null
   const wt = owner ? state.worktrees.find((w) => w.branch === owner) : undefined
-  const color = owner ? (wt ? agentVar(wt.agent) : 'var(--lane-branch)') : 'var(--lane-base)'
+  const color = owner ? (wt ? agentVar(wt.agent) : 'var(--lane-branch)') : 'var(--lane-main)'
   const subjectOf = (p: string) => state.commits.find((x) => x.hash === p)?.subject
 
   return (

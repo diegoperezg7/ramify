@@ -212,6 +212,15 @@ describe('web UI', () => {
       // feat/checkout has draft.ts uncommitted: shown on its tip.
       assert.match(await page.textContent('.graph-row:has-text("Stripe payment intent") .ref-pending') ?? '', /\+1 uncommitted/)
       assert.ok(await page.$('.node-pending'))
+      // The base (main) is the trunk: the accent violet, apart from a plain branch and from an agent's branch.
+      const laneOf = (subject: string) => page.$eval(`.graph-row:has-text("${subject}")`, (el) => getComputedStyle(el).getPropertyValue('--c').trim())
+      const accent = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim())
+      const [trunk, plain, agent] = await Promise.all([laneOf('Initial storefront'), laneOf('Search spike'), laneOf('Stripe payment intent')])
+      assert.equal(trunk, accent)
+      assert.notEqual(trunk, plain)
+      assert.notEqual(trunk, agent)
+      // The same violet wherever main shows: its row in the worktree list.
+      assert.equal(await page.$eval('.wt-row:has(.wt-branch:text-is("main"))', (el) => getComputedStyle(el).getPropertyValue('--c').trim()), accent)
       if (process.env.RAMIFY_E2E_SHOTS) await page.screenshot({ path: join(process.env.RAMIFY_E2E_SHOTS, `graph-${scheme}.png`) })
       // Any commit opens: its files, the diff of one, then back through its parent.
       await page.click('.graph-row:has-text("Stripe payment intent")')

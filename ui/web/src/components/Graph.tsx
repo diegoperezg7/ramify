@@ -35,9 +35,9 @@ export function Graph({ onPick }: { onPick?: (hash: string) => void } = {}) {
     seen.current = new Set([...g.rows.map((r) => r.commit.hash), ...g.edges.map((e) => e.id)])
   }, [g])
 
-  // A worktree's branch takes its agent's colour; a branch without one, a neutral lane apart from the base.
+  // The base is the trunk, in the brand violet; a worktree's branch takes its agent's colour; a branch without one, a neutral lane.
   const colorOf = (owner: string | null) => {
-    if (!owner) return 'var(--lane-base)'
+    if (!owner) return 'var(--lane-main)'
     const w = byBranch.get(owner)
     return w ? agentVar(w.agent) : 'var(--lane-branch)'
   }
@@ -59,7 +59,7 @@ export function Graph({ onPick }: { onPick?: (hash: string) => void } = {}) {
   for (const w of state.worktrees) {
     if (!w.changes || !w.branch) continue
     const tip = g.rows.find((r) => r.commit.refs.some((ref) => cleanRef(ref) === w.branch))
-    if (tip) pending.set(tip.commit.hash, { count: w.changes, color: w.main ? 'var(--lane-base)' : agentVar(w.agent) })
+    if (tip) pending.set(tip.commit.hash, { count: w.changes, color: w.main ? 'var(--lane-main)' : agentVar(w.agent) })
   }
 
   const agents = [...new Set(state.worktrees.filter((w) => !w.main && w.agent).map((w) => w.agent))]
@@ -69,7 +69,7 @@ export function Graph({ onPick }: { onPick?: (hash: string) => void } = {}) {
       <header className="pane-head">
         <h2 title={t('graphHint')}>{t('branchTree')}</h2>
         <ul className="legend" aria-label="agents">
-          <li><span className="swatch" style={{ background: 'var(--lane-base)' }} />{state.base}</li>
+          <li><span className="swatch" style={{ background: 'var(--lane-main)' }} />{state.base}</li>
           {agents.map((a) => (
             <li key={a}><span className="swatch" style={{ background: agentVar(a) }} />{a}</li>
           ))}
@@ -90,8 +90,8 @@ export function Graph({ onPick }: { onPick?: (hash: string) => void } = {}) {
                 : `M${x1} ${y1} C${x1} ${y1 + ROW * 0.55} ${x2} ${y2 - ROW * 0.55} ${x2} ${y2}`
               const isNew = fresh(e.id)
               return (
-                <path key={e.id} d={d} fill="none" stroke={colorOf(e.owner)} strokeWidth={e.owner ? 3 : 2.5}
-                  strokeLinecap="round" opacity={dimmed(e.owner) ? 0.2 : e.owner ? 1 : 0.6}
+                <path key={e.id} d={d} fill="none" stroke={colorOf(e.owner)} strokeWidth={3}
+                  strokeLinecap="round" opacity={dimmed(e.owner) ? 0.2 : 1}
                   className={`edge${isNew ? ' is-new' : ''}${e.last ? ' is-last' : ''}`}
                   pathLength={isNew && !e.last ? 1 : undefined}
                   style={{ d: `path("${d}")`, animationDelay: delay(e.row) } as CSSProperties} />
@@ -164,7 +164,7 @@ function RefPill({ raw, byBranch }: { raw: string; byBranch: Map<string, Worktre
   const wt = byBranch.get(ref)
   if (wt) {
     return (
-      <span className={`ref ref-branch${head ? ' is-head' : ''}`} style={{ ['--c' as string]: wt.main ? 'var(--lane-base)' : agentVar(wt.agent) }}>
+      <span className={`ref ref-branch${head ? ' is-head' : ''}`} style={{ ['--c' as string]: wt.main ? 'var(--lane-main)' : agentVar(wt.agent) }}>
         <span className="dot" />{ref}{!wt.main && wt.agent && <em>{wt.agent}</em>}
       </span>
     )

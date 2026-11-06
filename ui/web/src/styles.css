@@ -22,6 +22,8 @@
   --add-bg: rgb(26 127 55 / 0.09);
   --del-bg: rgb(207 34 46 / 0.08);
   --lane-base: #8e86a8;
+  /* The base branch (main), wherever it shows: the trunk the other branches leave from, in the brand violet. */
+  --lane-main: var(--accent);
   --agent-1: #2a78d6;
   --agent-2: #eb6834;
   --agent-3: #1baf7a;

@@ -56,7 +56,7 @@ export function Detail() {
   const mergeBlocked = w.changes > 0 ? t('whyNoMergeChanges') : w.commits === 0 ? t('whyNoMergeCommits') : null
 
   return (
-    <section className="pane detail-pane" style={{ ['--c' as string]: w.main ? 'var(--lane-base)' : agentVar(w.agent) }}>
+    <section className="pane detail-pane" style={{ ['--c' as string]: w.main ? 'var(--lane-main)' : agentVar(w.agent) }}>
       <header className="detail-head">
         <div className="detail-title">
           <span className="agent-chip">{w.main ? <span className="dot" /> : <AgentBadge agent={w.agent} size={20} live={w.running.length > 0} />}{w.main ? t('mainCheckout') : w.agent || t('noAgent')}{w.running.length > 0 && <span className="chip-live">{t('running')}</span>}</span>

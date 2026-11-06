@@ -71,7 +71,7 @@ function WorktreeRow({ w }: { w: Worktree }) {
   const selected = useStore((s) => s.selected === w.path)
   const select = useStore((s) => s.select)
   const working = w.running.length > 0
-  const color = w.main ? 'var(--lane-base)' : agentVar(w.agent)
+  const color = w.main ? 'var(--lane-main)' : agentVar(w.agent)
 
   return (
     <button type="button" className={`wt-row${selected ? ' is-selected' : ''}${working ? ' is-working' : ''}`}
