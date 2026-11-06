@@ -7,4 +7,5 @@ If `.worktree.env` exists at the project root, you are in an isolated git worktr
 - Read `.worktree.env`. Dev servers must use ports `PORT` to `PORT+9`, never the main project's ports.
 - For xcodebuild always pass `-derivedDataPath "$DERIVED_DATA"`.
 - Never commit `.worktree.env`. Do not merge or push to main: the user decides that.
+- When the task is done, commit and run `ramify ready` in the worktree: it brings the base in and marks the branch ready to merge. Exit 1: uncommitted changes, or another branch marked ready changes the same files (wait until it is merged or agree on it, then run it again); exit 2: the base conflicts (files listed): merge it, resolve, commit and run it again. `ramify ls` shows READY `stale` once the base moves: run it again.
 - If `SIM_UDID` is set, run iOS builds and tests on that simulator: `-destination "id=$SIM_UDID"`.

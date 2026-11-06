@@ -24,7 +24,15 @@ disable-model-invocation: true
    ```
 
    - Uncommitted changes, or commits not in the base and no merged pull request: stop and say what is pending.
-     Suggest `/ramify:preparar-pr`.
+     If the work is finished, mark it ready to merge from its worktree, so the user sees it in the queue
+     (`ramify ls`, READY) and it stays checked against the base and the other ready branches:
+
+     ```bash
+     cd "<worktree>" && NO_COLOR=1 "${CLAUDE_PLUGIN_ROOT}"/bin/ramify ready
+     ```
+
+     Exit 1: another branch marked ready changes the same files; exit 2: the base conflicts (files listed). Say
+     which, and suggest `/ramify:preparar-pr` to open a pull request.
 3. Remove it. `ramify rm` refuses when anything would be lost, and deletes the branch only when it is merged:
 
    ```bash
