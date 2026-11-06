@@ -39,7 +39,7 @@ ${B}Usage${N}
   ramify path <name>            print a worktree path
   ramify rm <name> [--force]    remove a worktree (never deletes unmerged commits)
   ramify prune                  remove clean, merged worktrees
-  ramify install [claude-plugin|claude-hooks|instructions|shell|secrets|all]
+  ramify install [claude-plugin|claude-hooks|instructions|shell|secrets|guard|all]
   ramify uninstall [shell|instructions]  undo install shell / install instructions
   ramify run <agent> [args]     open an agent; from a main checkout it gets its own branch first
   ramify move <branch> [-a agent]  move the main checkout's uncommitted work to a branch of its own
@@ -929,6 +929,21 @@ install_secrets() {
   command -v gitleaks >/dev/null || log "${Y}gitleaks is not installed: the hooks warn but check nothing until it is (brew install gitleaks)${N}"
 }
 
+# The default branch kept for the user also from agents without Ramify's own hooks (Codex, Gemini, Cursor…): with
+# ramify.guardMain, the pre-commit and pre-push hooks of install_secrets refuse a commit on it in the main checkout
+# and a push to it. The app's merges run without hooks, so they still go through.
+install_guard() {
+  local dir h
+  install_secrets
+  git config ramify.guardMain true
+  dir=$(git rev-parse --path-format=absolute --git-path hooks)
+  for h in pre-commit pre-push; do
+    grep -q '^# ramify: secret scan' "$dir/$h" 2>/dev/null \
+      || log "${Y}! $dir/$h is not ramify's: git does not guard the default branch there until it calls $SELF_DIR/snippets/git-hooks/ramify-secrets${N}"
+  done
+  log "${G}+${N} ramify.guardMain: git refuses commits on the default branch in the main checkout, and pushes to it (RAMIFY_ALLOW_MAIN=1 lets one through)"
+}
+
 install_instructions() {
   local snippet="$SELF_DIR/snippets/agent-instructions.md" f
   [ -f "$snippet" ] || die "missing $snippet"
@@ -1155,8 +1170,9 @@ case "$sub" in
       instructions) install_instructions ;;
       shell) install_shell ;;
       secrets) install_secrets ;;
+      guard) install_guard ;;
       all) if command -v claude >/dev/null; then install_claude_plugin; else install_claude_hooks; fi; install_instructions ;;
-      *) die "usage: ramify install [claude-plugin|claude-hooks|instructions|shell|secrets|all]" ;;
+      *) die "usage: ramify install [claude-plugin|claude-hooks|instructions|shell|secrets|guard|all]" ;;
     esac ;;
   uninstall)
     case "${1:-}" in
