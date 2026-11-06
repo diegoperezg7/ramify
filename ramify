@@ -746,8 +746,8 @@ protected_branch() {
 # reset --hard, or a pull of another branch. From anywhere: a push that updates the default branch.
 # fetch and pull --ff-only of the branch itself stay allowed. Prints nothing when the line may run.
 git_refusal() {
-  local verb dir abort hard refs b what cur
-  while IFS=$'\t' read -r verb dir _ abort hard refs; do
+  local verb dir unknown abort hard refs b what cur
+  while IFS=$'\t' read -r verb dir unknown abort hard refs; do
     b=""; what=""
     case "$verb" in
       commit) b=$(shared_branch_at "$dir") && what=commit ;;
@@ -766,7 +766,10 @@ git_refusal() {
         esac ;;
     esac
     [ -n "$what" ] || continue
-    if [ "$what" = commit ]; then
+    # cd "$WT_PATH" && git commit: the variable may well name a worktree, but this check cannot know it.
+    if [ "$unknown" = 1 ]; then
+      printf '%s' "This command runs git $verb in a folder named by a variable or a command (such as cd \"\$WT_PATH\"), which this check cannot resolve, so it is judged by the folder the command starts in: there it would change $b, the shared branch. Write the folder as a literal path (cd /path/to/your/worktree && git $verb ...) or use git -C /path/to/your/worktree $verb ..."
+    elif [ "$what" = commit ]; then
       printf '%s' "This commit would land on $b, the shared branch. Call the EnterWorktree tool first with a short conventional name for the task (feat-..., fix-...), make the change there and commit in that worktree. (To allow commits on $b in this repository the user runs: git config ramify.allowMain true)"
     elif [ "$what" = push ]; then
       printf '%s' "This push would update $b, the shared branch, on the remote. Push the branch of your own instead (git push -u origin <your branch>); bringing it into $b is for the user to do (from the Ramify app, for one). (To allow pushes to $b in this repository the user runs: git config ramify.allowMain true)"

@@ -250,6 +250,9 @@ check "a terminal write without git on the shared branch is not judged (document
 g=$(printf '{"cwd":"%s","tool_name":"Write","tool_input":{"file_path":"%s/a.txt"}}' "$p1" "$p2" | "$AW" hook guard 2>/dev/null)
 check "an edit from one worktree into another is allowed (ramify who warns)" '[ -z "$g" ]'
 check "a commit from one worktree in another (git -C) is allowed" '[ -z "$(gb "$p1" "git -C $p2 commit -am x")" ]'
+g=$(gb "$T/demo" 'cd "$WT_PATH" && git commit -m x')
+check "cd into a variable then commit, from main: denied, asking for the literal path" 'denied "$g" && printf "%s" "$g" | jq -e ".hookSpecificOutput.permissionDecisionReason | contains(\"literal\")" >/dev/null'
+check "a commit after cd into a variable, from a worktree, is allowed" '[ -z "$(gb "$p1" "cd \"\$WT_PATH\" && git commit -m x")" ]'
 ss=$(printf '{"cwd":"%s"}' "$p1" | "$AW" hook session-start 2>/dev/null)
 check "a session inside a worktree gets no warning" '[ -z "$ss" ]'
 g=$(printf '{"cwd":"/","tool_name":"Write","tool_input":{"file_path":"%s/notes.txt"}}' "$T" | "$AW" hook guard 2>/dev/null)
