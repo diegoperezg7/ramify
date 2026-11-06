@@ -346,6 +346,7 @@ ramify open fix/cart -a gemini                  # reabrir un worktree con otro a
 ramify ls                                       # todos los worktrees de un vistazo
 ramify graph                                    # grafo de ramas con el agente de cada una
 ramify who src/cart.ts src/pay/                 # otros worktrees que cambian estos archivos (sale con 1 si hay)
+ramify ready                                    # rama terminada: trae main y entra en la cola de merge (1 espera, 2 conflicto)
 ramify ui                                       # panel web en el navegador
 ramify app                                      # abre este repo en la app de escritorio
 ramify rm fix/cart                              # se niega si algo se perdería
@@ -431,6 +432,15 @@ archivo`, y sale con 1 si hay alguno; sin rutas comprueba los archivos que cambi
 `coordinar` del plugin lo ejecuta antes de un cambio y, si hay solape, te avisa y puede escribir a la otra sesión de
 Claude Code (`ListAgents` / `SendMessage`) en lugar de editar los mismos archivos.
 
+**Al terminar una rama, dilo.** `ramify ready`, ejecutado en su worktree con todo commiteado, trae `main` y mira las
+ramas ya marcadas como listas. Sale con 0: ninguna otra rama lista cambia los mismos archivos, así que esta queda
+marcada lista para mergear. Sale con 1: alguna sí; no se marca nada y esta rama espera a que se mergee la otra. Sale
+con 2: `main` choca con esta rama; el merge se deshace y se listan los archivos: mergea `main`, resuelve, haz commit y
+repítelo. `ramify ls` enseña la cola en la columna READY: `ready`, `stale` cuando la rama o `main` se han movido
+desde entonces, y `wait` para una rama que espera turno. Con el plugin, Claude Code se entera en su siguiente turno
+cuando `main` se mueve bajo una rama lista o en espera; los demás agentes lo ven en `ramify ls`, y la app de
+escritorio puede avisarte.
+
 ### Seguridad
 
 - `rm` se niega si hay cambios sin commitear o commits que no están ni mergeados ni subidos.
@@ -471,12 +481,13 @@ Una parte está bloqueada de verdad; el resto son instrucciones que reciben los 
 
 ### Configuración
 
-| Variable          | Por defecto    |
-|-------------------|----------------|
-| `RAMIFY_ROOT`     | `~/.worktrees` |
-| `RAMIFY_PORT_MIN` | `4100`         |
-| `RAMIFY_PORT_MAX` | `4990`         |
-| `NO_COLOR`        | sin definir    |
+| Variable               | Por defecto                                          |
+|------------------------|------------------------------------------------------|
+| `RAMIFY_ROOT`          | `~/.worktrees`                                       |
+| `RAMIFY_PORT_MIN`      | `4100`                                               |
+| `RAMIFY_PORT_MAX`      | `4990`                                               |
+| `RAMIFY_FETCH_TIMEOUT` | `30` (segundos que `ramify ready` espera a `origin`) |
+| `NO_COLOR`             | sin definir                                          |
 
 ### Tests
 
@@ -486,7 +497,8 @@ npm run test:core             # motor, detección de sesiones, login de GitHub, 
 npm run test:e2e -w packages/core   # la UI real en Chromium: navegador, editor y nada cortado de 390 a 1920 px
 ```
 
-Todos corren en la CI; la batería del motor y el instalador de Windows también en Windows.
+Todos corren en la CI; la batería del motor, el instalador de Windows y las comprobaciones de `ramify install guard`
+(`bash tests/git-guard.sh` en Git Bash, también dentro de `tests/run.sh`) corren también en Windows.
 
 ### Contribuir
 
