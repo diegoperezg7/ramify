@@ -352,6 +352,7 @@ ramify rm fix/cart                              # se niega si algo se perdería
 ramify prune                                    # borra los worktrees limpios ya mergeados
 
 ramify install shell                            # los agentes abiertos en el checkout principal reciben su rama
+ramify install guard                            # en un repositorio: git rechaza commits en main y pushes a main
 ramify move feat/tax -a claude                  # lleva el trabajo sin commitear de main a su propia rama
 ```
 
@@ -417,8 +418,8 @@ checkout principal. Ejemplos en [`examples/`](examples):
 ### Integración con Claude Code
 
 El plugin (ver [Instalación](#instalación), o `ramify install claude-plugin`) registra Ramify como hooks
-`WorktreeCreate` y `WorktreeRemove` de Claude Code, más una guarda que rechaza ediciones y commits en la rama
-compartida. Sin el plugin, `ramify install claude-hooks` escribe solo los dos hooks de worktree en
+`WorktreeCreate` y `WorktreeRemove` de Claude Code, más una guarda que protege la rama compartida (ediciones,
+commits, merges y pushes: ver [Qué garantiza Ramify](#qué-garantiza-ramify)). Sin el plugin, `ramify install claude-hooks` escribe solo los dos hooks de worktree en
 `~/.claude/settings.json` (con copia); al instalar el plugin después se quitan, así nunca se ejecutan dos veces. Desde entonces `claude --worktree`, las sesiones en segundo plano,
 `/batch`, los workflows y los subagentes con `isolation: worktree` crean sus worktrees con Ramify,
 con la misma estructura, puertos y preparación que el resto de agentes. Claude Code conserva los
@@ -437,6 +438,36 @@ Claude Code (`ListAgents` / `SendMessage`) en lugar de editar los mismos archivo
   mergear**: se va el worktree y se queda la rama.
 - `prune` solo borra worktrees limpios y ya mergeados.
 - El checkout principal no se toca, salvo una línea en `.git/info/exclude` (`/.worktree.env`).
+
+### Qué garantiza Ramify
+
+Ramify guarda la rama por defecto (`main`) para ti: los agentes trabajan en ramas propias y tú decides qué entra.
+Una parte está bloqueada de verdad; el resto son instrucciones que reciben los agentes.
+
+**Bloqueado de verdad**
+
+- **Claude Code con el plugin.** En el checkout principal sobre `main`, la guarda rechaza editar archivos y los
+  comandos de git que cambian `main`: `commit`, `merge`, `cherry-pick`, `revert`, `am`, `rebase`, `reset --hard` y un
+  `pull` de otra rama. Desde cualquier carpeta rechaza un push que actualice `main` (`git push origin HEAD:main`,
+  `:main`, `origin main`, `--all`, o `git push` a secas estando en ella). `fetch`, `pull --ff-only` y `--abort` siguen
+  funcionando. Claude Code no puede quitar la guarda: un comando que fije `ramify.allowMain` también se rechaza.
+- **Cualquier agente, con `ramify install guard`** en el repositorio (Codex, Gemini, Cursor, una terminal sin más):
+  el propio git rechaza `git commit` en `main` en el checkout principal y cualquier push que actualice `main`, con los
+  hooks pre-commit y pre-push del repositorio (que además buscan secretos si gitleaks está instalado). Mergear desde
+  la app de Ramify no se ve afectado: la app ejecuta git sin hooks.
+- **La salida es tuya:** `RAMIFY_ALLOW_MAIN=1` para una sesión o un comando, `git config ramify.allowMain true` para
+  el repositorio.
+
+**Solo instrucciones** (al agente se le dice; nada lo impide)
+
+- Escrituras desde la terminal que no hacen commit (`echo > archivo`, `sed -i`, un script) en el checkout principal.
+  Se quedan como cambios sin commitear, y `ramify move` los lleva a una rama propia.
+- Ediciones y commits en el worktree de otro agente. Permitido a propósito, porque una sesión puede coordinar
+  varias: `ramify who` y la skill `coordinar` avisan antes.
+- Agentes lanzados desde un IDE o una app, sin `ramify install guard`: solo tienen las reglas de
+  `ramify install instructions`.
+- Con `ramify install guard` solo, los hooks de git solo ven commits y pushes: un merge, rebase o reset de `main` en el
+  checkout principal pasa (su push no), y `--no-verify` se salta los hooks.
 
 ### Configuración
 

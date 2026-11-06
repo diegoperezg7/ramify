@@ -358,6 +358,7 @@ ramify rm fix/cart                              # refuses if anything would be l
 ramify prune                                    # remove clean worktrees that are already merged
 
 ramify install shell                            # agents typed in a main checkout get their own branch
+ramify install guard                            # in a repository: git refuses commits on main and pushes to it
 ramify move feat/tax -a claude                  # move uncommitted work off main to its own branch
 ```
 
@@ -423,7 +424,8 @@ See [`examples/`](examples):
 ### Claude Code integration
 
 The plugin (see [Install](#install), or `ramify install claude-plugin`) registers Ramify as Claude Code's
-`WorktreeCreate` and `WorktreeRemove` hooks, plus a guard that refuses edits and commits on the shared branch.
+`WorktreeCreate` and `WorktreeRemove` hooks, plus a guard that keeps the shared branch for you (edits, commits,
+merges and pushes: see [What Ramify guarantees](#what-ramify-guarantees)).
 Without the plugin, `ramify install claude-hooks` writes just the two worktree hooks into `~/.claude/settings.json`
 (with a backup); installing the plugin later removes them, so they never run twice. From then on `claude --worktree`, background sessions, `/batch`,
 workflows and subagents with `isolation: worktree` all create their worktrees through Ramify,
@@ -443,6 +445,36 @@ session (`ListAgents` / `SendMessage`) instead of editing the same files.
   the worktree goes, the branch stays.
 - `prune` only removes worktrees that are clean and already merged.
 - The main checkout is never touched, except for one line in `.git/info/exclude` (`/.worktree.env`).
+
+### What Ramify guarantees
+
+Ramify keeps the default branch (`main`) for you: agents work on branches of their own and you decide what goes in.
+Part of that is enforced; the rest is instructions the agents are given.
+
+**Enforced**
+
+- **Claude Code with the plugin.** In the main checkout on `main`, the guard refuses file edits and the git commands
+  that change `main`: `commit`, `merge`, `cherry-pick`, `revert`, `am`, `rebase`, `reset --hard` and a `pull` of
+  another branch. From any folder it refuses a push that updates `main` (`git push origin HEAD:main`, `:main`,
+  `origin main`, `--all`, or a bare `git push` while on it). `fetch`, `pull --ff-only` and `--abort` still run.
+  Claude Code cannot turn the guard off: a command that sets `ramify.allowMain` is refused too.
+- **Any agent, with `ramify install guard`** in the repository (Codex, Gemini, Cursor, a plain terminal): git itself
+  refuses `git commit` on `main` in the main checkout and any push that updates `main`, through the repository's
+  pre-commit and pre-push hooks (which also scan for secrets when gitleaks is installed). Merging from the Ramify app
+  is not affected: the app runs git without hooks.
+- **The way out is yours:** `RAMIFY_ALLOW_MAIN=1` for one session or command, `git config ramify.allowMain true` for
+  the repository.
+
+**Instructions only** (the agent is told; nothing stops it)
+
+- Writes from a terminal that do not commit (`echo > file`, `sed -i`, a script) in the main checkout. They stay as
+  uncommitted changes, and `ramify move` takes them to a branch of their own.
+- Edits and commits in another agent's worktree. Allowed on purpose, since one session may coordinate several:
+  `ramify who` and the `coordinar` skill warn first.
+- Agents started from an IDE or an app, without `ramify install guard`: they only have the rules from
+  `ramify install instructions`.
+- With `ramify install guard` alone, git hooks only see commits and pushes: a merge, rebase or reset of `main` in the
+  main checkout goes through (pushing it does not), and `--no-verify` skips the hooks.
 
 ### Configuration
 
