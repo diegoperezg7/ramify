@@ -79,6 +79,23 @@ fi
 check "ls ignores processes that are not agents" '! "$AW" ls 2>/dev/null | grep -q "^pagos .*perl"'
 { kill %2 && wait %2; } 2>/dev/null
 kill %1 2>/dev/null; wait 2>/dev/null
+# Claude Code's installer runs ~/.local/share/claude/versions/<version> through a claude symlink: the process is named
+# after the version. exec -a starts it as "claude" the way macOS shows that symlink (Linux would name it claude).
+running_in() { "$AW" ls 2>/dev/null | awk -v w="$1" '$1 == w { print $4 }'; }
+mkdir -p "$T/real/claude/versions"
+if printf '#include <unistd.h>\nint main(void){sleep(10);return 0;}\n' | cc -x c -o "$T/real/claude/versions/2.1.319" - 2>/dev/null; then
+  echo x > "$W/pagos/cc.txt"
+  (cd "$W/pagos" && exec -a claude "$T/real/claude/versions/2.1.319") & c1=$!
+  (cd "$T/demo" && exec "$T/real/claude/versions/2.1.319" --agent-name x) & c2=$!
+  (cd "$W/feat-login" && exec perl -e 'sleep 10' "$T/real/claude/versions/2.1.319") & c3=$!
+  sleep 1
+  check "ls shows Claude Code started as claude, its process named after the version" '[ "$(running_in pagos)" = claude ]'
+  check "ls shows Claude Code started by its versioned path (teammates)" '[ "$(running_in "(main)")" = claude ]'
+  check "ls does not take a path to that version given as an argument for Claude Code" '[ "$(running_in feat-login)" = - ]'
+  check "who says working for that Claude Code" '[ "$(cd "$W/feat-login" && "$AW" who cc.txt | cut -f1,3)" = "$(printf "pagos\tworking")" ]'
+  { kill "$c1" "$c2" "$c3" && wait "$c1" "$c2" "$c3"; } 2>/dev/null
+  rm -f "$W/pagos/cc.txt"
+fi
 check "ls --json is valid and has the worktree" '"$AW" ls --json | jq -e ".[] | select(.branch == \"pagos\") | .agent == \"aider\" and .main == false" >/dev/null'
 check "ls shows the agent" '"$AW" ls 2>/dev/null | grep -q "^pagos .*aider"'
 check "graph lists the branches" 'g=$("$AW" graph 2>&1); printf "%s" "$g" | grep -q "pagos"'
