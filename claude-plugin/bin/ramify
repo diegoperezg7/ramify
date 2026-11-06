@@ -201,12 +201,29 @@ auto_setup() {
   ) >&2
 }
 
-# Processes whose working directory is inside each worktree: "<path>\t<command>".
+# Processes whose working directory is inside each worktree: "<path>\t<command>". lsof names a process after the
+# file it runs, and Claude Code's is its version (~/.local/share/claude/versions/2.1.319, started through a claude
+# symlink): a name that is no agent's is looked up in the command line it was started with, from one ps for all.
 active_agents() {
   command -v lsof >/dev/null || return 0
-  lsof -a -d cwd -u "$(id -u)" -Fcn 2>/dev/null | awk '
-    /^c/ { cmd = substr($0, 2) }
-    /^n/ { print substr($0, 2) "\t" cmd }'
+  { ps -A -ww -o pid=,args= 2>/dev/null; lsof -a -d cwd -u "$(id -u)" -Fpcn 2>/dev/null; } | awk -v known="$AGENT_NAMES" '
+    function agent(cmd, args,   w, d) {
+      if (cmd in ok || args == "") return cmd
+      # Started as "claude" (or any agent name), whatever the file it resolves to is called.
+      w = args; sub(/ .*/, "", w); sub(/.*\//, "", w)
+      if (w in ok) return w
+      # Started by its full path (Claude Code teammates): .../claude/versions/<version>, the version being the name.
+      # The name must be that version, so a path to it given as an argument (cat .../2.1.319) does not count.
+      d = "/claude/versions/"
+      if (cmd != "" && match(args, d "[^/ ]+") && index(substr(args, RSTART + length(d), RLENGTH - length(d)), cmd) == 1) return "claude"
+      return cmd
+    }
+    BEGIN { n = split(known, k, " "); for (i = 1; i <= n; i++) ok[k[i]] = 1 }
+    # ps lines start with the pid; lsof -F lines with a field letter.
+    /^ *[0-9]+ / { sub(/^ +/, ""); p = $1; sub(/^[0-9]+ +/, ""); argv[p] = $0; next }
+    /^p/ { pid = substr($0, 2); cmd = ""; next }
+    /^c/ { cmd = substr($0, 2); next }
+    /^n/ { print substr($0, 2) "\t" agent(cmd, argv[pid]) }'
 }
 
 # --- agents ------------------------------------------------------------------
