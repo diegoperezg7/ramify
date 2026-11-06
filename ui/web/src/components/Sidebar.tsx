@@ -1,4 +1,4 @@
-import { ChevronDown, CircleAlert, FolderGit2, LayoutDashboard, MessagesSquare, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, X } from 'lucide-react'
+import { ChevronDown, CircleAlert, FolderGit2, LayoutDashboard, Loader2, MessagesSquare, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, X } from 'lucide-react'
 import { useState } from 'react'
 import { GithubIcon } from './GithubIcon'
 import { agentName, agentVar } from '../agents'
@@ -9,6 +9,7 @@ import type { RepoInfo } from '../types'
 export function Sidebar() {
   const repos = useStore((s) => s.repos)
   const addRepo = useStore((s) => s.addRepo)
+  const busy = useStore((s) => s.busy)
   const setModal = useStore((s) => s.setModal)
   const caps = useStore((s) => s.caps)
   const rail = useStore((s) => s.rail)
@@ -90,7 +91,9 @@ export function Sidebar() {
               {showDormant && <ul className="repo-list is-dormant">{asleep.map((r) => <RepoItem key={r.path} r={r} />)}</ul>}
             </>
           )}
-          <button type="button" className="side-btn" onClick={() => addRepo()} title={t('addRepo')}><Plus size={16} /><span>{t('addRepo')}</span></button>
+          <button type="button" className="side-btn" onClick={() => addRepo()} title={t('addRepo')} disabled={busy} aria-busy={busy}>
+            {busy ? <Loader2 size={16} className="spin" /> : <Plus size={16} />}<span>{t('addRepo')}</span>
+          </button>
           {caps?.github && (
             <button type="button" className="side-btn" onClick={() => setModal('github')} title={t('github')}><GithubIcon size={16} /><span>{t('github')}</span></button>
           )}

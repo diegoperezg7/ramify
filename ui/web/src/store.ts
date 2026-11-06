@@ -1,13 +1,14 @@
 import { create } from 'zustand'
 import { bridge, BridgeError } from './bridge'
 import { dict, format, type Key, type Lang } from './i18n'
-import type { AgentChild, AgentSession, Capabilities, CreateRequest, Detail, PullRequest, RepoInfo, Settings, State, UpdateState } from './types'
+import type { AgentChild, AgentSession, Capabilities, CreateRequest, Detail, GithubAccount, PullRequest, RepoInfo, Settings, State, UpdateState } from './types'
 import { MergeError, type MergeProblem } from './logic'
 
 export type Theme = 'system' | 'light' | 'dark'
 export type Density = 'comfortable' | 'compact'
 type Conn = 'ok' | 'offline' | 'unauthorized'
 type Modal = 'create' | 'settings' | 'github' | 'palette' | 'onboarding' | 'guide' | null
+export type SettingsTab = 'general' | 'agents' | 'automation' | 'notifications' | 'github' | 'system'
 export type View = 'repo' | 'sessions' | 'timeline' | 'control'
 
 interface Toast { id: number; kind: 'ok' | 'error'; text: string }
@@ -30,12 +31,16 @@ interface Store {
   diff: string | null
   settings: Settings | null
   modal: Modal
-  /** The step the introduction opens at when it is opened for one thing (GitHub sign-in from a branch's detail). */
-  onboardingStep: 'github' | null
+  /** The section Settings opens at (null: the first one). */
+  settingsTab: SettingsTab | null
+  openSettings: (tab?: SettingsTab) => void
   /** Pull requests of the current repository, read-only: they are shown, never made or merged from here. */
   prs: PullRequest[]
   refreshPrs: () => Promise<void>
-  /** Open the introduction at its GitHub sign-in step. */
+  /** The GitHub account of the desktop app (null: not read yet, or a host without one). */
+  github: GithubAccount | null
+  refreshGithub: () => Promise<void>
+  /** Open Settings at the GitHub account, where signing in and out happens after the introduction. */
   signInGithub: () => void
   lang: Lang
   theme: Theme
@@ -127,7 +132,8 @@ export const useStore = create<Store>((set, get) => ({
   diff: null,
   settings: null,
   modal: null,
-  onboardingStep: null,
+  settingsTab: null,
+  github: null,
   prs: [],
   lang: load<Lang>('ramify-lang', defaultLang, ['es', 'en']),
   theme: load<Theme>('ramify-theme', 'system', ['system', 'light', 'dark']),
@@ -158,6 +164,7 @@ export const useStore = create<Store>((set, get) => ({
     set({ caps })
     if (caps?.settings) set({ settings: await bridge.settings().catch(() => null) })
     if (caps?.update) void get().refreshUpdate()
+    void get().refreshGithub()
     const savedView = load<View>('ramify-view', 'repo', ['repo', 'sessions', 'timeline', 'control'])
     if ((caps?.sessions && savedView === 'sessions') || (caps?.control && savedView === 'control')) get().setView(savedView)
     // First run of the desktop app: a short introduction built from what is installed here.
@@ -212,7 +219,16 @@ export const useStore = create<Store>((set, get) => ({
     if (get().repo === repo) set({ prs })
   },
 
-  signInGithub: () => set({ modal: 'onboarding', onboardingStep: 'github' }),
+  // Only the desktop app has a GitHub account of its own; elsewhere it stays null and nothing asks for it.
+  refreshGithub: async () => {
+    if (get().caps?.host !== 'desktop') return
+    const github = await bridge.githubAccount().catch(() => null)
+    set({ github })
+  },
+
+  openSettings: (tab) => set({ modal: 'settings', settingsTab: tab ?? null }),
+
+  signInGithub: () => get().openSettings('github'),
 
   refreshRepos: async () => {
     try {
@@ -256,13 +272,19 @@ export const useStore = create<Store>((set, get) => ({
   },
 
   addRepo: async () => {
+    // Busy from the folder panel until the repository is in: checking the folder can take a moment.
+    set({ busy: true })
     try {
       const info = await bridge.addRepo()
       if (!info) return
+      const known = get().repos.some((r) => r.path === info.path)
       set({ repos: [...get().repos.filter((r) => r.path !== info.path), info] })
       get().setRepo(info.path)
+      get().toast('ok', get().t(known ? 'repoAlready' : 'repoAdded', { name: info.name }))
     } catch (e) {
-      get().toast('error', (e as Error).message)
+      get().toast('error', get().t('repoAddFailed', { reason: (e as Error).message }))
+    } finally {
+      set({ busy: false })
     }
   },
 
@@ -336,7 +358,11 @@ export const useStore = create<Store>((set, get) => ({
     set({ settings: s, caps: await bridge.capabilities().catch(() => get().caps) })
   },
 
-  setModal: (modal) => set(modal === null ? { modal, createPrefill: null, onboardingStep: null } : { modal }),
+  setModal: (modal) => {
+    set(modal === null ? { modal, createPrefill: null, settingsTab: null } : { modal })
+    // A dialog that closes may have signed in or out (Settings, the introduction): the status bar follows.
+    if (modal === null) void get().refreshGithub()
+  },
   setLang: (lang) => { save('ramify-lang', lang); set({ lang }) },
   setTheme: (theme) => { save('ramify-theme', theme); set({ theme }) },
   setDensity: (density) => { save('ramify-density', density); set({ density }) },

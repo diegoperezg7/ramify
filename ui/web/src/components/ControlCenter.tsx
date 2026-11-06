@@ -128,7 +128,7 @@ export function ControlCenter() {
   }, [boards])
 
   return (
-    <main className="sessions control">
+    <main className="sessions control no-scrollbar">
       <header className="sessions-head">
         <div>
           <h1>{t('controlTitle')}</h1>

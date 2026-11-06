@@ -362,6 +362,8 @@ html, body, #root { height: 100%; }
   display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 34px; padding: 0 12px; border-radius: 9px;
   border: 1px solid var(--border); background: var(--surface); font-size: 13px; font-weight: 500; cursor: pointer; white-space: nowrap;
 }
+/* A link drawn as a button looks like one (zero specificity: .btn-primary and the rest keep their colour). */
+:where(a.btn) { color: var(--text); text-decoration: none; }
 [data-density='compact'] .btn { height: 30px; padding: 0 10px; }
 .btn:hover:not(:disabled) { background: var(--surface-hover); }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; }
@@ -463,6 +465,8 @@ html, body, #root { height: 100%; }
 }
 .agent-option .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
 .agent-option.is-on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent-text); }
+.agent-option { transition: border-color 0.15s, background-color 0.15s, color 0.15s; }
+.agent-option:hover:not(.is-on) { border-color: var(--border-strong); }
 
 /* dialogs */
 .dialog {
@@ -480,6 +484,31 @@ html, body, #root { height: 100%; }
 .check { display: flex; gap: 8px; align-items: flex-start; margin-top: 8px; }
 .check input { margin-top: 3px; accent-color: var(--accent); }
 .dialog-actions { display: flex; justify-content: flex-end; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+/* Settings: sections in a side list, one at a time, each short enough to fit; the dialog itself never scrolls. */
+.dialog-settings { width: min(760px, calc(100vw - 24px)); height: min(540px, calc(100vh - 32px)); display: flex; flex-direction: column; overflow: hidden; }
+.form.settings { flex: 1; min-height: 0; display: grid; grid-template-columns: 184px minmax(0, 1fr); grid-template-rows: minmax(0, 1fr) auto; gap: 0 22px; }
+.settings-nav { display: flex; flex-direction: column; gap: 2px; padding-right: 14px; border-right: 1px solid var(--border); }
+.settings-tab { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border: 0; border-radius: 8px; background: none; color: var(--text-2); font: inherit; font-size: 13.5px; text-align: left; cursor: pointer; }
+.settings-tab { transition: background-color 0.15s, color 0.15s; }
+.settings-tab:hover { background: var(--surface-hover); color: var(--text); }
+.settings-tab.is-on { background: var(--accent-soft); color: var(--accent-text); font-weight: 600; }
+.settings-tab:focus-visible { outline: none; box-shadow: 0 0 0 3px var(--accent-ring); }
+.settings-pane { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; }
+/* Each tab's content comes in briefly when the tab changes (the pane is keyed by tab). */
+.settings-pane { animation: pane-in 0.18s ease-out both; }
+@keyframes pane-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.settings-actions { grid-column: 1 / -1; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--border); }
+.gh-account { display: flex; flex-direction: column; align-items: flex-start; gap: 14px; }
+.gh-account > p { margin: 0; }
+.gh-user { display: flex; align-items: center; gap: 12px; }
+.gh-user img { border-radius: 50%; }
+.gh-user div { display: flex; flex-direction: column; gap: 2px; }
+.gh-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+@media (max-width: 620px) {
+  .form.settings { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; gap: 12px; }
+  .settings-nav { flex-direction: row; overflow-x: auto; scrollbar-width: none; padding: 0 0 10px; border-right: 0; border-bottom: 1px solid var(--border); }
+  .settings-tab { flex: none; }
+}
 .search { display: flex; align-items: center; gap: 8px; padding: 0 12px; border: 1px solid var(--border-strong); border-radius: 10px; color: var(--muted); }
 .search:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .search input { flex: 1; min-width: 0; height: 38px; border: 0; outline: none; background: none; color: var(--text); font: inherit; }
@@ -512,7 +541,13 @@ html, body, #root { height: 100%; }
 /* The app's own update, in the toasts' corner until it is installed or put off. */
 .update-notice { width: 340px; max-width: 100%; white-space: normal; border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
 .update-notice > svg { color: var(--accent-text); }
-.update-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+/* In from the corner, out the same way when put off; the body fades when the status changes (available, downloading, ready). */
+.update-notice { animation: notice-in 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.update-notice.is-leaving { animation: notice-out 0.2s ease-in both; pointer-events: none; }
+@keyframes notice-in { from { opacity: 0; transform: translateX(24px) scale(0.97); } to { opacity: 1; transform: none; } }
+@keyframes notice-out { to { opacity: 0; transform: translateX(24px) scale(0.97); } }
+.update-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; animation: fade-in 0.2s ease-out both; }
+@keyframes fade-in { from { opacity: 0; } }
 .update-note { color: var(--muted); font-size: 12px; }
 .update-actions { display: flex; gap: 8px; margin-top: 6px; }
 .update-actions .btn { height: 30px; padding: 0 12px; }
@@ -691,6 +726,9 @@ kbd {
 .sb-branch { color: var(--accent-text); }
 .sb-spacer { flex: 1; }
 .sb-ver { padding-left: 14px; border-left: 1px solid var(--border); }
+.sb-github { display: inline-flex; align-items: center; gap: 5px; padding: 0; border: 0; background: none; font: inherit; color: var(--muted); cursor: pointer; transition: color 0.15s; }
+.sb-github:hover { color: var(--text); }
+.sb-github.is-on { color: var(--text-2); }
 
 /* command palette */
 .palette {
@@ -814,6 +852,8 @@ kbd {
 
 /* --- AI sessions ------------------------------------------------------------- */
 .sessions { flex: 1; min-height: 0; overflow-y: auto; padding: 20px 24px 28px; display: flex; flex-direction: column; gap: 18px; container-type: inline-size; }
+/* Scrolls (trackpad, wheel, keys) without ever drawing a scroll bar, here and in everything inside. */
+.no-scrollbar, .no-scrollbar * { scrollbar-width: none; }
 .sessions-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
 .sessions-head h1 { margin: 0 0 4px; font-size: 20px; font-weight: 650; letter-spacing: -0.01em; }
 .sessions-head p { margin: 0; max-width: 62ch; }

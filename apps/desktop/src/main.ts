@@ -2,7 +2,7 @@ import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, No
 import { execFile, execFileSync } from 'node:child_process'
 import { chmodSync, copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
-import { join, resolve } from 'node:path'
+import { basename, join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import {
   cloneGithub, createHandlers, defaultProjectsDir, dispatch, Engine, EngineError, githubRepos, idesFor, openInTerminal, originSlug,
@@ -832,7 +832,10 @@ function applyLoginItem() {
 
 async function addPath(path: string): Promise<RepoInfo> {
   const main = await engine.mainCheckout(path)
-  if (!main) throw new EngineError(es() ? 'esa carpeta no está dentro de un repositorio git' : 'that folder is not inside a git repository')
+  if (!main) {
+    const name = basename(path) || path
+    throw new EngineError(es() ? `«${name}» no es un repositorio git: elige la carpeta de un proyecto que use git.` : `"${name}" is not a git repository: choose the folder of a project that uses git.`)
+  }
   addRepoToConfig(main)
   githubCache = null
   return engine.repoInfo(main)

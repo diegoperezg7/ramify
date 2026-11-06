@@ -1,12 +1,11 @@
 import { Check, Copy, ExternalLink, FolderOpen, GitMerge, Play, Trash2, X } from 'lucide-react'
 import { BrandIcon } from './BrandIcon'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { agentVar } from '../agents'
 import { bridge } from '../bridge'
 import { relTime } from '../i18n'
 import { friendlyMerge, mergeWords, prFor, prSignInHint, shellArg } from '../logic'
 import { useStore } from '../store'
-import type { GithubAccount } from '../types'
 import { PrChip } from './PrChip'
 import { Dialog } from './Dialog'
 import { DiffStat, DiffView } from './DiffView'
@@ -38,18 +37,10 @@ export function Detail() {
   const [force, setForce] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
   const prs = useStore((s) => s.prs)
-  const modal = useStore((s) => s.modal)
   const signInGithub = useStore((s) => s.signInGithub)
   const github = useStore((s) => s.repos.find((r) => r.path === s.repo)?.github ?? null)
   // Signed in, pull requests are read with the account even without gh; signed out, the detail says so.
-  // Read again when a dialog closes (the sign-in is one). Only a repository on GitHub asks.
-  const [account, setAccount] = useState<GithubAccount | null>(null)
-  useEffect(() => {
-    if (!github || modal) return
-    let live = true
-    bridge.githubAccount().then((a) => { if (live) setAccount(a) }, () => { if (live) setAccount(null) })
-    return () => { live = false }
-  }, [github, modal])
+  const account = useStore((s) => s.github)
 
   const commit = useStore((s) => s.commit)
   if (commit) return <CommitDetail hash={commit} />
