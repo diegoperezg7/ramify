@@ -57,13 +57,13 @@ Everything stays on your computer.
 **1. Install it.** Download the app for [macOS or Windows](https://github.com/diegoperezg7/ramify/releases/latest).
 On a Mac, drag Ramify into Applications.
 
-<p align="center"><img src="docs/install-dmg.png" width="560" alt="The Ramify installer window: drag the app into Applications"></p>
+<p align="center"><img src="docs/screenshots/install-dmg.png" width="560" alt="The Ramify installer window: drag the app into Applications"></p>
 
 **2. Let it set up this computer.** The first time, Ramify shows the AI tools it found on this computer and offers
 to set everything up with one click: from then on every assistant works on a branch of its own, also the ones you
 start from a terminal. You can undo it in Settings.
 
-<p align="center"><img src="docs/app-setup.png" alt="Set up this computer: Claude Code, the other agents, the terminal and the ramify command, ready with one click"></p>
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/app-setup-dark.png"><img src="docs/screenshots/app-setup-light.png" alt="Set up this computer: Claude Code, the other agents, the terminal and the ramify command, ready with one click"></picture></p>
 
 **3. Work as you always do.** Open your assistants the way you already do. Ramify notices them, gives each one its
 own space and shows them in the control center. When one finishes, review its changes and bring them in.
@@ -72,7 +72,7 @@ own space and shows them in the control center. When one finishes, review its ch
 
 ### See who is working right now
 
-<img src="docs/app-control.png" alt="Control center: six agents working right now, each with its project, branch, how long it has been working and what it has changed; one marked as needing you">
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/app-control-dark.png"><img src="docs/screenshots/app-control-light.png" alt="Control center: six agents working right now, each with its project, branch, how long it has been working and what it has changed; one marked as needing you"></picture>
 
 One card per assistant at work: which one, in which project and branch, since when, and what it has changed so far.
 The one that stopped to ask you something says so. With nobody working, it shows where and with which assistants you
@@ -81,14 +81,14 @@ move it to its own branch.
 
 ### See how much, and when, your assistants work
 
-<img src="docs/app-activity.png" alt="Agent activity: time with agents, most agents at once, sessions and main project, plus hours per day stacked by agent and one day hour by hour">
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/app-activity-dark.png"><img src="docs/screenshots/app-activity-light.png" alt="Agent activity: time with agents, most agents at once, sessions and main project, plus hours per day stacked by agent and one day hour by hour"></picture>
 
 The week or the month in four figures (time with agents, most at once, sessions, main project), hours per day for
 each assistant, and any day hour by hour: who worked when, and how many were working at the same time.
 
 ### Your work history at a glance, any day in detail
 
-<img src="docs/app-heatmap.png" alt="A year of commits as a grid of squares, the current streak and the busiest day, and one day opened: its figures, commits hour by hour, a lane per project with its commits and AI sessions, and the commits of each project">
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/app-heatmap-dark.png"><img src="docs/screenshots/app-heatmap-light.png" alt="A year of commits as a grid of squares, the current streak and the busiest day, and one day opened: its figures, commits hour by hour, a lane per project with its commits and AI sessions, and the commits of each project"></picture>
 
 A year of work as a grid of squares, your current streak and your busiest day. Click any square to open that day:
 how much was saved and when, one lane per project with its commits and the assistants that worked on it, and what
@@ -96,7 +96,7 @@ was saved in each one.
 
 ### Every AI conversation on your computer
 
-<img src="docs/app-sessions.png" alt="AI sessions: a card per agent working now with its task, its last step, its activity in the last hour, the files it edited and its branch's commits and changes, and one that needs you">
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/app-sessions-dark.png"><img src="docs/screenshots/app-sessions-light.png" alt="AI sessions: a card per agent working now with its task, its last step, its activity in the last hour, the files it edited and its branch's commits and changes, and one that needs you"></picture>
 
 Assistants in any terminal, the chat in your editor and the AI desktop apps, found on their own. One card per
 conversation: what it was asked to do, its last step, how busy it was in the last hour, the files it edited and what
@@ -121,6 +121,11 @@ Every branch with its assistant, and its changes line by line as on GitHub: gree
 Open it in the editors you have installed, start the assistant again, bring it in, or remove it. Ramify never
 deletes work that has not been saved or brought in.
 
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/app-branches-dark.png"><img src="docs/screenshots/app-branches-light.png" alt="Branch tree: main in violet, each branch in the colour of its assistant, and one branch opened with its changes, its commits, its ports and buttons to open it in an editor, start the agent again, merge it or remove it"></picture>
+
+The main version stands out in violet in the tree, the list and the detail. Signed in with GitHub, each branch also
+shows its open pull request.
+
 ### Bring the work in with one click
 
 https://github.com/user-attachments/assets/70585f1f-0d82-400b-bede-42561499f0c9
@@ -130,14 +135,31 @@ clashes with something else, a window explains what happened, which files clash 
 
 ### Every branch on one timeline
 
-<img src="docs/app-timeline.png" alt="Branch timeline: active, stale and merged branches with where each one started and where it was brought in">
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/app-timeline-dark.png"><img src="docs/screenshots/app-timeline-light.png" alt="Branch timeline: active, stale and merged branches with where each one started and where it was brought in"></picture>
 
 One band per branch, from where it started to where it was brought in, in the colour of the assistant that worked
 on it. Branches that were finished and deleted are still there, so the story stays complete.
 
+### Start an assistant with a click
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/app-new-agent-dark.png"><img src="docs/screenshots/app-new-agent-light.png" alt="New agent: the repository, the assistants installed on this computer with their logos, the task and the branch named after it"></picture>
+
+Pick the assistant by its logo (the ones installed on this computer come first, every other one is a click away),
+say what it should do, and Ramify creates its branch and opens it in your terminal.
+
+### Settings you can see at a glance
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/app-settings-dark.png"><img src="docs/screenshots/app-settings-light.png" alt="Settings, General: the terminal, the default editor and how long to keep session history, each one a row of choices with its logo"></picture>
+
+Settings are grouped in tabs on the side: General, Agents, Automation, Notifications, GitHub and System. The terminal,
+the editor and the default assistant are chosen by their logos instead of from a long list. GitHub sign-in is in its
+own tab and in the status bar, any time after the introduction.
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/app-settings-agents-dark.png"><img src="docs/screenshots/app-settings-agents-light.png" alt="Settings, Agents: every supported assistant with its official logo"></picture>
+
 ### Light or dark, as your system
 
-<img src="docs/app-control-light.png" alt="The control center in the light theme">
+<img src="docs/screenshots/app-control-light.png" width="49%" alt="The control center in the light theme"> <img src="docs/screenshots/app-control-dark.png" width="49%" alt="The control center in the dark theme">
 
 ## Words you will see
 

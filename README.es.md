@@ -51,13 +51,13 @@ Todo se queda en tu ordenador.
 **1. Instálalo.** Descarga la app para [macOS o Windows](https://github.com/diegoperezg7/ramify/releases/latest).
 En Mac, arrastra Ramify a Aplicaciones.
 
-<p align="center"><img src="docs/install-dmg.png" width="560" alt="La ventana del instalador de Ramify: arrastra la app a Aplicaciones"></p>
+<p align="center"><img src="docs/screenshots/install-dmg.png" width="560" alt="La ventana del instalador de Ramify: arrastra la app a Aplicaciones"></p>
 
 **2. Deja que prepare este ordenador.** La primera vez, Ramify te enseña las herramientas de IA que ha encontrado y
 te ofrece dejarlo todo listo con un clic: desde entonces cada asistente trabaja en su propia rama, también los que
 abres desde una terminal. Se puede deshacer en Ajustes.
 
-<p align="center"><img src="docs/app-setup.png" alt="Prepara este equipo: Claude Code, los demás agentes, la terminal y el comando ramify, listos con un clic"></p>
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/app-setup-dark.png"><img src="docs/screenshots/app-setup-light.png" alt="Prepara este equipo: Claude Code, los demás agentes, la terminal y el comando ramify, listos con un clic"></picture></p>
 
 **3. Trabaja como siempre.** Abre tus asistentes como ya lo haces. Ramify los ve, le da a cada uno su espacio y los
 muestra en el centro de control. Cuando uno termina, revisa sus cambios y llévalos a tu proyecto.
@@ -66,7 +66,7 @@ muestra en el centro de control. Cuando uno termina, revisa sus cambios y lléva
 
 ### Ver quién está trabajando ahora mismo
 
-<img src="docs/app-control.png" alt="Centro de control: seis agentes trabajando ahora, cada uno con su proyecto, su rama, cuánto lleva y qué ha cambiado; uno marcado porque te necesita">
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/app-control-dark.png"><img src="docs/screenshots/app-control-light.png" alt="Centro de control: seis agentes trabajando ahora, cada uno con su proyecto, su rama, cuánto lleva y qué ha cambiado; uno marcado porque te necesita"></picture>
 
 Una tarjeta por cada asistente trabajando: cuál es, en qué proyecto y rama, desde cuándo y qué ha cambiado hasta
 ahora. El que se ha parado a preguntarte algo lo dice. Si no hay nadie trabajando, te enseña dónde y con qué
@@ -75,14 +75,14 @@ con un botón para llevarlo a su propia rama.
 
 ### Ver cuánto y cuándo trabajan tus asistentes
 
-<img src="docs/app-activity.png" alt="Actividad de los agentes: tiempo con agentes, máximo a la vez, sesiones y proyecto principal, horas por día apiladas por agente y un día hora a hora">
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/app-activity-dark.png"><img src="docs/screenshots/app-activity-light.png" alt="Actividad de los agentes: tiempo con agentes, máximo a la vez, sesiones y proyecto principal, horas por día apiladas por agente y un día hora a hora"></picture>
 
 La semana o el mes en cuatro cifras (tiempo con agentes, máximo a la vez, sesiones y proyecto principal), las horas
 por día de cada asistente y cualquier día hora a hora: quién trabajó cuándo y cuántos había a la vez.
 
 ### Tu historial de un vistazo, y cualquier día al detalle
 
-<img src="docs/app-heatmap.png" alt="Un año de commits en una cuadrícula, la racha actual y el día con más commits, y un día abierto: sus cifras, los commits hora a hora, un carril por proyecto con sus commits y sus sesiones de IA, y los commits de cada proyecto">
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/app-heatmap-dark.png"><img src="docs/screenshots/app-heatmap-light.png" alt="Un año de commits en una cuadrícula, la racha actual y el día con más commits, y un día abierto: sus cifras, los commits hora a hora, un carril por proyecto con sus commits y sus sesiones de IA, y los commits de cada proyecto"></picture>
 
 Un año de trabajo en una cuadrícula de cuadraditos, tu racha actual y tu día con más trabajo. Pulsa cualquier
 cuadradito para abrir ese día: cuánto se guardó y a qué horas, un carril por proyecto con sus commits y los
@@ -90,7 +90,7 @@ asistentes que trabajaron en él, y qué se guardó en cada uno.
 
 ### Todas las conversaciones de IA de tu ordenador
 
-<img src="docs/app-sessions.png" alt="Sesiones de IA: una tarjeta por agente trabajando ahora con su tarea, su último paso, su actividad en la última hora, los archivos que ha editado y los commits y cambios de su rama, y uno que te necesita">
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/app-sessions-dark.png"><img src="docs/screenshots/app-sessions-light.png" alt="Sesiones de IA: una tarjeta por agente trabajando ahora con su tarea, su último paso, su actividad en la última hora, los archivos que ha editado y los commits y cambios de su rama, y uno que te necesita"></picture>
 
 Asistentes en cualquier terminal, el chat de tu editor y las apps de IA de escritorio, encontrados solos. Una tarjeta
 por conversación: qué se le pidió, su último paso, cuánto ha trabajado en la última hora, los archivos que ha editado
@@ -115,6 +115,11 @@ Cada rama con su asistente, y sus cambios línea a línea como en GitHub: verde 
 los editores que tienes instalados, vuelve a lanzar el asistente, llévala a tu proyecto o quítala. Ramify nunca borra
 trabajo que no esté guardado o llevado al proyecto.
 
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/app-branches-dark.png"><img src="docs/screenshots/app-branches-light.png" alt="Árbol de ramas: main en violeta, cada rama del color de su asistente, y una rama abierta con sus cambios, sus commits, sus puertos y botones para abrirla en un editor, volver a lanzar el agente, mergearla o quitarla"></picture>
+
+La versión principal destaca en violeta en el árbol, en la lista y en el detalle. Con la sesión de GitHub iniciada,
+cada rama muestra además su pull request abierta.
+
 ### Llevar el trabajo a tu proyecto con un clic
 
 https://github.com/user-attachments/assets/70585f1f-0d82-400b-bede-42561499f0c9
@@ -124,14 +129,31 @@ cosa, una ventana te explica qué ha pasado, qué ficheros chocan y qué hacer. 
 
 ### Todas las ramas en una línea de tiempo
 
-<img src="docs/app-timeline.png" alt="Línea de tiempo: ramas activas, paradas y mergeadas, desde donde empezó cada una hasta donde entró en el proyecto">
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/app-timeline-dark.png"><img src="docs/screenshots/app-timeline-light.png" alt="Línea de tiempo: ramas activas, paradas y mergeadas, desde donde empezó cada una hasta donde entró en el proyecto"></picture>
 
 Una banda por rama, desde donde empezó hasta donde entró en el proyecto, del color del asistente que trabajó en ella.
 Las ramas terminadas y borradas siguen ahí, para que la historia quede completa.
 
+### Lanzar un asistente con un clic
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/app-new-agent-dark.png"><img src="docs/screenshots/app-new-agent-light.png" alt="Nuevo agente: el repositorio, los asistentes instalados en este equipo con sus logos, la tarea y la rama que toma su nombre"></picture>
+
+Elige el asistente por su logo (primero los que tienes instalados, el resto a un clic), di qué tiene que hacer y
+Ramify crea su rama y lo abre en tu terminal.
+
+### Ajustes que se ven de un vistazo
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/app-settings-dark.png"><img src="docs/screenshots/app-settings-light.png" alt="Ajustes, General: la terminal, el editor por defecto y cuánto guardar el historial de sesiones, cada uno como una fila de opciones con su logo"></picture>
+
+Los ajustes van en pestañas laterales: General, Agentes, Automatización, Avisos, GitHub y Sistema. La
+terminal, el editor y el asistente por defecto se eligen por su logo en vez de en una lista larga. El inicio de sesión
+con GitHub tiene su propia pestaña y está en la barra de estado, en cualquier momento después de la introducción.
+
+<picture><source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/app-settings-agents-dark.png"><img src="docs/screenshots/app-settings-agents-light.png" alt="Ajustes, Agentes: todos los asistentes compatibles con su logo oficial"></picture>
+
 ### Claro u oscuro, como tu sistema
 
-<img src="docs/app-control-light.png" alt="El centro de control con el tema claro">
+<img src="docs/screenshots/app-control-light.png" width="49%" alt="El centro de control con el tema claro"> <img src="docs/screenshots/app-control-dark.png" width="49%" alt="El centro de control con el tema oscuro">
 
 ## Palabras que vas a ver
 
