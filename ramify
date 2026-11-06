@@ -147,6 +147,10 @@ port_lock() {
   local i=0 holder
   mkdir -p "$ROOT"
   until (set -C; printf '%s\n' "$$" > "$PORT_LOCK") 2>/dev/null; do
+    # A folder is the lock of a ramify up to 0.8, with no pid in it: taken over as those did, once a minute old.
+    if [ -d "$PORT_LOCK" ] && [ -n "$(find "$PORT_LOCK" -maxdepth 0 -mmin +1 2>/dev/null)" ] && rmdir "$PORT_LOCK" 2>/dev/null; then
+      continue
+    fi
     # Its owner is no longer running (killed while holding it): take it over, judged by the pid, never by age. One
     # taker at a time (a noclobber file of its own), and only while the lock still names that owner.
     holder=$(lock_holder)

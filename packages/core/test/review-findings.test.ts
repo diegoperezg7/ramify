@@ -99,6 +99,17 @@ describe('CLI (ramify)', { skip: process.platform === 'win32' }, () => {
     assert.equal(existsSync(join(T, 'wts', name, '.claims', 'worktree-bad..name')), false)
   })
 
+  /** PATH with a mkdir that never says the folder already exists: the worst case of uutils mkdir, the default on
+   * Ubuntu 26.04, which can report success to two callers racing for one name. */
+  function looseMkdirPath() {
+    const bin = join(T, 'loose-mkdir')
+    if (!existsSync(bin)) {
+      mkdirSync(bin)
+      writeFileSync(join(bin, 'mkdir'), '#!/bin/sh\nexec /bin/mkdir -p "$@"\n', { mode: 0o755 })
+    }
+    return `${bin}:${process.env.PATH}`
+  }
+
   /** Four `ramify new` started at once in a fresh root: the port each one got. */
   async function portsOfFourAtOnce(root: string, env: NodeJS.ProcessEnv = {}) {
     const r = repo()
@@ -116,12 +127,7 @@ describe('CLI (ramify)', { skip: process.platform === 'win32' }, () => {
   })
 
   it('worktrees made at the same time get different ports where mkdir tells two callers it made the same folder', async () => {
-    // uutils mkdir, the default on Ubuntu 26.04, can report success to two callers racing for one name. Its worst case:
-    // it never says the folder already exists.
-    const bin = join(T, 'loose-mkdir')
-    mkdirSync(bin)
-    writeFileSync(join(bin, 'mkdir'), '#!/bin/sh\nexec /bin/mkdir -p "$@"\n', { mode: 0o755 })
-    const ports = await portsOfFourAtOnce(join(T, 'wts-ports-loose'), { PATH: `${bin}:${process.env.PATH}` })
+    const ports = await portsOfFourAtOnce(join(T, 'wts-ports-loose'), { PATH: looseMkdirPath() })
     assert.equal(new Set(ports).size, 4, ports.join(' '))
   })
 
@@ -151,6 +157,19 @@ describe('CLI (ramify)', { skip: process.platform === 'win32' }, () => {
     assert.equal(existsSync(join(root, r.split('/').pop()!, 'feat-l')), false)
     rmSync(lock)
     assert.equal(await exited, 0)
+  })
+
+  it('a port lock folder an older ramify left more than a minute ago does not stop ramify new', () => {
+    const r = repo()
+    const root = join(T, 'wts-lock-folder')
+    const lock = join(root, '.port-lock')
+    mkdirSync(lock, { recursive: true })
+    const twoMinutesAgo = new Date(Date.now() - 120_000)
+    utimesSync(lock, twoMinutesAgo, twoMinutesAgo)
+    // Waiting on it lasts 30 s before giving up; a take-over ends in well under 10.
+    const res = spawnSync('bash', [BIN, 'new', 'feat-o', '--no-launch'], { cwd: r, encoding: 'utf8', timeout: 10_000, env: { ...process.env, RAMIFY_ROOT: root } })
+    assert.equal(res.status, 0, res.stderr)
+    assert.match(readFileSync(join(root, r.split('/').pop()!, 'feat-o', '.worktree.env'), 'utf8'), /^PORT=\d+$/m)
   })
 
   it('ramify move leaves the changes in place when it cannot create the worktree', () => {
