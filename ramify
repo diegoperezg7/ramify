@@ -1014,7 +1014,7 @@ cmd_hook() {
         ("This file is on " + $b + ", the shared branch. Call the EnterWorktree tool first with a short conventional name for "
         + "the task (feat-..., fix-...): you get a branch and folder of your own, then make the change there. "
         + "(To allow edits on " + $b + " in this repository the user runs: git config ramify.allowMain true)")}}' ;;
-    *) die "usage: ramify hook create|remove|session-start|guard" ;;
+    *) die "usage: ramify hook create|remove|session-start|guard|nudge" ;;
   esac
 }
 

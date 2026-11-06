@@ -166,6 +166,7 @@ check "hook create prints the worktree path" '[ "$path" = "$W/worktree-bold-oak"
 check "hook create records claude as agent" 'grep -qx "WT_AGENT=claude" "$path/.worktree.env"'
 printf '{"worktree_path":"%s"}' "$path" | "$AW" hook remove 2>/dev/null
 check "hook remove deletes it" '[ ! -d "$path" ]'
+check "an unknown hook lists every one, nudge included" '! "$AW" hook nope </dev/null 2>"$T/hook-usage.err" && grep -q "create|remove|session-start|guard|nudge" "$T/hook-usage.err"'
 
 echo "install"
 mkdir -p "$HOME/.claude" "$HOME/.codex"
