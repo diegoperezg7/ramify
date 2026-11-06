@@ -24,15 +24,20 @@ export const branchKey = (repo: string, branch: string) => `${repo}#${branch}`
 /**
  * Why an open session needs the user: it waits for an answer, it works on the same branch as another agent at work,
  * it works straight on the shared branch, or it stopped on a branch that is ready to merge.
+ * Not every agent reports its state: Codex, Gemini and the rest come without one, and they are the agents with no
+ * hooks to stop them. A session without a state counts as maybe at work, as `isActive` counts it: it can share a
+ * branch or work on the shared one. It never waits (only a session that says so does) and never stopped on a ready
+ * branch (only a reported pause or question says it stopped).
  */
 export function sessionAttention(s: AgentSession, open: AgentSession[], ready: Set<string>): AttentionReason[] {
   if (s.end !== null || s.inferred || s.via === 'app') return []
   const out = new Set<AttentionReason>()
   if (s.state === 'waiting') out.add('waiting')
-  const busy = s.state === 'working' || s.state === 'waiting'
-  if (busy && s.repo && s.branch && open.some((o) => o !== s && o.end === null && !o.inferred && o.repo === s.repo && o.branch === s.branch && (o.state === 'working' || o.state === 'waiting'))) out.add('shared')
-  if (s.state === 'working' && s.repo && s.branch && SHARED_BRANCH.test(s.branch)) out.add('main')
-  if (s.state !== 'working' && s.repo && s.branch && ready.has(branchKey(s.repo, s.branch))) out.add('ready')
+  // Not paused at its prompt: working, waiting on the user mid-task, or not saying.
+  const busy = (x: AgentSession) => x.state !== 'idle'
+  if (busy(s) && s.repo && s.branch && open.some((o) => o !== s && o.end === null && !o.inferred && o.repo === s.repo && o.branch === s.branch && busy(o))) out.add('shared')
+  if ((s.state === 'working' || s.state === undefined) && s.repo && s.branch && SHARED_BRANCH.test(s.branch)) out.add('main')
+  if ((s.state === 'idle' || s.state === 'waiting') && s.repo && s.branch && ready.has(branchKey(s.repo, s.branch))) out.add('ready')
   return ORDER.filter((r) => out.has(r))
 }
 

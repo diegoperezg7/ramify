@@ -34,16 +34,38 @@ describe('a session that needs the user', () => {
     id: `s${++n}`, agent: 'claude', host: 'tmux', via: 'terminal', inferred: false, cwd: '/r', repo: '/r', branch: 'feat/x',
     github: null, start: 0, end: null, lastSeen: 0, state: 'working', ...over,
   })
+  // As the scan sees Codex, Gemini and the rest: without a state, which only some agents report.
+  const quiet = (over: Partial<AgentSession> = {}) => s({ agent: 'codex', state: undefined, ...over })
 
   it('waits for an answer', () => {
     const a = s({ state: 'waiting' })
     assert.deepEqual(sessionAttention(a, [a], new Set()), ['waiting'])
   })
   it('works on the same branch as another agent at work, but not beside a paused one', () => {
-    const a = s(), b = s({ agent: 'codex' }), idle = s({ state: 'idle' })
+    const a = s(), b = quiet(), idle = s({ state: 'idle' })
     assert.deepEqual(sessionAttention(a, [a, b], new Set()), ['shared'])
+    assert.deepEqual(sessionAttention(b, [a, b], new Set()), ['shared'])
     assert.deepEqual(sessionAttention(a, [a, idle], new Set()), [])
     assert.deepEqual(sessionAttention(idle, [a, idle], new Set()), [])
+  })
+  it('takes an agent that does not report its state as maybe at work, never as waiting', () => {
+    const onMain = quiet({ branch: 'main' })
+    assert.deepEqual(sessionAttention(onMain, [onMain], new Set()), ['main'])
+    const codex = quiet(), gemini = quiet({ agent: 'gemini' })
+    assert.deepEqual(sessionAttention(codex, [codex, gemini], new Set()), ['shared'])
+    assert.deepEqual(sessionAttention(gemini, [codex, gemini], new Set()), ['shared'])
+    const idle = s({ state: 'idle' })
+    assert.deepEqual(sessionAttention(codex, [codex, idle], new Set()), [], 'beside a paused one')
+    assert.deepEqual(sessionAttention(idle, [codex, idle], new Set()), [])
+    assert.equal(attentionCount([onMain], new Set()), 1)
+    assert.equal(attentionCount([codex, gemini], new Set()), 2)
+    assert.equal(attentionCount([codex, idle], new Set()), 0)
+  })
+  it('does not take an agent that does not report its state as stopped on a ready branch', () => {
+    const ready = new Set([branchKey('/r', 'feat/x')])
+    const codex = quiet()
+    assert.deepEqual(sessionAttention(codex, [codex], ready), [])
+    assert.equal(attentionCount([codex], ready), 1, 'the ready branch still counts, once')
   })
   it('works straight on the shared branch', () => {
     const a = s({ branch: 'main' })
