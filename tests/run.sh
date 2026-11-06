@@ -254,6 +254,54 @@ w=$(cd "$p2" && "$AW" who)
 check "who without paths checks the files this worktree changes" 'printf "%s" "$w" | grep -q "a.txt"'
 git -C "$p1" checkout -q -- a.txt; rm -rf "$p1/src"; git -C "$p2" checkout -q -- a.txt
 
+echo "ready to merge"
+cd "$T/demo" || exit 1
+mark() { sed -n "s/^$2=//p" "$1/.worktree.env"; }
+printf 'one\ntwo\nthree\nfour\nfive\n' > q.txt && git add q.txt && git commit -qm q
+ra=$("$AW" new feat/ready-a --no-launch --no-setup 2>/dev/null)
+rb=$("$AW" new feat/ready-b --no-launch --no-setup 2>/dev/null)
+check "ready refuses the main checkout" '! "$AW" ready 2>/dev/null'
+check "ready refuses a branch without commits" '! (cd "$ra" && "$AW" ready 2>/dev/null) && [ -z "$(mark "$ra" WT_READY)" ]'
+printf 'one-a\ntwo\nthree\nfour\nfive\n' > "$ra/q.txt"
+check "ready refuses uncommitted changes and marks nothing" '! (cd "$ra" && "$AW" ready 2>/dev/null) && [ -z "$(mark "$ra" WT_READY)" ]'
+git -C "$ra" commit -qam "a: q"
+echo later > later.txt && git add later.txt && git commit -qm later
+(cd "$ra" && "$AW" ready >/dev/null 2>&1); c=$?
+check "ready brings the base in and marks the tip and the base (exit $c)" '[ "$c" = 0 ] && git -C "$ra" merge-base --is-ancestor main HEAD && [ "$(mark "$ra" WT_READY)" = "$(git -C "$ra" rev-parse HEAD)" ] && [ "$(mark "$ra" WT_READY_BASE)" = "$(git rev-parse main)" ]'
+check "ls shows it ready and behind nothing" '"$AW" ls 2>/dev/null | grep "^feat-ready-a .* ready " >/dev/null && "$AW" ls --json | jq -e ".[] | select(.branch == \"feat/ready-a\") | .ready == \"ready\" and .behind == 0" >/dev/null'
+check "ls --json: the main checkout has no mark and is behind nothing" '"$AW" ls --json | jq -e ".[] | select(.main) | .ready == null and .behind == 0" >/dev/null'
+printf 'one\ntwo\nthree\nfour\nfive-b\n' > "$rb/q.txt" && git -C "$rb" commit -qam "b: q"
+out=$(cd "$rb" && "$AW" ready 2>/dev/null); c=$?
+check "an overlap with a branch already ready exits 1 and marks nothing" '[ "$c" = 1 ] && printf "%s" "$out" | grep -q "^feat/ready-a.*q.txt$" && [ -z "$(mark "$rb" WT_READY)" ]'
+# A branch that is not marked ready changes the same file: plain who sees it, ready does not wait for it.
+echo mine > "$p1/q.txt"
+check "who still sees a branch not marked ready" '! (cd "$rb" && "$AW" who q.txt >/dev/null 2>&1)'
+git merge -q --no-ff --no-edit feat/ready-a
+check "a merged branch leaves the queue" '"$AW" ls --json | jq -e ".[] | select(.branch == \"feat/ready-a\") | .ready == null" >/dev/null'
+(cd "$rb" && "$AW" ready >/dev/null 2>&1); c=$?
+check "once the other is merged ready passes, branches not marked ready do not count (exit $c)" '[ "$c" = 0 ] && [ "$(mark "$rb" WT_READY)" = "$(git -C "$rb" rev-parse HEAD)" ]'
+rm -f "$p1/q.txt"
+rc=$("$AW" new feat/ready-c --no-launch --no-setup 2>/dev/null)
+echo c > "$rc/c.txt" && git -C "$rc" add c.txt && git -C "$rc" commit -qm c
+git merge -q --no-ff --no-edit feat/ready-c
+check "after another branch is merged the mark goes stale and behind counts what it lacks" '"$AW" ls --json | jq -e ".[] | select(.branch == \"feat/ready-b\") | .ready == \"stale\" and .behind == 2" >/dev/null && "$AW" ls 2>/dev/null | grep "^feat-ready-b .* stale " >/dev/null'
+(cd "$rb" && "$AW" ready >/dev/null 2>&1)
+rd=$("$AW" new feat/ready-d --no-launch --no-setup 2>/dev/null)
+printf 'one-a\ntwo-d\nthree\nfour\nfive\n' > "$rd/q.txt" && git -C "$rd" commit -qam "d: q"
+printf 'one-a\ntwo-main\nthree\nfour\nfive\n' > q.txt && git commit -qam "main: q"
+hd=$(git -C "$rd" rev-parse HEAD)
+out=$(cd "$rd" && "$AW" ready 2>/dev/null); c=$?
+check "a conflict with the base exits 2 and names the files" '[ "$c" = 2 ] && [ "$out" = q.txt ]'
+check "after a conflict: same HEAD, clean tree, no MERGE_HEAD, no mark" '[ "$(git -C "$rd" rev-parse HEAD)" = "$hd" ] && [ -z "$(git -C "$rd" status --porcelain)" ] && ! git -C "$rd" rev-parse -q --verify MERGE_HEAD >/dev/null && [ -z "$(mark "$rd" WT_READY)" ]'
+# .worktree.env can come with the repository: a mark that is not a commit id is no mark.
+printf 'WT_READY=%s\nWT_READY_BASE=main\n' "$hd" >> "$rd/.worktree.env"
+check "ls ignores a mark that is not a commit id" '"$AW" ls --json | jq -e ".[] | select(.branch == \"feat/ready-d\") | .ready == null" >/dev/null'
+git init -q -b main "$T/solo" && git -C "$T/solo" commit -q --allow-empty -m init
+so=$(cd "$T/solo" && "$AW" new feat/solo --no-launch --no-setup 2>/dev/null)
+echo s > "$so/s.txt" && git -C "$so" add s.txt && git -C "$so" commit -qm s
+check "ready works without a remote" '(cd "$so" && "$AW" ready >/dev/null 2>&1) && [ "$(mark "$so" WT_READY)" = "$(git -C "$so" rev-parse HEAD)" ]'
+cd "$T/demo" || exit 1
+
 echo "move work off main"
 cd "$T/demo" || exit 1
 echo "half done" > wip.txt; echo changed >> a.txt
