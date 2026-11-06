@@ -239,6 +239,54 @@ describe('web UI', () => {
     git(REPO, 'branch', '-qD', 'spike/search')
   })
 
+  it('editor host: a branch merged into the base joins the trunk, ending in its colour', async () => {
+    git(REPO, 'checkout', '-qb', 'spike/join')
+    writeFileSync(join(REPO, 'join.ts'), 'export const j = 1\n')
+    git(REPO, 'add', '.')
+    git(REPO, 'commit', '-qm', 'Join spike')
+    git(REPO, 'checkout', '-q', 'main')
+    const handlers = createHandlers({
+      engine: new Engine({ bin: BIN, env }),
+      capabilities: { host: 'vscode', multiRepo: false, create: true, settings: false, github: false, timeline: true, ides: IDES },
+      repo: () => REPO,
+      runInTerminal: () => {},
+    })
+    for (const scheme of ['light', 'dark'] as const) {
+      const page = await browser.newPage({ locale: 'en-US', colorScheme: scheme, viewport: { width: 1280, height: 760 } })
+      const errors: string[] = []
+      page.on('pageerror', (e) => errors.push(String(e)))
+      await page.exposeFunction('__host', (method: string, args: unknown[]) =>
+        dispatch(handlers, method, args).then((result) => ({ result }), (e: Error) => ({ error: e.message })))
+      await page.addInitScript((theme: string) => {
+        const w = window as unknown as { acquireVsCodeApi: () => unknown; __host: (m: string, a: unknown[]) => Promise<{ result?: unknown; error?: string }> }
+        w.acquireVsCodeApi = () => ({
+          postMessage: (msg: { id: number; method: string; args: unknown[] }) => {
+            void w.__host(msg.method, msg.args).then((r) => window.postMessage({ id: msg.id, ...r }, '*'))
+          },
+        })
+        document.addEventListener('DOMContentLoaded', () => document.body.classList.add(`vscode-${theme}`))
+      }, scheme)
+      await page.goto(`http://127.0.0.1:${WEB}/index.html`)
+      const laneOf = (subject: string) => page.$eval(`.graph-row:has-text("${subject}")`, (el) => getComputedStyle(el).getPropertyValue('--c').trim())
+      const accent = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim())
+      await page.waitForSelector('.graph-row:has-text("Join spike") .ref-branch:has-text("spike/join")')
+      assert.notEqual(await laneOf('Join spike'), accent)
+      // Merged outside the page, as Ramify's merge does it (--no-ff): the next refresh animates the lane into the trunk.
+      git(REPO, 'merge', '-q', '--no-ff', '--no-edit', 'spike/join')
+      await page.waitForSelector('.node.is-joining')
+      assert.ok(await page.$('.edge.is-joining'))
+      if (process.env.RAMIFY_E2E_SHOTS) await page.screenshot({ path: join(process.env.RAMIFY_E2E_SHOTS, `join-mid-${scheme}.png`) })
+      // It ends: nothing left animating, and the merged branch's commit is on the trunk, in the base's colour.
+      await page.waitForSelector('.is-joining', { state: 'detached' })
+      assert.equal(await laneOf('Join spike'), accent)
+      if (process.env.RAMIFY_E2E_SHOTS) await page.screenshot({ path: join(process.env.RAMIFY_E2E_SHOTS, `join-end-${scheme}.png`) })
+      assert.deepEqual(errors, [])
+      await page.close()
+      git(REPO, 'reset', '-q', '--keep', 'HEAD~1')
+    }
+    git(REPO, 'branch', '-qD', 'spike/join')
+  })
+
   it('editor side bar: the branch tree in a narrow column, a commit opens in the dashboard', async () => {
     const asked: unknown[][] = []
     const handlers = {

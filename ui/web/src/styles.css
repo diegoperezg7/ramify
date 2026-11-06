@@ -433,6 +433,12 @@ html, body, #root { height: 100%; }
 .graph-row.is-new { animation: row-in 0.45s ease-out both; }
 .wt-card { animation: card-in 0.35s ease-out both; }
 @keyframes draw { to { stroke-dashoffset: 0; } }
+/* A merged branch joins the trunk: its lane goes from the branch's colour (--from) to its own, the base's. */
+.edge.is-joining { animation-name: join-stroke; animation-timing-function: ease-out; animation-fill-mode: both; }
+.node.is-joining { animation-name: join-fill; animation-timing-function: ease-out; animation-fill-mode: both; }
+.node.is-merge.is-joining { animation-name: join-stroke; }
+@keyframes join-stroke { from { stroke: var(--from); } }
+@keyframes join-fill { from { fill: var(--from); } }
 @keyframes pop { from { transform: scale(0); } to { transform: scale(1); } }
 @keyframes row-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
 @keyframes card-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }

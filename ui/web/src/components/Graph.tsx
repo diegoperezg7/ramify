@@ -1,5 +1,5 @@
 import { Cloud, Tag } from 'lucide-react'
-import { useEffect, useMemo, useRef, type CSSProperties } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { agentVar } from '../agents'
 import { layout } from '../graph'
 import { relTime } from '../i18n'
@@ -11,6 +11,10 @@ const PAD = 18
 // The graph column is shared by the svg, the rows and the "Graph" header label:
 // it must never be narrower than that label, even with a single lane.
 const GRAPH_MIN = 76
+// A merged branch's lane turns into the trunk one step at a time, from the merge down to where it forked.
+const JOIN_MS = 550
+const JOIN_STEP = 110
+const JOIN_STEPS_MAX = 12
 
 /** `onPick`: what a click on a commit does instead of opening it beside the graph (the editor's side bar opens the dashboard). */
 export function Graph({ onPick }: { onPick?: (hash: string) => void } = {}) {
@@ -41,6 +45,41 @@ export function Graph({ onPick }: { onPick?: (hash: string) => void } = {}) {
     const w = byBranch.get(owner)
     return w ? agentVar(w.agent) : 'var(--lane-branch)'
   }
+  // A branch merged into the base: its commits and lines went from a branch's colour to the base's between two
+  // refreshes. Only how they look changes, for a moment; layout and data stay as they came.
+  // A layout effect, so the trunk colour never shows for a frame before the animation starts.
+  const lastColor = useRef<Map<string, string> | null>(null)
+  const [joining, setJoining] = useState<Map<string, { from: string; step: number }>>(new Map())
+  const joinTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  useLayoutEffect(() => {
+    const before = lastColor.current
+    const now = new Map<string, string>()
+    for (const { commit } of g.rows) now.set(commit.hash, colorOf(commit.owner))
+    for (const e of g.edges) now.set(e.id, colorOf(e.owner))
+    lastColor.current = now
+    if (!before) return
+    const found: { id: string; from: string; row: number }[] = []
+    g.rows.forEach(({ commit }, r) => {
+      const was = before.get(commit.hash)
+      if (!commit.owner && was && was !== now.get(commit.hash)) found.push({ id: commit.hash, from: was, row: r })
+    })
+    for (const e of g.edges) {
+      const was = before.get(e.id)
+      if (!e.owner && was && was !== now.get(e.id)) found.push({ id: e.id, from: was, row: e.row })
+    }
+    if (!found.length) return
+    const top = Math.min(...found.map((f) => f.row))
+    setJoining(new Map(found.map((f) => [f.id, { from: f.from, step: Math.min(f.row - top, JOIN_STEPS_MAX) }])))
+    // Not tied to this effect: a refresh in the middle must not leave the animation on for good.
+    clearTimeout(joinTimer.current)
+    joinTimer.current = setTimeout(() => setJoining(new Map()), JOIN_MS + JOIN_STEPS_MAX * JOIN_STEP + 100)
+  }, [g]) // colours follow `g`: a change in the worktree list alone merges nothing
+  useEffect(() => () => clearTimeout(joinTimer.current), [])
+  const joinStyle = (id: string) => {
+    const j = joining.get(id)
+    return j ? { ['--from' as string]: j.from, animationDelay: `${j.step * JOIN_STEP}ms`, animationDuration: `${JOIN_MS}ms` } : undefined
+  }
+
   const dimmed = (owner: string | null) => selectedBranch !== null && owner !== null && owner !== selectedBranch
   const x = (col: number) => PAD + col * LANE
   const y = (row: number) => row * ROW + ROW / 2
@@ -89,12 +128,13 @@ export function Graph({ onPick }: { onPick?: (hash: string) => void } = {}) {
                 ? `M${x1} ${y1} L${x2} ${y2}`
                 : `M${x1} ${y1} C${x1} ${y1 + ROW * 0.55} ${x2} ${y2 - ROW * 0.55} ${x2} ${y2}`
               const isNew = fresh(e.id)
+              const join = joinStyle(e.id)
               return (
                 <path key={e.id} d={d} fill="none" stroke={colorOf(e.owner)} strokeWidth={3}
                   strokeLinecap="round" opacity={dimmed(e.owner) ? 0.2 : 1}
-                  className={`edge${isNew ? ' is-new' : ''}${e.last ? ' is-last' : ''}`}
+                  className={`edge${isNew ? ' is-new' : ''}${e.last ? ' is-last' : ''}${join ? ' is-joining' : ''}`}
                   pathLength={isNew && !e.last ? 1 : undefined}
-                  style={{ d: `path("${d}")`, animationDelay: delay(e.row) } as CSSProperties} />
+                  style={{ d: `path("${d}")`, animationDelay: delay(e.row), ...join } as CSSProperties} />
               )
             })}
             {g.rows.filter(({ commit }) => liveTips.has(commit.hash)).map(({ commit, col }) => {
@@ -109,8 +149,8 @@ export function Graph({ onPick }: { onPick?: (hash: string) => void } = {}) {
               const merge = commit.parents.length > 1
               return (
                 <circle key={commit.hash} cx={x(col)} cy={y(r)} r={merge ? 4.5 : 6}
-                  className={`node${fresh(commit.hash) ? ' is-new' : ''}`}
-                  style={{ cx: x(col), cy: y(r), animationDelay: delay(r) } as CSSProperties}
+                  className={`node${merge ? ' is-merge' : ''}${fresh(commit.hash) ? ' is-new' : ''}${joining.has(commit.hash) ? ' is-joining' : ''}`}
+                  style={{ cx: x(col), cy: y(r), animationDelay: delay(r), ...joinStyle(commit.hash) } as CSSProperties}
                   fill={merge ? 'var(--bg)' : colorOf(commit.owner)} stroke={merge ? colorOf(commit.owner) : 'var(--bg)'}
                   strokeWidth={merge ? 2.5 : 2} opacity={dimmed(commit.owner) ? 0.25 : 1} />
               )
