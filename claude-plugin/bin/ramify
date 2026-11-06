@@ -126,12 +126,15 @@ find_wt() {
 
 alloc_port() {
   local used p
-  used=$(cat "$ROOT"/*/*/.worktree.env 2>/dev/null | sed -n 's/^PORT=//p' || true)
+  # The ports in use, one per line between newlines. Looked up in bash, not with printf | grep -q: under pipefail a
+  # grep that stops at the first match can leave printf writing to a closed pipe, and a taken port then read as free.
+  used=$'\n'$(cat "$ROOT"/*/*/.worktree.env 2>/dev/null | sed -n 's/^PORT=//p' || true)$'\n'
   p=$PORT_MIN
   while [ "$p" -le "$PORT_MAX" ]; do
-    if ! printf '%s\n' "$used" | grep -qx "$p" && ! port_busy "$p"; then
-      printf '%s\n' "$p"; return
-    fi
+    case "$used" in
+      *$'\n'"$p"$'\n'*) ;;
+      *) port_busy "$p" || { printf '%s\n' "$p"; return; } ;;
+    esac
     p=$((p + PORT_BLOCK))
   done
   die "no free port block between $PORT_MIN and $PORT_MAX"
