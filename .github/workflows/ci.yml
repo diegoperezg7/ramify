@@ -33,6 +33,37 @@ jobs:
       - run: npm ci
       - name: core tests
         run: npm run test:core
+      # TEMPORARY, branch fix/port-lock only: evidence for the port lock fix on this runner. Remove before merging.
+      - name: port lock under load (temporary)
+        run: |
+          export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t NO_COLOR=1
+          mkdir --version | head -1
+          d=$(mktemp -d); multi=0
+          for r in $(seq 300); do
+            rm -rf "$d/l" "$d/ok"; mkdir -p "$d/ok"
+            for k in 1 2 3 4; do (mkdir "$d/l" 2>/dev/null && : > "$d/ok/$k") & done; wait
+            [ "$(ls "$d/ok" | wc -l)" -le 1 ] || multi=$((multi + 1))
+          done
+          echo "plain mkdir, 4 at once: rounds with more than one owner: $multi/300"
+          git fetch -q --depth=1 origin main && git show FETCH_HEAD:ramify > "$d/ramify-main"
+          race() {  # four ramify new at once, 20 rounds: how many rounds hand out one port twice
+            local bin=$1 dups=0 i r b ports
+            for i in $(seq 20); do
+              r="$d/race/r$i"; mkdir -p "$r"; git -C "$r" init -q -b main; git -C "$r" commit -q --allow-empty -m init
+              for b in p1 p2 p3 p4; do (cd "$r" && RAMIFY_ROOT="$d/race/root$i" bash "$bin" new "$b" --no-launch >/dev/null 2>&1) & done; wait
+              ports=$(for b in p1 p2 p3 p4; do sed -n 's/^PORT=//p' "$d/race/root$i/r$i/$b/.worktree.env" 2>/dev/null || echo missing; done | sort | uniq -d)
+              [ -z "$ports" ] || dups=$((dups + 1))
+            done
+            rm -rf "$d/race"; echo "$dups"
+          }
+          echo "ramify of main: rounds with a port twice: $(race "$d/ramify-main")/20"
+          echo "ramify of this branch: rounds with a port twice: $(race "$PWD/ramify")/20"
+          cd packages/core; fails=0
+          for i in $(seq 25); do
+            npm test > "$d/out.txt" 2>&1 || { fails=$((fails + 1)); echo "core suite run $i failed:"; grep -E '^✖ |AssertionError' "$d/out.txt" | head -8; }
+          done
+          echo "core suite: $fails/25 runs failed"
+          [ "$fails" -eq 0 ]
       - name: typecheck
         run: npm run typecheck
       - name: web build is up to date
