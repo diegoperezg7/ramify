@@ -12,9 +12,10 @@ const REPO = `${T}/shop`
 const env = { RAMIFY_ROOT: `${T}/wts`, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.com', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.com' }
 const git = (cwd: string, ...a: string[]) => execFileSync('git', ['-C', cwd, ...a], { env: { ...process.env, ...env } }).toString()
 // The ramify script runs through Git Bash on Windows, as the engine does.
-const rw = (...a: string[]) => (process.platform === 'win32'
-  ? execFileSync(gitBash(), [BIN.replace(/\\/g, '/'), ...a], { cwd: REPO, env: { ...process.env, ...env, NO_COLOR: '1' } })
-  : execFileSync(BIN, a, { cwd: REPO, env: { ...process.env, ...env, NO_COLOR: '1' } })).toString().trim().split('\n').pop() ?? ''
+const ramifyIn = (cwd: string, ...a: string[]) => (process.platform === 'win32'
+  ? execFileSync(gitBash(), [BIN.replace(/\\/g, '/'), ...a], { cwd, env: { ...process.env, ...env, NO_COLOR: '1' } })
+  : execFileSync(BIN, a, { cwd, env: { ...process.env, ...env, NO_COLOR: '1' } })).toString()
+const rw = (...a: string[]) => ramifyIn(REPO, ...a).trim().split('\n').pop() ?? ''
 const engine = new Engine({ bin: BIN, env })
 let a = ''
 let b = ''
@@ -76,6 +77,28 @@ describe('control center', () => {
     const by = Object.fromEntries((await engine.health(REPO)).branches.map((x) => [x.branch, x]))
     assert.equal(by['feat/a'].behind, 0)
     await assert.rejects(engine.updateFromBase(REPO, b), /commit or stash/)
+  })
+
+  it('health carries ready and behind from the list of worktrees', async () => {
+    // feat/a has the base since the test above: its agent marks it ready.
+    ramifyIn(a, 'ready')
+    let list = await engine.worktrees(REPO)
+    assert.equal(list.find((w) => w.branch === 'feat/a')?.ready, 'ready')
+    assert.equal(list.find((w) => w.branch === 'feat/a')?.behind, 0)
+    assert.equal(list.find((w) => w.main)?.ready, null)
+    assert.equal(list.find((w) => w.main)?.behind, 0)
+    assert.equal((await engine.health(REPO)).branches.find((x) => x.branch === 'feat/a')?.ready, 'ready')
+    // The base moves on: the mark goes stale by itself and behind counts the new commit.
+    writeFileSync(join(REPO, 'late.ts'), 'z\n')
+    git(REPO, 'add', '.')
+    git(REPO, 'commit', '-qm', 'chore: late')
+    list = await engine.worktrees(REPO)
+    assert.equal(list.find((w) => w.branch === 'feat/a')?.ready, 'stale')
+    assert.equal(list.find((w) => w.branch === 'feat/a')?.behind, 1)
+    const by = Object.fromEntries((await engine.health(REPO)).branches.map((x) => [x.branch, x]))
+    assert.equal(by['feat/a'].ready, 'stale')
+    assert.equal(by['feat/b'].ready, null)
+    assert.equal(by['fix/done'].ready, null)
   })
 
   it('does not open a pull request without a GitHub remote', async () => {

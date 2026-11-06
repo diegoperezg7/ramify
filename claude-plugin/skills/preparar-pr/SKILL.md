@@ -21,8 +21,16 @@ Run this from the branch's own folder (a ramify worktree), never from the main c
    Stop and say why if the branch is the base branch, or there are no commits ahead of the base.
 2. Uncommitted changes: show them and ask whether to commit them. Commit with a conventional message
    (`feat: …`, `fix: …`, `docs: …`, `refactor: …`, `test: …`, `chore: …`; imperative, under 72 characters).
-3. Behind the base: `git fetch origin "$BASE" && git merge --no-edit "origin/$BASE"`. On a conflict, stop, run
-   `git merge --abort` and tell the user which files collide.
+3. Up to date with the base and no clash with the other finished branches:
+
+   ```bash
+   NO_COLOR=1 "${CLAUDE_PLUGIN_ROOT}"/bin/ramify ready
+   ```
+
+   It fetches and merges the base and marks the branch ready to merge. Exit 1: another branch marked ready changes
+   the same files (listed): stop and tell the user which branch and files; run it again once that one is merged.
+   Exit 2: the base conflicts with this branch (the merge was undone; files listed): stop and tell the user which
+   files collide.
 4. Size: if the diff is over ~400 changed lines, say so and suggest how to split it before going on (ask; do not split on your own).
 5. Push and open the draft:
 

@@ -208,6 +208,26 @@ describe('engine', () => {
     rmSync(T2, { recursive: true, force: true })
   })
 
+  it('a merge while another git process holds the index says so, and leaves the other one alone', async () => {
+    const T2 = normPath(realpathSync(mkdtempSync(join(tmpdir(), 'ramify-lock-'))))
+    const own = new Engine({ bin: BIN, env: { ...env, RAMIFY_ROOT: P(T2, 'wts') } })
+    const R = P(T2, 'locked')
+    sh(T2, 'init', '-q', '-b', 'main', R)
+    writeFileSync(join(R, 'a.txt'), 'a\n'); sh(R, 'add', '.'); sh(R, 'commit', '-qm', 'init')
+    const wt = (await own.create(R, { branch: 'feat/a', agent: '' })).path
+    writeFileSync(join(wt, 'b.txt'), 'b\n'); sh(wt, 'add', '.'); sh(wt, 'commit', '-qm', 'b')
+    const head = sh(R, 'rev-parse', 'HEAD')
+    // What git leaves while it works: another merge from a second window, or ramify ui.
+    writeFileSync(join(R, '.git', 'index.lock'), '')
+    await assert.rejects(own.merge(R, wt), (e: Error) => e instanceof EngineError && /another merge is running in .*: wait for it/.test(e.message) && !/fatal/.test(e.message))
+    assert.equal(sh(R, 'rev-parse', 'HEAD'), head)
+    assert.equal(existsSync(join(R, '.git', 'index.lock')), true, 'the other process keeps its lock')
+    rmSync(join(R, '.git', 'index.lock'))
+    await own.merge(R, wt)
+    assert.match(sh(R, 'log', '-1', '--format=%s'), /Merge branch 'feat\/a'/)
+    rmSync(T2, { recursive: true, force: true })
+  })
+
   it('refuses unknown paths and removes merged worktrees', async () => {
     await assert.rejects(engine.remove(REPO, '/etc', false), /unknown worktree/)
     await engine.remove(REPO, P(ROOT, 'shop', 'feat-x'), false)

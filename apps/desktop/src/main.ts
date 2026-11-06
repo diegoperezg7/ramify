@@ -429,6 +429,7 @@ async function careForBranches() {
     let health
     try { health = await engine.health(repo) } catch { continue }
     const name = repo.split('/').pop()
+    let baseTip: string | undefined
     // The base behind GitHub: new branches start from an old main, and a merge would land on it. Said once per state.
     if (config.settings.watchBranches && health.sync?.behind) {
       const s = health.sync
@@ -466,6 +467,12 @@ async function careForBranches() {
       if (!config.settings.watchBranches) continue
       if (b.behind >= 20) tell(`behind:${b.path}:${Math.floor(b.behind / 20)}`, es() ? `${b.branch} se queda atrás` : `${b.branch} is falling behind`,
         es() ? `${name}: ${b.behind} commits nuevos en ${health.base}. Tráelos antes de que crezca el conflicto.` : `${name}: ${b.behind} new commits in ${health.base}. Bring them in before the conflict grows.`, { repo, path: b.path })
+      // Marked ready by its agent (ramify ready), then the base moved: once per move of the base.
+      if (b.ready === 'stale' && b.behind > 0) {
+        baseTip ??= (await gitOut(['-C', repo, 'rev-parse', health.base]).catch(() => '')).trim()
+        tell(`stale:${b.path}:${baseTip}`, es() ? `${b.branch} ya no está lista` : `${b.branch} is no longer ready`,
+          es() ? `${name}: estaba lista, pero ${health.base} se ha movido. Su agente debe ejecutar ramify ready otra vez.` : `${name}: it was ready, but ${health.base} has moved. Its agent should run ramify ready again.`, { repo, path: b.path })
+      }
       for (const other of b.overlaps) {
         const pair = [b.branch, other].sort().join(' ↔ ')
         tell(`overlap:${repo}:${pair}`, es() ? 'Dos ramas tocan lo mismo' : 'Two branches touch the same files',
@@ -844,14 +851,22 @@ async function addPath(path: string): Promise<RepoInfo> {
 // Only a packaged app can replace itself; in development there is nothing to update.
 const updater = createUpdater({ enabled: () => app.isPackaged && config.settings.autoUpdate !== false, onChange: () => send({ event: 'update' }) })
 
+const shared = createHandlers({
+  engine,
+  // Only the editors installed on this machine, the chosen default first.
+  capabilities: () => ({ host: 'desktop', platform: process.platform, multiRepo: true, create: true, settings: true, github: true, sessions: true, timeline: true, control: true, setup: true, update: app.isPackaged, ides: installedIdes() }),
+  repo: knownRepo,
+  runInTerminal: (_name, cwd, command) => openInTerminal(config.settings.terminal, command, cwd),
+})
+
 const handlers = {
-  ...createHandlers({
-    engine,
-    // Only the editors installed on this machine, the chosen default first.
-    capabilities: () => ({ host: 'desktop', platform: process.platform, multiRepo: true, create: true, settings: true, github: true, sessions: true, timeline: true, control: true, setup: true, update: app.isPackaged, ides: installedIdes() }),
-    repo: knownRepo,
-    runInTerminal: (_name, cwd, command) => openInTerminal(config.settings.terminal, command, cwd),
-  }),
+  ...shared,
+  // A merge moves the base: the branches marked ready behind it go stale now. Said at once, not at the next pass.
+  merge: async (r: string, path: string) => {
+    const done = await (shared.merge as (r: string, path: string) => Promise<unknown>)(r, path)
+    void careForBranches()
+    return done
+  },
   repos: async (): Promise<RepoInfo[]> => {
     return Promise.all(presentRepos().map(async (r) => ({
       ...(await cachedInfo(r)),

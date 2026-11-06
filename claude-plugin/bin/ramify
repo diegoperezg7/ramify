@@ -36,6 +36,7 @@ ${B}Usage${N}
   ramify app                    open this repository in the desktop app
   ramify graph [-n N]           branch graph of every worktree
   ramify who [path...]          other worktrees changing these files (exit 1 if any)
+  ramify ready                  bring the base in, mark this branch ready to merge (1 overlap, 2 conflict)
   ramify path <name>            print a worktree path
   ramify rm <name> [--force]    remove a worktree (never deletes unmerged commits)
   ramify prune                  remove clean, merged worktrees
@@ -43,7 +44,7 @@ ${B}Usage${N}
   ramify uninstall [shell|instructions]  undo install shell / install instructions
   ramify run <agent> [args]     open an agent; from a main checkout it gets its own branch first
   ramify move <branch> [-a agent]  move the main checkout's uncommitted work to a branch of its own
-  ramify hook create|remove|session-start|guard   Claude Code hooks
+  ramify hook create|remove|session-start|guard|nudge   Claude Code hooks
 
 ${B}Agents${N} (-a)   claude, codex, gemini, copilot, cursor, opencode, aider, amp, or any command
 ${B}IDEs${N}   (-i)   xcode, cursor, code, zed, idea, or any macOS app name
@@ -433,7 +434,9 @@ cmd_who() {
       "worktree "*) cur=${line#worktree }; branch="" ;;
       "branch "*) branch=${line#branch refs/heads/} ;;
       "")
-        if [ -n "$cur" ] && [ -d "$cur" ] && [ "$(cd "$cur" && abspwd)" != "$here" ]; then
+        # WHO_QUEUE (the base tip, set by `ramify ready`): only the branches marked ready and still valid count.
+        if [ -n "$cur" ] && [ -d "$cur" ] && [ "$(cd "$cur" && abspwd)" != "$here" ] \
+          && { [ -z "${WHO_QUEUE:-}" ] || [ "$(ready_state "$cur" "$WHO_QUEUE")" = ready ]; }; then
           theirs=$(touched_files "$cur" "$base")
           if [ -n "$theirs" ]; then
             agent=$(env_get "$cur" WT_AGENT)
@@ -452,16 +455,87 @@ cmd_who() {
   [ "$hit" = 0 ] || return 1
 }
 
+# A commit id as git writes it (sha1 or sha256). .worktree.env can come from the repository itself: what it says
+# is checked before git or the JSON of `ls` sees it.
+is_oid() { [[ $1 =~ ^([0-9a-f]{40}|[0-9a-f]{64})$ ]]; }
+
+# Where a worktree stands in the merge queue against the base tip $2: "ready" while its HEAD is the commit
+# `ramify ready` checked and the base is still in it, "stale" once either moved, nothing when it was never marked or
+# its work is in the base already (merged). Worked out on every read: no one rewrites another worktree's env.
+ready_state() {
+  local at="$1" tip="$2" mark markbase head
+  mark=$(env_get "$at" WT_READY); markbase=$(env_get "$at" WT_READY_BASE)
+  is_oid "$mark" && is_oid "$markbase" && is_oid "$tip" || return 0
+  head=$(git -C "$at" rev-parse -q --verify HEAD 2>/dev/null) || return 0
+  ! git -C "$at" merge-base --is-ancestor HEAD "$tip" 2>/dev/null || return 0
+  # The base moved to commits the branch already has (it brought them in itself): still ready.
+  if [ "$head" = "$mark" ] && { [ "$tip" = "$markbase" ] || git -C "$at" merge-base --is-ancestor "$tip" HEAD 2>/dev/null; }; then
+    echo ready
+  else
+    echo stale
+  fi
+}
+
+# `ramify ready`: this worktree's branch is done and waits to be merged. It brings the base in, checks that no
+# branch already waiting (marked ready, mark still valid) changes the same files, and marks this one in its
+# .worktree.env: WT_READY (this commit) and WT_READY_BASE (the base tip it was checked against). The mark goes
+# stale by itself when either moves (`ramify ls`, READY); then run it again. Exit 1: uncommitted changes, no commits
+# or an overlap, nothing marked. Exit 2: the base conflicts with this branch; the merge is undone, the tree as it was.
+cmd_ready() {
+  local main here base tip branch out conflicted ahead
+  main=$(main_checkout "$PWD")
+  here=$(git rev-parse --show-toplevel 2>/dev/null) && here=$(cd "$here" && abspwd)
+  { [ -n "$here" ] && [ "$here" != "$main" ] && [ -f "$here/.worktree.env" ]; } \
+    || die "ramify ready runs in a worktree of its own, not in the main checkout"
+  base=$(default_branch "$main"); [ -n "$base" ] || die "no default branch (main, master...) to get ready against"
+  tip=$(git -C "$main" rev-parse -q --verify "$base^{commit}") || die "no local $base to get ready against"
+  branch=$(git -C "$here" branch --show-current); branch=${branch:-HEAD}
+  out=$(git -C "$here" status --porcelain)
+  [ -z "$out" ] || die "uncommitted changes, nothing was marked: commit (or stash) them first"$'\n'"$out"
+  [ "$(git -C "$here" rev-list --count "$tip..HEAD")" != 0 ] || die "no commits ahead of $base: nothing to merge, nothing was marked"
+  # The local base is what gets merged (the app merges there), but origin is fetched so a newer one there is said
+  # now: once it reaches the local base, this mark goes stale. No prompt for credentials: this may run unattended.
+  if git -C "$here" remote get-url origin >/dev/null 2>&1; then
+    if GIT_TERMINAL_PROMPT=0 git -C "$here" fetch --quiet origin "$base" 2>/dev/null; then
+      ahead=$(git -C "$here" rev-list --count "$tip..refs/remotes/origin/$base" 2>/dev/null || echo 0)
+      [ "$ahead" = 0 ] || log "${Y}origin/$base has $ahead commit(s) that $base does not have yet: once $base is updated, run ramify ready again${N}"
+    else
+      log "${Y}could not fetch $base from origin: checking against the local $base${N}"
+    fi
+  fi
+  # The commit read above, not the name: a base that moves meanwhile cannot slip in unchecked.
+  if ! out=$(git -C "$here" merge --no-edit -m "Merge branch '$base' into $branch" "$tip" 2>&1); then
+    conflicted=$(git -C "$here" diff --name-only --diff-filter=U)
+    git -C "$here" merge --abort 2>/dev/null || true
+    [ -n "$conflicted" ] || die "git merge $base failed, nothing was marked:"$'\n'"$out"
+    log "${R}ramify:${N} $base conflicts with $branch in these files. The merge was undone and nothing was marked:"
+    log "run git merge $base here, resolve them, commit, then ramify ready again."
+    printf '%s\n' "$conflicted"
+    exit 2
+  fi
+  if ! WHO_QUEUE=$tip cmd_who; then
+    log "${Y}branches marked ready before this one change the same files: nothing was marked.${N}"
+    log "Wait until they are merged (or agree with their agents or the user), then run ramify ready again."
+    exit 1
+  fi
+  env_set "$here" WT_READY "$(git -C "$here" rev-parse HEAD)"
+  env_set "$here" WT_READY_BASE "$tip"
+  log "${G}ready${N} $branch: up to date with $base, no overlap with the other branches marked ready"
+}
+
 cmd_ls() {
   local json=0 main base line cur="" branch="" dirty commits sync port agent name active procs c1 c2 first=1 run sess
+  local tip ready behind c3
   [ "${1:-}" = --json ] && json=1
   main=$(main_checkout "$PWD")
-  base=$(git -C "$main" branch --show-current)
+  # The base of `ramify who` and `ramify ready`, whatever the main checkout has checked out right now.
+  base=$(default_branch "$main"); [ -n "$base" ] || base=$(git -C "$main" branch --show-current)
+  tip=$(git -C "$main" rev-parse -q --verify "${base:-HEAD}^{commit}" 2>/dev/null || true)
   procs=$(active_agents)
   if [ "$json" = 1 ]; then printf '['
   else
-    printf "${B}%-20s %-24s %-9s %-13s %-8s %-8s %-9s %s${N}\n" \
-      WORKTREE BRANCH AGENT RUNNING CHANGES COMMITS UPSTREAM PORTS
+    printf "${B}%-20s %-24s %-9s %-13s %-8s %-8s %-9s %-6s %s${N}\n" \
+      WORKTREE BRANCH AGENT RUNNING CHANGES COMMITS UPSTREAM READY PORTS
   fi
   while IFS= read -r line; do
     case "$line" in
@@ -474,6 +548,12 @@ cmd_ls() {
           else name=$(basename "$cur"); commits=$(git -C "$cur" rev-list --count "$base..HEAD" 2>/dev/null || echo 0); fi
           if ! git -C "$cur" rev-parse -q --verify '@{u}' >/dev/null 2>&1; then sync=local
           else sync=$(git -C "$cur" rev-list --count '@{u}..HEAD'); [ "$sync" = 0 ] && sync=pushed || sync="+$sync"; fi
+          # Commits of the base the branch does not have, and its place in the merge queue (see ramify ready).
+          ready=""; behind=0
+          if [ "$cur" != "$main" ] && [ -n "$tip" ]; then
+            behind=$(git -C "$cur" rev-list --count "HEAD..$tip" 2>/dev/null || echo 0)
+            ready=$(ready_state "$cur" "$tip")
+          fi
           port=$(env_get "$cur" PORT); agent=$(env_get "$cur" WT_AGENT)
           # .worktree.env can come from the repository itself (a clone that ships one): a port is digits or nothing,
           # never text that bash arithmetic or the JSON below would run or splice in.
@@ -488,17 +568,18 @@ cmd_ls() {
             fi
             # The conversation whose subagent made it (ramify hook create records WT_SESSION), when there is one.
             sess=$(env_get "$cur" WT_SESSION); [ -z "$sess" ] || sess=",\"session\":$(json_str "$sess")"
-            printf '{"name":%s,"path":%s,"branch":%s,"main":%s,"agent":%s,"running":[%s],"changes":%s,"commits":%s,"upstream":%s,"port":%s%s}' \
+            printf '{"name":%s,"path":%s,"branch":%s,"main":%s,"agent":%s,"running":[%s],"changes":%s,"commits":%s,"behind":%s,"upstream":%s,"ready":%s,"port":%s%s}' \
               "$(json_str "$name")" "$(json_str "$cur")" "$(json_str "$branch")" \
               "$([ "$cur" = "$main" ] && echo true || echo false)" "$(json_str "$agent")" "$run" \
-              "$dirty" "${commits:-0}" "$(json_str "$sync")" "${port:-null}" "$sess"
+              "$dirty" "${commits:-0}" "${behind:-0}" "$(json_str "$sync")" "$([ -n "$ready" ] && json_str "$ready" || echo null)" "${port:-null}" "$sess"
           else
             if [ "$cur" = "$main" ]; then commits=-; fi
             if [ "$dirty" = 0 ]; then c1=$D; else c1=$Y; fi
             if [ -n "$active" ]; then c2=$G; else c2=$D; active=-; fi
-            printf -v dirty '%-8s' "$dirty"; printf -v active '%-13s' "$active"
-            printf "%-20s ${M}%-24s${N} %-9s ${c2}%s${N} ${c1}%s${N} %-8s %-9s %s\n" "$name" "${branch:-(detached)}" \
-              "${agent:--}" "$active" "$dirty" "$commits" "$sync" "${port:+$port-$((port + PORT_BLOCK - 1))}"
+            case "$ready" in ready) c3=$G ;; stale) c3=$Y ;; *) c3=$D; ready=- ;; esac
+            printf -v dirty '%-8s' "$dirty"; printf -v active '%-13s' "$active"; printf -v ready '%-6s' "$ready"
+            printf "%-20s ${M}%-24s${N} %-9s ${c2}%s${N} ${c1}%s${N} %-8s %-9s ${c3}%s${N} %s\n" "$name" "${branch:-(detached)}" \
+              "${agent:--}" "$active" "$dirty" "$commits" "$sync" "$ready" "${port:+$port-$((port + PORT_BLOCK - 1))}"
           fi
         fi
         cur="" ;;
@@ -669,7 +750,7 @@ cmd_hook() {
   local input name cwd wt main branch file slug repo session base n owner dir cmd
   # Hooks never get in the way when they cannot run: without jq they do nothing.
   if ! command -v jq >/dev/null; then
-    case "${1:-}" in session-start|guard) exit 0 ;; esac
+    case "${1:-}" in session-start|guard|nudge) exit 0 ;; esac
     die "jq is required for hook mode"
   fi
   input=$(cat)
@@ -717,6 +798,27 @@ cmd_hook() {
       main=$(main_checkout "$wt")
       # Claude Code already asked for confirmation: discard changes, but keep the branch.
       remove_wt "$main" "$wt" 1 ;;
+    nudge)
+      # On every prompt (UserPromptSubmit): a branch marked ready whose base moved since hears it in its next turn.
+      # Quiet everywhere else, and it never blocks the prompt.
+      local tip
+      cwd=$(printf '%s' "$input" | jq -r '.cwd // empty')
+      wt=$(git -C "${cwd:-$PWD}" rev-parse --show-toplevel 2>/dev/null) || exit 0
+      [ -f "$wt/.worktree.env" ] || exit 0
+      main=$(main_checkout "$wt" 2>/dev/null) || exit 0
+      base=$(default_branch "$main"); [ -n "$base" ] || exit 0
+      tip=$(git -C "$main" rev-parse -q --verify "$base^{commit}" 2>/dev/null) || exit 0
+      [ "$(ready_state "$wt" "$tip")" = stale ] || exit 0
+      # Stale only because of its own new commits: the agent made them and knows; nothing to say.
+      n=$(git -C "$wt" rev-list --count "HEAD..$tip" 2>/dev/null || echo 0)
+      [ "$n" != 0 ] || exit 0
+      branch=$(git -C "$wt" branch --show-current)
+      jq -n --arg b "$base" --arg br "${branch:-this branch}" --arg n "$n" --arg bin "$(cd "$SELF_DIR" && pwd)/ramify" \
+        '{hookSpecificOutput: {hookEventName: "UserPromptSubmit", additionalContext:
+        ("ramify: " + $b + " has moved since " + $br + " was marked ready to merge (" + $n + " commit(s) it does not have yet). "
+        + "Run `\"" + $bin + "\" ready` again in this worktree before asking for the merge: it brings " + $b + " in, checks "
+        + "the other branches marked ready and marks this one again. Exit 1: another ready branch changes the same files; "
+        + "exit 2: " + $b + " conflicts with this branch (the files are listed): merge " + $b + ", resolve and commit, then run it again.")}}' ;;
     session-start)
       # A session that opens on the shared branch learns to take a worktree of its own before changing files.
       cwd=$(printf '%s' "$input" | jq -r '.cwd // empty')
@@ -1014,6 +1116,7 @@ case "$sub" in
   ls|list) cmd_ls "$@" ;;
   graph) cmd_graph "$@" ;;
   who) cmd_who "$@" ;;
+  ready) cmd_ready "$@" ;;
   ui) cmd_ui "$@" ;;
   app) cmd_app ;;
   path)
