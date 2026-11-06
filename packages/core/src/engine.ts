@@ -579,6 +579,9 @@ export class Engine {
     if (sync && pr) return this.mergeOnGithub(repo, wt.branch, base, sync.upstream, pr)
     const r = await this.run('git', ['-C', repo, 'merge', '--no-ff', '--no-edit', wt.branch])
     if (r.code === 0) return [r.stdout.trim(), await this.pushBase(repo, base, sync)].filter(Boolean).join('\n')
+    // Another git process holds the index (a merge from another window, or ramify ui): git refused before touching
+    // anything. Said plainly, and no merge --abort below: that would undo the other one.
+    if (/index\.lock/.test(r.stderr)) throw new EngineError(`another merge is running in ${repo}: wait for it, nothing was changed`)
     // -z: names with accents or spaces come through as they are, not quoted and escaped.
     const conflicted = (await this.git(repo, 'diff', '--name-only', '-z', '--diff-filter=U')).split('\0').filter(Boolean)
     const rebuilt = conflicted.length ? await this.rebuildGenerated(repo, conflicted) : null
@@ -709,6 +712,7 @@ export class Engine {
           // Squashed on GitHub: none of its commits are in the base, but its pull request went in at this very tip.
           || (ahead > 0 && !!(await this.squashedTip(repo, w.branch)))),
         overlaps: [],
+        ready: w.ready ?? null,
       })
     }
     // Two branches changing the same file will meet at merge time: say so now.

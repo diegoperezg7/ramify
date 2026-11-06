@@ -13,6 +13,10 @@ export interface Worktree {
   port: number | null
   /** Claude Code conversation whose subagent made this worktree (WT_SESSION, from the WorktreeCreate hook). */
   session?: string
+  /** Its agent ran `ramify ready`: still valid (ready), or the branch or the base moved since (stale). Null: not marked, or merged. */
+  ready?: 'ready' | 'stale' | null
+  /** Commits of the base the branch does not have yet (0 for the main checkout). */
+  behind?: number
 }
 
 export interface Commit {
@@ -113,6 +117,8 @@ export interface BranchHealth {
   merged: boolean
   /** Other branches that change some of the same files. */
   overlaps: string[]
+  /** Its place in the merge queue, from `ramify ready` (see Worktree.ready). */
+  ready?: 'ready' | 'stale' | null
 }
 
 /** The base against its remote branch (main against origin/main), after the last fetch. */
