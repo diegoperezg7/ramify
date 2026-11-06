@@ -239,10 +239,10 @@ or know how it works inside.
 
 ## Status
 
-**Version 0.8.0.** Desktop app for macOS (Apple silicon) and Windows (x64), VS Code / Cursor extension,
+**Version 0.9.0.** Desktop app for macOS (Apple silicon) and Windows (x64), VS Code / Cursor extension,
 CLI and Claude Code plugin, all built from this repository.
 
-- **Tested:** 131 core tests, 10 end-to-end UI tests in a real browser and 103 CLI tests run on every push; the core
+- **Tested:** 171 core tests, 15 end-to-end UI tests in a real browser and 181 CLI tests run on every push; the core
   suite, the Windows installer and a smoke test that opens the packaged app also run on Windows.
 - **Downloads:** every version is in [Releases](https://github.com/diegoperezg7/ramify/releases). To build it yourself:
   `npm ci && npm run build:desktop` (the installers land in `apps/desktop/release/`).
