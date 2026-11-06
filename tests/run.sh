@@ -358,6 +358,15 @@ git init -q -b main "$T/solo" && git -C "$T/solo" commit -q --allow-empty -m ini
 so=$(cd "$T/solo" && "$AW" new feat/solo --no-launch --no-setup 2>/dev/null)
 echo s > "$so/s.txt" && git -C "$so" add s.txt && git -C "$so" commit -qm s
 check "ready works without a remote" '(cd "$so" && "$AW" ready >/dev/null 2>&1) && [ "$(mark "$so" WT_READY)" = "$(git -C "$so" rev-parse HEAD)" ]'
+# A remote that never answers (a network gone, a host that hangs): ready stops the fetch at the limit, says so and
+# goes on against the local base, leaving nothing it started running.
+printf '#!/bin/bash\nsleep 60\n' > "$T/hang-remote"; chmod +x "$T/hang-remote"
+git -C "$T/solo" remote add origin "ext::$T/hang-remote"; git -C "$T/solo" config protocol.ext.allow always
+grep -v '^WT_READY' "$so/.worktree.env" > "$T/env.tmp"; cat "$T/env.tmp" > "$so/.worktree.env"
+s0=$SECONDS
+out=$(cd "$so" && RAMIFY_FETCH_TIMEOUT=2 "$AW" ready 2>&1); c=$?; took=$((SECONDS - s0))
+check "a fetch that hangs is stopped at RAMIFY_FETCH_TIMEOUT and ready goes on (exit $c, ${took}s)" '[ "$c" = 0 ] && [ "$took" -lt 10 ] && printf "%s" "$out" | grep -q "more than 2s" && [ "$(mark "$so" WT_READY)" = "$(git -C "$so" rev-parse HEAD)" ]'
+check "nothing the fetch started is left running" '! ps -A -o args= | grep -F "$T/hang-remote" | grep -qv grep'
 cd "$T/demo" || exit 1
 
 echo "move work off main"

@@ -487,6 +487,26 @@ ready_state() {
   fi
 }
 
+# git fetch of the base $2 from origin into the checkout $1, stopped after $3 seconds: a remote that never answers
+# (a network gone, a host that hangs) must not hold ramify ready. Bash 3.2 (macOS) has no timeout command, so the
+# fetch runs in the background in a process group of its own (job control, set -m), and a watcher ends that whole
+# group at the limit, helpers and ssh included, so nothing is left running. Exit 124 when it was stopped.
+fetch_base() {
+  local here="$1" base="$2" limit="$3" pid watcher rc=0 start=$SECONDS
+  set -m
+  GIT_TERMINAL_PROMPT=0 git -C "$here" fetch --quiet origin "$base" </dev/null >/dev/null 2>&1 &
+  pid=$!
+  # A fetch stopped by the terminal (one that tried to read it) only takes TERM once continued.
+  { sleep "$limit"; kill -TERM -- "-$pid"; kill -CONT -- "-$pid"; } </dev/null >/dev/null 2>&1 &
+  watcher=$!
+  set +m
+  wait "$pid" 2>/dev/null || rc=$?
+  kill -- "-$watcher" 2>/dev/null || true
+  wait "$watcher" 2>/dev/null || true
+  [ "$rc" = 0 ] || [ $((SECONDS - start)) -lt "$limit" ] || rc=124
+  return "$rc"
+}
+
 # `ramify ready`: this worktree's branch is done and waits to be merged. It brings the base in, checks that no
 # branch already waiting (marked ready, mark still valid) changes the same files, and marks this one in its
 # .worktree.env: WT_READY (this commit) and WT_READY_BASE (the base tip it was checked against). The mark goes
@@ -495,7 +515,7 @@ ready_state() {
 # hook and the app can say when the base moves. Exit 2: the base conflicts with this branch; the merge is undone,
 # the tree as it was.
 cmd_ready() {
-  local main here base tip branch out conflicted ahead
+  local main here base tip branch out conflicted ahead limit rc
   main=$(main_checkout "$PWD")
   here=$(git rev-parse --show-toplevel 2>/dev/null) && here=$(cd "$here" && abspwd)
   { [ -n "$here" ] && [ "$here" != "$main" ] && [ -f "$here/.worktree.env" ]; } \
@@ -509,9 +529,13 @@ cmd_ready() {
   # The local base is what gets merged (the app merges there), but origin is fetched so a newer one there is said
   # now: once it reaches the local base, this mark goes stale. No prompt for credentials: this may run unattended.
   if git -C "$here" remote get-url origin >/dev/null 2>&1; then
-    if GIT_TERMINAL_PROMPT=0 git -C "$here" fetch --quiet origin "$base" 2>/dev/null; then
+    limit=${RAMIFY_FETCH_TIMEOUT:-30}; [[ $limit =~ ^[0-9]+$ ]] || limit=30
+    rc=0; fetch_base "$here" "$base" "$limit" || rc=$?
+    if [ "$rc" = 0 ]; then
       ahead=$(git -C "$here" rev-list --count "$tip..refs/remotes/origin/$base" 2>/dev/null || echo 0)
       [ "$ahead" = 0 ] || log "${Y}origin/$base has $ahead commit(s) that $base does not have yet: once $base is updated, run ramify ready again${N}"
+    elif [ "$rc" = 124 ]; then
+      log "${Y}fetching $base from origin took more than ${limit}s and was stopped: checking against the local $base${N}"
     else
       log "${Y}could not fetch $base from origin: checking against the local $base${N}"
     fi
