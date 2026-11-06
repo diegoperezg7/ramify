@@ -22,6 +22,8 @@
   --add-bg: rgb(26 127 55 / 0.09);
   --del-bg: rgb(207 34 46 / 0.08);
   --lane-base: #8e86a8;
+  /* The base branch (main), wherever it shows: the trunk the other branches leave from, in the brand violet. */
+  --lane-main: var(--accent);
   --agent-1: #2a78d6;
   --agent-2: #eb6834;
   --agent-3: #1baf7a;
@@ -431,6 +433,12 @@ html, body, #root { height: 100%; }
 .graph-row.is-new { animation: row-in 0.45s ease-out both; }
 .wt-card { animation: card-in 0.35s ease-out both; }
 @keyframes draw { to { stroke-dashoffset: 0; } }
+/* A merged branch joins the trunk: its lane goes from the branch's colour (--from) to its own, the base's. */
+.edge.is-joining { animation-name: join-stroke; animation-timing-function: ease-out; animation-fill-mode: both; }
+.node.is-joining { animation-name: join-fill; animation-timing-function: ease-out; animation-fill-mode: both; }
+.node.is-merge.is-joining { animation-name: join-stroke; }
+@keyframes join-stroke { from { stroke: var(--from); } }
+@keyframes join-fill { from { fill: var(--from); } }
 @keyframes pop { from { transform: scale(0); } to { transform: scale(1); } }
 @keyframes row-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: none; } }
 @keyframes card-in { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
@@ -1227,6 +1235,12 @@ kbd {
 .cc-pr.is-draft { color: var(--muted); }
 .cc-pr.is-open { color: var(--good); border-color: color-mix(in srgb, var(--good) 35%, var(--border)); }
 .cc-pr.is-merged { color: var(--accent-text); border-color: var(--accent-ring); }
+/* Pull requests outside the control center: in a branch's detail and next to its label in the branch tree. */
+.fact-pr dd { font-family: var(--font); }
+.pr-hint { margin: 0; padding: 10px 16px; border-bottom: 1px solid var(--border); font-size: 12.5px; color: var(--muted); }
+.pr-hint-btn { padding: 0; border: 0; background: none; font: inherit; font-weight: 600; color: var(--accent-text); cursor: pointer; }
+.pr-hint-btn:hover { text-decoration: underline; }
+.graph-row .cc-pr { margin-left: 2px; }
 .cc-actions { flex: none; display: flex; align-items: center; gap: 4px; }
 .cc-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 18px; border: 1px dashed var(--border-strong); border-radius: var(--radius); color: var(--text-2); }
 .app.is-sm .cc-row { flex-wrap: wrap; }

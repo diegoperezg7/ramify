@@ -226,8 +226,8 @@ CLI and Claude Code plugin, all built from this repository.
   `npm ci && npm run build:desktop` (the installers land in `apps/desktop/release/`).
 - **Signing:** the macOS app is signed with a Developer ID and notarized. The Windows installer is not signed yet and
   shows a warning the first time (see below).
-- **GitHub sign-in** needs the Ramify GitHub App to be registered for the build; until then GitHub features use the
-  `gh` CLI you are signed in to.
+- **GitHub sign-in** uses the [Ramify Desktop](https://github.com/apps/ramify-desktop) GitHub App; without signing in,
+  GitHub features use the `gh` CLI you are signed in to.
 - **Windows:** terminal agents are listed without their repository (Windows does not expose another process's folder),
   and the app has been verified in CI rather than by hand.
 

@@ -220,8 +220,8 @@ CLI y plugin de Claude Code, todo compilado desde este repositorio.
   tú: `npm ci && npm run build:desktop` (los instaladores quedan en `apps/desktop/release/`).
 - **Firma:** la app de macOS está firmada con Developer ID y notarizada. El instalador de Windows aún no está firmado y
   avisa la primera vez (ver abajo).
-- **Login con GitHub:** necesita que la GitHub App de Ramify esté registrada para la build; mientras tanto, las funciones
-  de GitHub usan el CLI `gh` con el que ya hayas iniciado sesión.
+- **Login con GitHub:** usa la GitHub App [Ramify Desktop](https://github.com/apps/ramify-desktop); sin iniciar sesión,
+  las funciones de GitHub usan el CLI `gh` con el que ya hayas iniciado sesión.
 - **Windows:** los agentes de terminal salen sin su repositorio (Windows no deja leer la carpeta de otro proceso) y la
   app se ha verificado en CI, no a mano.
 

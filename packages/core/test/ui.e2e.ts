@@ -212,6 +212,15 @@ describe('web UI', () => {
       // feat/checkout has draft.ts uncommitted: shown on its tip.
       assert.match(await page.textContent('.graph-row:has-text("Stripe payment intent") .ref-pending') ?? '', /\+1 uncommitted/)
       assert.ok(await page.$('.node-pending'))
+      // The base (main) is the trunk: the accent violet, apart from a plain branch and from an agent's branch.
+      const laneOf = (subject: string) => page.$eval(`.graph-row:has-text("${subject}")`, (el) => getComputedStyle(el).getPropertyValue('--c').trim())
+      const accent = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim())
+      const [trunk, plain, agent] = await Promise.all([laneOf('Initial storefront'), laneOf('Search spike'), laneOf('Stripe payment intent')])
+      assert.equal(trunk, accent)
+      assert.notEqual(trunk, plain)
+      assert.notEqual(trunk, agent)
+      // The same violet wherever main shows: its row in the worktree list.
+      assert.equal(await page.$eval('.wt-row:has(.wt-branch:text-is("main"))', (el) => getComputedStyle(el).getPropertyValue('--c').trim()), accent)
       if (process.env.RAMIFY_E2E_SHOTS) await page.screenshot({ path: join(process.env.RAMIFY_E2E_SHOTS, `graph-${scheme}.png`) })
       // Any commit opens: its files, the diff of one, then back through its parent.
       await page.click('.graph-row:has-text("Stripe payment intent")')
@@ -228,6 +237,112 @@ describe('web UI', () => {
       await page.close()
     }
     git(REPO, 'branch', '-qD', 'spike/search')
+  })
+
+  it('editor host: a branch merged into the base joins the trunk, ending in its colour', async () => {
+    git(REPO, 'checkout', '-qb', 'spike/join')
+    writeFileSync(join(REPO, 'join.ts'), 'export const j = 1\n')
+    git(REPO, 'add', '.')
+    git(REPO, 'commit', '-qm', 'Join spike')
+    git(REPO, 'checkout', '-q', 'main')
+    const handlers = createHandlers({
+      engine: new Engine({ bin: BIN, env }),
+      capabilities: { host: 'vscode', multiRepo: false, create: true, settings: false, github: false, timeline: true, ides: IDES },
+      repo: () => REPO,
+      runInTerminal: () => {},
+    })
+    for (const scheme of ['light', 'dark'] as const) {
+      const page = await browser.newPage({ locale: 'en-US', colorScheme: scheme, viewport: { width: 1280, height: 760 } })
+      const errors: string[] = []
+      page.on('pageerror', (e) => errors.push(String(e)))
+      await page.exposeFunction('__host', (method: string, args: unknown[]) =>
+        dispatch(handlers, method, args).then((result) => ({ result }), (e: Error) => ({ error: e.message })))
+      await page.addInitScript((theme: string) => {
+        const w = window as unknown as { acquireVsCodeApi: () => unknown; __host: (m: string, a: unknown[]) => Promise<{ result?: unknown; error?: string }> }
+        w.acquireVsCodeApi = () => ({
+          postMessage: (msg: { id: number; method: string; args: unknown[] }) => {
+            void w.__host(msg.method, msg.args).then((r) => window.postMessage({ id: msg.id, ...r }, '*'))
+          },
+        })
+        document.addEventListener('DOMContentLoaded', () => document.body.classList.add(`vscode-${theme}`))
+      }, scheme)
+      await page.goto(`http://127.0.0.1:${WEB}/index.html`)
+      const laneOf = (subject: string) => page.$eval(`.graph-row:has-text("${subject}")`, (el) => getComputedStyle(el).getPropertyValue('--c').trim())
+      const accent = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--accent').trim())
+      await page.waitForSelector('.graph-row:has-text("Join spike") .ref-branch:has-text("spike/join")')
+      assert.notEqual(await laneOf('Join spike'), accent)
+      // Merged outside the page, as Ramify's merge does it (--no-ff): the next refresh animates the lane into the trunk.
+      git(REPO, 'merge', '-q', '--no-ff', '--no-edit', 'spike/join')
+      await page.waitForSelector('.node.is-joining')
+      assert.ok(await page.$('.edge.is-joining'))
+      if (process.env.RAMIFY_E2E_SHOTS) await page.screenshot({ path: join(process.env.RAMIFY_E2E_SHOTS, `join-mid-${scheme}.png`) })
+      // It ends: nothing left animating, and the merged branch's commit is on the trunk, in the base's colour.
+      await page.waitForSelector('.is-joining', { state: 'detached' })
+      assert.equal(await laneOf('Join spike'), accent)
+      if (process.env.RAMIFY_E2E_SHOTS) await page.screenshot({ path: join(process.env.RAMIFY_E2E_SHOTS, `join-end-${scheme}.png`) })
+      assert.deepEqual(errors, [])
+      await page.close()
+      git(REPO, 'reset', '-q', '--keep', 'HEAD~1')
+    }
+    git(REPO, 'branch', '-qD', 'spike/join')
+  })
+
+  it('editor host: pull requests show read-only in the branch tree and the detail; a squashed branch is dimmed', async () => {
+    git(REPO, 'checkout', '-qb', 'spike/squash')
+    writeFileSync(join(REPO, 'squash.ts'), 'export const s = 1\n')
+    git(REPO, 'add', '.')
+    git(REPO, 'commit', '-qm', 'Squash spike')
+    git(REPO, 'checkout', '-q', 'main')
+    const tip = git(REPO, 'rev-parse', 'spike/squash').toString().trim()
+    const handlers = createHandlers({
+      engine: new Engine({ bin: BIN, env }),
+      capabilities: { host: 'vscode', multiRepo: false, create: true, settings: false, github: false, timeline: true, ides: IDES },
+      repo: () => REPO,
+      runInTerminal: () => {},
+    })
+    // As GitHub would answer: an open draft for the agent's branch, and a pull request squashed at spike/squash's tip.
+    handlers.pullRequests = async () => [
+      { number: 7, url: 'https://github.com/acme/shop/pull/7', state: 'OPEN', draft: true, title: 'Checkout', branch: 'feat/checkout', head: 'x' },
+      { number: 5, url: 'https://github.com/acme/shop/pull/5', state: 'MERGED', draft: false, title: 'Search', branch: 'spike/squash', head: tip },
+    ]
+    for (const scheme of ['light', 'dark'] as const) {
+      const page = await browser.newPage({ locale: 'en-US', colorScheme: scheme, viewport: { width: 1280, height: 760 } })
+      const errors: string[] = []
+      page.on('pageerror', (e) => errors.push(String(e)))
+      await page.exposeFunction('__host', (method: string, args: unknown[]) =>
+        dispatch(handlers, method, args).then((result) => ({ result }), (e: Error) => ({ error: e.message })))
+      await page.addInitScript((theme: string) => {
+        const w = window as unknown as { acquireVsCodeApi: () => unknown; __host: (m: string, a: unknown[]) => Promise<{ result?: unknown; error?: string }> }
+        w.acquireVsCodeApi = () => ({
+          postMessage: (msg: { id: number; method: string; args: unknown[] }) => {
+            void w.__host(msg.method, msg.args).then((r) => window.postMessage({ id: msg.id, ...r }, '*'))
+          },
+        })
+        document.addEventListener('DOMContentLoaded', () => document.body.classList.add(`vscode-${theme}`))
+      }, scheme)
+      await page.goto(`http://127.0.0.1:${WEB}/index.html`)
+      // In the tree: next to the branch's label, not a link (the row is a button).
+      const open = await page.waitForSelector('.graph-row:has-text("Stripe payment intent") .cc-pr')
+      assert.match(await open.textContent() ?? '', /#7 · draft/)
+      assert.equal(await open.evaluate((el) => el.tagName), 'SPAN')
+      // Squashed on GitHub: its pull request says merged, its lane is dimmed; the base is not.
+      assert.match(await page.textContent('.graph-row:has-text("Squash spike") .cc-pr') ?? '', /#5 · merged/)
+      assert.ok(await page.$('.graph-row.is-dim:has-text("Squash spike")'))
+      assert.equal(await page.$('.graph-row.is-dim:has-text("Initial storefront")'), null)
+      assert.equal(await page.$('.graph-row.is-dim:has-text("Stripe payment intent")'), null)
+      if (process.env.RAMIFY_E2E_SHOTS) await page.screenshot({ path: join(process.env.RAMIFY_E2E_SHOTS, `prs-graph-${scheme}.png`) })
+      // In the detail, beside the merge button: a link to it.
+      await page.click('.wt-row:has-text("feat/checkout")')
+      const link = await page.waitForSelector('.detail-pane .fact-pr a.cc-pr')
+      assert.equal(await link.getAttribute('href'), 'https://github.com/acme/shop/pull/7')
+      if (process.env.RAMIFY_E2E_SHOTS) {
+        await page.waitForTimeout(800) // the pane slides in
+        await page.screenshot({ path: join(process.env.RAMIFY_E2E_SHOTS, `prs-detail-${scheme}.png`) })
+      }
+      assert.deepEqual(errors, [])
+      await page.close()
+    }
+    git(REPO, 'branch', '-qD', 'spike/squash')
   })
 
   it('editor side bar: the branch tree in a narrow column, a commit opens in the dashboard', async () => {

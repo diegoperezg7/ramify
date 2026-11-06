@@ -13,6 +13,24 @@ export function nextAction(b: BranchHealth, pr: PullRequest | undefined, onGithu
   return 'open'
 }
 
+/** A branch's pull request: the open one first, so an old closed or merged one of the same name never hides it. */
+export function prFor(prs: PullRequest[], branch: string): PullRequest | undefined {
+  return prs.find((p) => p.branch === branch && p.state === 'OPEN') ?? prs.find((p) => p.branch === branch)
+}
+
+/**
+ * Squashed on GitHub: its pull request went in at this very tip, as the engine reads it (squashedTip),
+ * though none of its commits are in the base.
+ */
+export function squashMerged(pr: PullRequest | undefined, tip: string | undefined): boolean {
+  return !!pr && !!tip && pr.state === 'MERGED' && pr.head === tip
+}
+
+/** Signing in would show pull requests: a repository on GitHub, a build with the GitHub App, and no session yet. */
+export function prSignInHint(account: { configured: boolean; status: string } | null, github: string | null | undefined): boolean {
+  return !!github && !!account?.configured && account.status !== 'signed-in'
+}
+
 
 /** "Add login with magic links" → "add-login-with-magic-links" (ASCII, short, safe for a branch). */
 export function taskSlug(task: string): string {

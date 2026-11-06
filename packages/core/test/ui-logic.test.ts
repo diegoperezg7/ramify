@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { agentTimeByDay, dayLanes, friendlyMerge, lastActivity, MergeError, mergeProblem, lastDays, levels, nextAction, parseDiff, peakParallel, shellArg, splitMinor, taskSlug, timeBy, unionMs } from '../../../ui/web/src/logic.ts'
+import { agentTimeByDay, dayLanes, friendlyMerge, lastActivity, MergeError, mergeProblem, lastDays, levels, nextAction, parseDiff, peakParallel, prFor, prSignInHint, shellArg, squashMerged, splitMinor, taskSlug, timeBy, unionMs } from '../../../ui/web/src/logic.ts'
 import type { BranchHealth, PullRequest } from '../src/types.ts'
 
 const branch = (o: Partial<BranchHealth>): BranchHealth => ({
@@ -162,5 +162,29 @@ describe('commands to copy', () => {
     assert.equal(shellArg('feat/login-2'), 'feat/login-2')
     assert.equal(shellArg('x;open${IFS}-a${IFS}Calculator'), "'x;open${IFS}-a${IFS}Calculator'")
     assert.equal(shellArg("it's"), "'it'\\''s'")
+  })
+})
+
+describe('pull requests outside the control center (read-only)', () => {
+  it('a branch shows its open pull request, not an older closed or merged one of the same name', () => {
+    const prs = [pr({ number: 3, state: 'MERGED' }), pr({ number: 9, state: 'OPEN' }), pr({ number: 4, branch: 'feat/y' })]
+    assert.equal(prFor(prs, 'feat/x')?.number, 9)
+    assert.equal(prFor([pr({ number: 3, state: 'CLOSED' })], 'feat/x')?.number, 3)
+    assert.equal(prFor(prs, 'feat/z'), undefined)
+  })
+  it('squashed on GitHub only when the merged pull request went in at the branch tip', () => {
+    assert.equal(squashMerged(pr({ state: 'MERGED', head: 'abc' }), 'abc'), true)
+    assert.equal(squashMerged(pr({ state: 'MERGED', head: 'abc' }), 'def'), false, 'the branch moved on after the merge')
+    assert.equal(squashMerged(pr({ state: 'OPEN', head: 'abc' }), 'abc'), false)
+    assert.equal(squashMerged(pr({ state: 'MERGED' }), 'abc'), false, 'no head known')
+    assert.equal(squashMerged(undefined, 'abc'), false)
+  })
+  it('asks to sign in only for a repository on GitHub, in a build with the GitHub App, signed out', () => {
+    assert.equal(prSignInHint({ configured: true, status: 'signed-out' }, 'a/b'), true)
+    assert.equal(prSignInHint({ configured: true, status: 'error' }, 'a/b'), true)
+    assert.equal(prSignInHint({ configured: true, status: 'signed-in' }, 'a/b'), false)
+    assert.equal(prSignInHint({ configured: false, status: 'signed-out' }, 'a/b'), false)
+    assert.equal(prSignInHint({ configured: true, status: 'signed-out' }, null), false)
+    assert.equal(prSignInHint(null, 'a/b'), false)
   })
 })
