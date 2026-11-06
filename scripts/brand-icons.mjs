@@ -19,8 +19,10 @@ const clean = (svg) => svg
 
 const lobe = (name) => {
   const svg = clean(readFileSync(join(lobeDir, `${name}.svg`), 'utf8'))
-  // Mono marks draw with currentColor and follow the theme; colour marks keep their palette.
-  return { svg, mono: svg.includes('currentColor') && !name.endsWith('-color') }
+  // Mono marks draw with currentColor and follow the theme; colour marks keep their palette. A colour mark with a
+  // currentColor part (Kimi, Qoder) is inlined too, or that part stays black on a dark theme; only one with ids
+  // (gradients) stays an image, so its ids never clash.
+  return { svg, mono: svg.includes('currentColor') && (!name.endsWith('-color') || !/\sid="/.test(svg)) }
 }
 const dev = (name, variant = 'original') => {
   for (const v of [variant, 'original', 'plain', 'original-wordmark']) {

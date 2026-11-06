@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useStore } from '../store'
+import { GithubIcon } from './GithubIcon'
 
 /** Inline metrics in the header: compact, monospaced, always visible. */
 export function Metrics() {
@@ -28,6 +29,8 @@ export function StatusBar() {
   const lastSync = useStore((s) => s.lastSync)
   const caps = useStore((s) => s.caps)
   const t = useStore((s) => s.t)
+  const github = useStore((s) => s.github)
+  const openSettings = useStore((s) => s.openSettings)
   // "synced Ns ago" has to move on its own between polls.
   const [, tick] = useState(0)
   useEffect(() => {
@@ -43,6 +46,13 @@ export function StatusBar() {
       <span className="sb-spacer" />
       {state && !state.worktrees.some((w) => w.running.length) && <span className="sb-quiet">{t('allQuiet')}</span>}
       {caps?.host !== 'browser' && <span className="sb-keys">{t('shortcuts')}</span>}
+      {/* The GitHub account, always reachable: a click opens it in Settings (sign in, sign out, repositories). */}
+      {github?.configured && (
+        <button type="button" className={`sb-github${github.status === 'signed-in' ? ' is-on' : ''}`} onClick={() => openSettings('github')}
+          title={t('setTabGithub')}>
+          <GithubIcon size={12} />{github.status === 'signed-in' && github.user ? `@${github.user.login}` : t('ghSignedOut')}
+        </button>
+      )}
       <span className="sb-ver wordmark">ramify</span>
     </footer>
   )

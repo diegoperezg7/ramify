@@ -9,7 +9,7 @@ import { tmpdir } from 'node:os'
 import { extname, join, resolve } from 'node:path'
 import { after, before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { chromium, type Browser } from 'playwright'
+import { chromium, type Browser, type Page } from 'playwright'
 import { createHandlers, dispatch } from '../src/host.ts'
 import { Engine, IDES } from '../src/engine.ts'
 import type { AgentChild, AgentSession } from '../src/types.ts'
@@ -208,6 +208,8 @@ describe('web UI', () => {
       // A branch with a worktree and a plain local branch, side by side.
       await page.waitForSelector('.graph-row:has-text("Search spike") .ref-branch:has-text("spike/search")')
       assert.equal(await page.getAttribute('html', 'data-theme'), scheme)
+      // The GitHub account belongs to the desktop app: no way into it from an editor's status bar.
+      assert.equal(await page.$('.sb-github'), null)
       await page.waitForSelector('.graph-row:has-text("Stripe payment intent") .ref-branch:has-text("feat/checkout")')
       // feat/checkout has draft.ts uncommitted: shown on its tip.
       assert.match(await page.textContent('.graph-row:has-text("Stripe payment intent") .ref-pending') ?? '', /\+1 uncommitted/)
@@ -604,5 +606,261 @@ describe('web UI', () => {
     await page.waitForSelector('.wt-row.is-selected:has-text("feat/checkout")')
     assert.deepEqual(errors, [])
     await page.close()
+  })
+
+  it('desktop host: no scroll bars in the control center or Settings; GitHub sign-in after the introduction', async () => {
+    type Account = { configured: boolean; status: string; keychain: boolean; installUrl: string; user?: { login: string; name: string | null; avatarUrl: string } }
+    let account: Account = { configured: true, status: 'signed-out', keychain: true, installUrl: 'https://github.com/apps/ramify-desktop/installations/new' }
+    let settings: Record<string, unknown> = { terminal: 'Terminal', defaultAgent: 'claude', projectsDir: '', autoDetect: true, onboarded: true }
+    const base = createHandlers({
+      engine: new Engine({ bin: BIN, env }),
+      capabilities: { host: 'desktop', multiRepo: true, create: false, settings: true, github: false, sessions: true, control: true, timeline: true, ides: IDES },
+      repo: () => REPO,
+      runInTerminal: () => {},
+    })
+    const handlers = {
+      ...base,
+      repos: () => [{ path: REPO, name: 'shop', worktrees: 1, github: 'acme/shop' }],
+      sessions: () => [],
+      agentChildren: () => ({}),
+      settings: () => settings,
+      saveSettings: (s: Record<string, unknown>) => { settings = s },
+      githubAccount: () => account,
+      githubSignIn: () => ({ userCode: 'ABCD-1234', verificationUri: 'https://github.com/login/device', expiresAt: Date.now() + 900_000 }),
+      githubCancel: () => {},
+      githubSignOut: () => { account = { ...account, status: 'signed-out', user: undefined } },
+    } as unknown as typeof base
+    // A short window, so the control center has more than fits.
+    const page = await browser.newPage({ locale: 'en-US', viewport: { width: 1100, height: 520 } })
+    const errors: string[] = []
+    page.on('pageerror', (e) => errors.push(String(e)))
+    await page.exposeFunction('__host', (method: string, args: unknown[]) =>
+      dispatch(handlers, method, args).then((result) => ({ result }), (e: Error) => ({ error: e.message })))
+    await page.addInitScript(() => {
+      const w = window as unknown as { ramify: unknown; __host: (m: string, a: unknown[]) => Promise<{ result?: unknown; error?: string }> }
+      try { localStorage.setItem('ramify-view', 'control') } catch { /* no storage */ }
+      w.ramify = {
+        invoke: async (method: string, args: unknown[]) => {
+          const r = await w.__host(method, args)
+          if (r.error) throw new Error(r.error)
+          return r.result
+        },
+        on: () => {},
+      }
+    })
+    // Every element under `root` that would draw a scroll bar: it overflows, may scroll, and does not hide its bar.
+    const scrollBars = (root: string) => page.$$eval(`${root}, ${root} *`, (els) => els.filter((el) => {
+      const cs = getComputedStyle(el)
+      if (cs.scrollbarWidth === 'none') return false
+      return (el.scrollHeight > el.clientHeight + 1 && /auto|scroll/.test(cs.overflowY))
+        || (el.scrollWidth > el.clientWidth + 1 && /auto|scroll/.test(cs.overflowX))
+    }).map((el) => `${el.tagName.toLowerCase()}.${el.className}`))
+    await page.goto(`http://127.0.0.1:${WEB}/index.html`)
+
+    // Control center: more than fits, and still no scroll bar (it scrolls by trackpad, wheel or keys).
+    await page.waitForSelector('.control .cc-h2')
+    assert.ok(await page.$eval('.control', (el) => el.scrollHeight > el.clientHeight), 'the control center must overflow for this check to mean something')
+    assert.deepEqual(await scrollBars('.control'), [])
+    if (process.env.RAMIFY_E2E_SHOTS) await page.screenshot({ path: join(process.env.RAMIFY_E2E_SHOTS, 'control-noscroll.png') })
+
+    // Already through the introduction, signed out: the status bar says so, and a click opens Settings at GitHub.
+    const status = await page.waitForSelector('.sb-github')
+    assert.equal((await status.textContent())?.trim(), 'GitHub: signed out')
+    await status.click()
+    await page.waitForSelector('.dialog-settings #set-tab-github[aria-selected="true"]')
+
+    // Settings: every section fits; neither the dialog nor anything in it draws a scroll bar.
+    for (const tab of ['general', 'agents', 'automation', 'notifications', 'github', 'system']) {
+      await page.click(`#set-tab-${tab}`)
+      await page.waitForSelector(`#set-tab-${tab}[aria-selected="true"]`)
+      assert.deepEqual(await scrollBars('.dialog-settings'), [], `section ${tab}`)
+      if (process.env.RAMIFY_E2E_SHOTS) await page.screenshot({ path: join(process.env.RAMIFY_E2E_SHOTS, `settings-${tab}.png`) })
+    }
+
+    // Sign in from Settings: the code shows, GitHub confirms, the account and the status bar follow.
+    await page.click('#set-tab-github')
+    await page.click('.gh-account .btn-primary')
+    assert.equal(await page.getAttribute('.ob-code-digits', 'aria-label'), 'ABCD-1234')
+    account = { ...account, status: 'signed-in', user: { login: 'octo', name: 'Octo Cat', avatarUrl: 'data:image/gif;base64,R0lGODlhAQABAAAAACw=' } }
+    await page.waitForSelector('.gh-user:has-text("@octo")', { timeout: 10_000 })
+    assert.equal(await page.getAttribute('.gh-actions a', 'href'), account.installUrl)
+    assert.equal((await page.textContent('.sb-github'))?.trim(), '@octo')
+    if (process.env.RAMIFY_E2E_SHOTS) await page.screenshot({ path: join(process.env.RAMIFY_E2E_SHOTS, 'settings-github-signed-in.png') })
+    // And sign out again.
+    await page.click('.gh-actions button')
+    await page.waitForSelector('.gh-account .btn-primary:has-text("Sign in with GitHub")')
+    await page.click('.settings-actions .btn-ghost')
+    await page.waitForSelector('.dialog-settings', { state: 'detached' })
+    assert.equal((await page.textContent('.sb-github'))?.trim(), 'GitHub: signed out')
+
+    // A branch's detail, on a GitHub repository, signed out: its hint opens Settings at GitHub, not the introduction.
+    await page.click('.repo-item')
+    await page.click('.wt-row:has-text("feat/checkout")')
+    await page.click('.pr-hint-btn')
+    await page.waitForSelector('.dialog-settings #set-tab-github[aria-selected="true"]')
+    assert.equal(await page.$('.onboarding'), null)
+    assert.deepEqual(errors, [])
+    await page.close()
+  })
+
+  it('desktop host: the update notice and Settings tabs animate, not with reduced motion; agents and tools are picked by logo', async () => {
+    let settings: Record<string, unknown> = { terminal: 'Terminal', defaultAgent: 'claude', projectsDir: '', autoDetect: true, onboarded: true, historyDays: 90 }
+    const base = createHandlers({
+      engine: new Engine({ bin: BIN, env }),
+      capabilities: { host: 'desktop', multiRepo: true, create: false, settings: true, github: false, sessions: true, control: false, timeline: true, update: true, ides: IDES },
+      repo: () => REPO,
+      runInTerminal: () => {},
+    })
+    const handlers = {
+      ...base,
+      repos: () => [{ path: REPO, name: 'shop', worktrees: 1, github: null }],
+      sessions: () => [],
+      agentChildren: () => ({}),
+      tools: () => ({ agents: ['claude', 'codex'] }),
+      settings: () => settings,
+      saveSettings: (s: Record<string, unknown>) => { settings = s },
+      githubAccount: () => ({ configured: false, status: 'signed-out', keychain: true, installUrl: '' }),
+      updateState: () => ({ status: 'available', version: '9.9.9' }),
+    } as unknown as typeof base
+    const open = async (reducedMotion: 'reduce' | 'no-preference') => {
+      const page = await browser.newPage({ locale: 'en-US', viewport: { width: 1280, height: 800 }, reducedMotion })
+      await page.exposeFunction('__host', (method: string, args: unknown[]) =>
+        dispatch(handlers, method, args).then((result) => ({ result }), (e: Error) => ({ error: e.message })))
+      await page.addInitScript(() => {
+        const w = window as unknown as { ramify: unknown; __host: (m: string, a: unknown[]) => Promise<{ result?: unknown; error?: string }> }
+        w.ramify = {
+          invoke: async (method: string, args: unknown[]) => {
+            const r = await w.__host(method, args)
+            if (r.error) throw new Error(r.error)
+            return r.result
+          },
+          on: () => {},
+        }
+      })
+      await page.goto(`http://127.0.0.1:${WEB}/index.html`)
+      return page
+    }
+    const anim = (page: Page, sel: string) => page.$eval(sel, (el) => getComputedStyle(el).animationName)
+
+    const page = await open('no-preference')
+    const errors: string[] = []
+    page.on('pageerror', (e) => errors.push(String(e)))
+    // The notice comes in from the corner, and goes out the same way when put off.
+    await page.waitForSelector('.update-notice:has-text("9.9.9")')
+    assert.equal(await anim(page, '.update-notice'), 'notice-in')
+    if (process.env.RAMIFY_E2E_SHOTS) await page.screenshot({ path: join(process.env.RAMIFY_E2E_SHOTS, 'update-notice.png') })
+    await page.click('.update-close')
+    assert.equal(await anim(page, '.update-notice.is-leaving'), 'notice-out')
+    await page.waitForSelector('.update-notice', { state: 'detached' })
+
+    // Settings: each tab's content comes in; agents, terminal, editor and history are chips with their logo, not a list.
+    await page.click('.sidebar-foot')
+    await page.waitForSelector('.dialog-settings')
+    assert.equal(await page.$('.dialog-settings select'), null, 'no dropdowns left in Settings')
+    assert.ok(await page.$('.settings-pane .agent-option:has-text("iTerm") svg'), 'the terminal shows its logo')
+    if (process.env.RAMIFY_E2E_SHOTS) await page.screenshot({ path: join(process.env.RAMIFY_E2E_SHOTS, 'settings-pickers-general.png') })
+    await page.click('#set-tab-agents')
+    assert.equal(await anim(page, '.settings-pane'), 'pane-in')
+    await page.waitForSelector('.settings-pane .agent-option.is-more')
+    assert.equal(await page.$$eval('.settings-pane .agent-option:not(.is-more)', (els) => els.length), 2, 'the installed agents first')
+    await page.click('.settings-pane .agent-option.is-more')
+    assert.ok(await page.$$eval('.settings-pane .agent-option', (els) => els.length) > 10, 'all the agents, one click away')
+    // Kimi's dark stroke follows the text colour, so it still shows on the dark theme.
+    await page.emulateMedia({ colorScheme: 'dark' })
+    const kimi = await page.$eval('.settings-pane .agent-option:text-is("kimi") .brand-icon path[fill="currentColor"]', (el) => getComputedStyle(el).fill)
+    assert.notEqual(kimi, 'rgb(0, 0, 0)', 'the kimi mark is drawn in the text colour')
+    await page.emulateMedia({ colorScheme: 'light' })
+    if (process.env.RAMIFY_E2E_SHOTS) await page.screenshot({ path: join(process.env.RAMIFY_E2E_SHOTS, 'settings-pickers-agents.png') })
+    await page.click('.settings-pane .agent-option:text-is("codex")')
+    assert.equal(await page.getAttribute('.settings-pane .agent-option:text-is("codex")', 'aria-pressed'), 'true')
+    await page.click('#set-tab-general')
+    await page.click('.settings-pane .agent-option:has-text("365")')
+    await page.click('.settings-actions .btn-primary')
+    await page.waitForSelector('.dialog-settings', { state: 'detached' })
+    assert.equal(settings.defaultAgent, 'codex')
+    assert.equal(settings.historyDays, 365)
+    assert.deepEqual(errors, [])
+    await page.close()
+
+    // Reduced motion: nothing animates, and the notice still goes away.
+    const still = await open('reduce')
+    await still.waitForSelector('.update-notice')
+    assert.equal(await anim(still, '.update-notice'), 'none')
+    await still.click('.update-close')
+    await still.waitForSelector('.update-notice', { state: 'detached' })
+    await still.click('.sidebar-foot')
+    await still.click('#set-tab-agents')
+    assert.equal(await anim(still, '.settings-pane'), 'none')
+    await still.close()
+  })
+
+  it('desktop host: adding a repository from a folder lists it with a notice; a folder that is not one says so and adds nothing', async () => {
+    // What the folder panel returns next: a repository, or a folder that is not one (the host's own error).
+    let pick: 'repo' | 'plain' = 'repo'
+    let added: string[] = []
+    const engine = new Engine({ bin: BIN, env })
+    const base = createHandlers({
+      engine,
+      capabilities: { host: 'desktop', multiRepo: true, create: false, settings: true, github: false, sessions: false, control: false, timeline: true, ides: IDES },
+      repo: () => REPO,
+      runInTerminal: () => {},
+    })
+    const handlers = {
+      ...base,
+      repos: async () => Promise.all(added.map((p) => engine.repoInfo(p))),
+      settings: () => ({ terminal: 'Terminal', defaultAgent: 'claude', projectsDir: '', autoDetect: false, onboarded: true }),
+      githubAccount: () => ({ configured: false, status: 'signed-out', keychain: true, installUrl: '' }),
+      addRepo: async () => {
+        if (pick === 'plain') throw new Error('"Downloads" is not a git repository: choose the folder of a project that uses git.')
+        if (!added.includes(REPO)) added = [...added, REPO]
+        return engine.repoInfo(REPO)
+      },
+    } as unknown as typeof base
+    for (const locale of ['en-US', 'es-ES']) {
+      added = []
+      const page = await browser.newPage({ locale, viewport: { width: 1280, height: 800 } })
+      const errors: string[] = []
+      page.on('pageerror', (e) => errors.push(String(e)))
+      await page.exposeFunction('__host', (method: string, args: unknown[]) =>
+        dispatch(handlers, method, args).then((result) => ({ result }), (e: Error) => ({ error: e.message })))
+      await page.addInitScript(() => {
+        const w = window as unknown as { ramify: unknown; __host: (m: string, a: unknown[]) => Promise<{ result?: unknown; error?: string }> }
+        // Electron's own prefix on errors from the host, as the packaged app sees them.
+        w.ramify = {
+          invoke: async (method: string, args: unknown[]) => {
+            const r = await w.__host(method, args)
+            if (r.error) throw new Error(`Error invoking remote method 'ramify': Error: ${r.error}`)
+            return r.result
+          },
+          on: () => {},
+        }
+      })
+      await page.goto(`http://127.0.0.1:${WEB}/index.html`)
+      const add = locale === 'en-US' ? 'Add repository' : 'Añadir repositorio'
+      await page.waitForSelector(`.sidebar .side-btn:has-text("${add}")`)
+      assert.equal(await page.$$eval('.sidebar .repo-item', (els) => els.length), 0)
+
+      // Not a repository: a clear error, and the list stays empty.
+      pick = 'plain'
+      await page.click(`.sidebar .side-btn:has-text("${add}")`)
+      const error = await (await page.waitForSelector('.toast-error')).textContent()
+      assert.match(error ?? '', locale === 'en-US' ? /^The repository was not added\. "Downloads" is not a git repository/ : /^No se ha añadido el repositorio\. "Downloads"/)
+      assert.equal(await page.$$eval('.sidebar .repo-item', (els) => els.length), 0)
+
+      // A repository: in the sidebar, selected, with a notice.
+      pick = 'repo'
+      await page.click(`.sidebar .side-btn:has-text("${add}")`)
+      const ok = await (await page.waitForSelector('.toast-ok')).textContent()
+      assert.equal(ok?.trim(), locale === 'en-US' ? 'Repository added: shop' : 'Repositorio añadido: shop')
+      await page.waitForSelector('.sidebar .repo-item:has-text("shop")')
+      await page.waitForSelector('.graph-row:has-text("Stripe payment intent")')
+      // The same one again: it says so instead of adding a second one.
+      await page.click(`.sidebar .side-btn:has-text("${add}")`)
+      await page.waitForSelector(`.toast-ok:has-text("${locale === 'en-US' ? 'shop was already in the list' : 'shop ya estaba en la lista'}")`)
+      assert.equal(await page.$$eval('.sidebar .repo-item', (els) => els.length), 1)
+      if (process.env.RAMIFY_E2E_SHOTS) await page.screenshot({ path: join(process.env.RAMIFY_E2E_SHOTS, `add-repo-${locale}.png`) })
+      assert.deepEqual(errors, [])
+      await page.close()
+    }
   })
 })

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Download, RefreshCw, X } from 'lucide-react'
 import { bridge } from '../bridge'
 import { useStore } from '../store'
@@ -8,14 +8,18 @@ export function UpdateNotice() {
   const update = useStore((s) => s.update)
   const t = useStore((s) => s.t)
   const [dismissed, setDismissed] = useState<string | null>(null)
+  // Put off: it slides out first and is removed by a timer, so it also goes away with reduced motion (no animationend then).
+  const [leaving, setLeaving] = useState<string | null>(null)
+  const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  useEffect(() => () => clearTimeout(timer.current), [])
   if (!update || update.status === 'none' || dismissed === `${update.status}:${update.version}`) return null
   const version = update.version ?? ''
   const percent = update.percent ?? 0
 
   return (
-    <div className="toast update-notice" role="status">
+    <div className={`toast update-notice${leaving === `${update.status}:${update.version}` ? ' is-leaving' : ''}`} role="status">
       {update.status === 'ready' ? <RefreshCw size={16} /> : <Download size={16} />}
-      <div className="update-body">
+      <div className="update-body" key={update.status}>
         {update.status === 'available' && (
           <>
             <b>{t('updateAvailable', { version })}</b>
@@ -55,7 +59,11 @@ export function UpdateNotice() {
       </div>
       {update.status !== 'downloading' && (
         <button type="button" className="icon-btn update-close" aria-label={t('updateLater')} title={t('updateLater')}
-          onClick={() => setDismissed(`${update.status}:${update.version}`)}>
+          onClick={() => {
+            const key = `${update.status}:${update.version}`
+            setLeaving(key)
+            timer.current = setTimeout(() => setDismissed(key), 200)
+          }}>
           <X size={14} />
         </button>
       )}
