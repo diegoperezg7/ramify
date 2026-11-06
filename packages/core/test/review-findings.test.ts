@@ -99,6 +99,20 @@ describe('CLI (ramify)', { skip: process.platform === 'win32' }, () => {
     assert.equal(existsSync(join(T, 'wts', name, '.claims', 'worktree-bad..name')), false)
   })
 
+  it('hook create does not take a name another conversation claimed, where mkdir tells it it made the claim', () => {
+    const r = repo()
+    const root = join(T, 'wts-claim-loose')
+    // Another conversation claimed feat-pay and has not run git worktree add yet: the claim, no folder.
+    mkdirSync(join(root, r.split('/').pop()!, '.claims', 'feat-pay'), { recursive: true })
+    const res = spawnSync('bash', [BIN, 'hook', 'create'], {
+      cwd: r, input: JSON.stringify({ name: 'feat-pay', cwd: r, session_id: 'B' }), encoding: 'utf8',
+      env: { ...process.env, PATH: looseMkdirPath(), RAMIFY_ROOT: root },
+    })
+    const got = res.stdout.trim().split('\n').pop()!
+    assert.ok(got, res.stderr)
+    assert.equal(git(got, 'branch', '--show-current').trim(), 'feat/pay-2')
+  })
+
   /** PATH with a mkdir that never says the folder already exists: the worst case of uutils mkdir, the default on
    * Ubuntu 26.04, which can report success to two callers racing for one name. */
   function looseMkdirPath() {

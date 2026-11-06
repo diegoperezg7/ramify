@@ -927,7 +927,7 @@ cmd_hook() {
       n=1; branch=$base
       while :; do
         slug=$(slugify "$branch"); dir="$ROOT/$repo/$slug"
-        if [ -d "$dir" ] && [ -d "$ROOT/$repo/.claims/$slug" ]; then
+        if [ -d "$dir" ] && [ -e "$ROOT/$repo/.claims/$slug" ]; then
           :  # still being made for another conversation (git worktree add, then npm ci…): taken
         elif [ -d "$dir" ]; then
           owner=$(env_get "$dir" WT_SESSION)
@@ -935,15 +935,17 @@ cmd_hook() {
           if of_repo "$dir" "$main" && { [ -z "$session" ] || [ -z "$owner" ] || [ "$owner" = "$session" ]; }; then
             (cd "$dir" && abspwd); exit 0
           fi
-        elif mkdir "$ROOT/$repo/.claims/$slug" 2>/dev/null; then
-          break  # claimed: two conversations starting at once cannot both take this name
+        elif (set -C; : > "$ROOT/$repo/.claims/$slug") 2>/dev/null; then
+          # Claimed: two conversations starting at once cannot both take this name. A file made with noclobber
+          # (O_EXCL, from bash itself), not mkdir: uutils mkdir can tell two callers that each made the folder.
+          break
         fi
         n=$((n + 1)); branch="$base-$n"
       done
       # The claim goes when this ends, also when create stops: a failed name must not stay reserved.
       # (The path is fixed now: these variables are local and gone by the time the script exits.)
       # shellcheck disable=SC2064
-      trap "rmdir -- $(printf '%q' "$ROOT/$repo/.claims/$slug") 2>/dev/null || true" EXIT
+      trap "rm -f -- $(printf '%q' "$ROOT/$repo/.claims/$slug")" EXIT
       CREATE_SESSION=$session create "$branch" "" 1 claude
       printf '%s\n' "$CREATED_WT" ;;
     remove)
