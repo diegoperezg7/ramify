@@ -18,6 +18,24 @@ export function mergeReady(b: BranchHealth, busy: boolean, pr?: PullRequest | nu
   return b.ahead > 0 && b.uncommitted === 0 && b.behind === 0 && b.overlaps.length === 0
 }
 
+/**
+ * Its agent marked it ready (`ramify ready`) and the base moved past it since: the agent has to run ramify ready again
+ * before the merge. New commits of its own make the mark stale too, but its agent made them and knows: only base
+ * commits it lacks are news.
+ */
+export function staleReady(b: BranchHealth): boolean {
+  return !b.main && !b.merged && b.ready === 'stale' && b.behind > 0
+}
+
+/**
+ * It waited for its turn (`ramify ready` found a branch marked before it that changes the same files) and the base
+ * moved since: what it waited for may be merged, so its agent should run ramify ready again. It had the base in when it
+ * began to wait, so base commits it lacks are the base moving.
+ */
+export function staleWait(b: BranchHealth): boolean {
+  return !b.main && !b.merged && b.ready === 'waiting' && b.behind > 0
+}
+
 /** `${repo}#${branch}`: how a ready branch is told apart. */
 export const branchKey = (repo: string, branch: string) => `${repo}#${branch}`
 

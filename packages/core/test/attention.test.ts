@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { actionWords, agoWords, attentionCount, branchKey, mergeReady, sessionAttention } from '../src/attention.ts'
+import { actionWords, agoWords, attentionCount, branchKey, mergeReady, sessionAttention, staleReady, staleWait } from '../src/attention.ts'
 import type { AgentSession, BranchHealth, PullRequest } from '../src/types.ts'
 
 const branch = (over: Partial<BranchHealth> = {}): BranchHealth => ({
@@ -25,6 +25,29 @@ describe('a branch ready to merge', () => {
     assert.equal(mergeReady(branch({ main: true }), false), false, 'the main checkout')
     assert.equal(mergeReady(branch(), false, pr({ draft: true })), false, 'draft pull request')
     assert.equal(mergeReady(branch(), false, pr({ state: 'MERGED' })), false, 'merged pull request')
+  })
+})
+
+describe('a branch whose agent has to run ramify ready again', () => {
+  it('was marked ready, and the base moved past it', () => {
+    assert.equal(staleReady(branch({ ready: 'stale', behind: 1 })), true)
+  })
+  it('not for its own new commits, a mark still valid, no mark, a merged branch or the main checkout', () => {
+    assert.equal(staleReady(branch({ ready: 'stale', behind: 0 })), false, 'stale by its own commits: its agent knows')
+    assert.equal(staleReady(branch({ ready: 'ready', behind: 0 })), false, 'still ready')
+    assert.equal(staleReady(branch({ ready: null, behind: 3 })), false, 'never marked')
+    assert.equal(staleReady(branch({ behind: 3 })), false, 'no mark at all (an older ramify)')
+    assert.equal(staleReady(branch({ ready: 'stale', behind: 2, merged: true })), false, 'already in the base')
+    assert.equal(staleReady(branch({ ready: 'stale', behind: 2, main: true })), false, 'the main checkout')
+    assert.equal(staleReady(branch({ ready: 'waiting', behind: 2 })), false, 'a waiting branch is told apart')
+  })
+  it('waited for its turn, and the base moved since: what it waited for may be merged', () => {
+    assert.equal(staleWait(branch({ ready: 'waiting', behind: 2 })), true)
+    assert.equal(staleWait(branch({ ready: 'waiting', behind: 0 })), false, 'the base has not moved: still waiting')
+    assert.equal(staleWait(branch({ ready: 'waiting', behind: 2, merged: true })), false, 'already in the base')
+    assert.equal(staleWait(branch({ ready: 'waiting', behind: 2, main: true })), false, 'the main checkout')
+    assert.equal(staleWait(branch({ ready: 'stale', behind: 2 })), false, 'a stale mark is told apart')
+    assert.equal(staleWait(branch({ ready: 'ready', behind: 0 })), false, 'ready')
   })
 })
 
