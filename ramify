@@ -44,7 +44,7 @@ ${B}Usage${N}
   ramify uninstall [shell|instructions]  undo install shell / install instructions
   ramify run <agent> [args]     open an agent; from a main checkout it gets its own branch first
   ramify move <branch> [-a agent]  move the main checkout's uncommitted work to a branch of its own
-  ramify hook create|remove|session-start|guard   Claude Code hooks
+  ramify hook create|remove|session-start|guard|nudge   Claude Code hooks
 
 ${B}Agents${N} (-a)   claude, codex, gemini, copilot, cursor, opencode, aider, amp, or any command
 ${B}IDEs${N}   (-i)   xcode, cursor, code, zed, idea, or any macOS app name
@@ -733,7 +733,7 @@ cmd_hook() {
   local input name cwd wt main branch file slug repo session base n owner dir cmd
   # Hooks never get in the way when they cannot run: without jq they do nothing.
   if ! command -v jq >/dev/null; then
-    case "${1:-}" in session-start|guard) exit 0 ;; esac
+    case "${1:-}" in session-start|guard|nudge) exit 0 ;; esac
     die "jq is required for hook mode"
   fi
   input=$(cat)
@@ -781,6 +781,27 @@ cmd_hook() {
       main=$(main_checkout "$wt")
       # Claude Code already asked for confirmation: discard changes, but keep the branch.
       remove_wt "$main" "$wt" 1 ;;
+    nudge)
+      # On every prompt (UserPromptSubmit): a branch marked ready whose base moved since hears it in its next turn.
+      # Quiet everywhere else, and it never blocks the prompt.
+      local tip
+      cwd=$(printf '%s' "$input" | jq -r '.cwd // empty')
+      wt=$(git -C "${cwd:-$PWD}" rev-parse --show-toplevel 2>/dev/null) || exit 0
+      [ -f "$wt/.worktree.env" ] || exit 0
+      main=$(main_checkout "$wt" 2>/dev/null) || exit 0
+      base=$(default_branch "$main"); [ -n "$base" ] || exit 0
+      tip=$(git -C "$main" rev-parse -q --verify "$base^{commit}" 2>/dev/null) || exit 0
+      [ "$(ready_state "$wt" "$tip")" = stale ] || exit 0
+      # Stale only because of its own new commits: the agent made them and knows; nothing to say.
+      n=$(git -C "$wt" rev-list --count "HEAD..$tip" 2>/dev/null || echo 0)
+      [ "$n" != 0 ] || exit 0
+      branch=$(git -C "$wt" branch --show-current)
+      jq -n --arg b "$base" --arg br "${branch:-this branch}" --arg n "$n" --arg bin "$(cd "$SELF_DIR" && pwd)/ramify" \
+        '{hookSpecificOutput: {hookEventName: "UserPromptSubmit", additionalContext:
+        ("ramify: " + $b + " has moved since " + $br + " was marked ready to merge (" + $n + " commit(s) it does not have yet). "
+        + "Run `\"" + $bin + "\" ready` again in this worktree before asking for the merge: it brings " + $b + " in, checks "
+        + "the other branches marked ready and marks this one again. Exit 1: another ready branch changes the same files; "
+        + "exit 2: " + $b + " conflicts with this branch (the files are listed): merge " + $b + ", resolve and commit, then run it again.")}}' ;;
     session-start)
       # A session that opens on the shared branch learns to take a worktree of its own before changing files.
       cwd=$(printf '%s' "$input" | jq -r '.cwd // empty')

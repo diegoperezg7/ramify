@@ -285,7 +285,11 @@ rc=$("$AW" new feat/ready-c --no-launch --no-setup 2>/dev/null)
 echo c > "$rc/c.txt" && git -C "$rc" add c.txt && git -C "$rc" commit -qm c
 git merge -q --no-ff --no-edit feat/ready-c
 check "after another branch is merged the mark goes stale and behind counts what it lacks" '"$AW" ls --json | jq -e ".[] | select(.branch == \"feat/ready-b\") | .ready == \"stale\" and .behind == 2" >/dev/null && "$AW" ls 2>/dev/null | grep "^feat-ready-b .* stale " >/dev/null'
+n=$(printf '{"cwd":"%s","session_id":"s"}' "$rb" | "$AW" hook nudge 2>/dev/null)
+check "nudge tells the agent of a stale branch to run ramify ready again" 'printf "%s" "$n" | jq -e ".hookSpecificOutput.hookEventName == \"UserPromptSubmit\" and (.hookSpecificOutput.additionalContext | contains(\"main has moved\") and contains(\"ready\"))" >/dev/null'
 (cd "$rb" && "$AW" ready >/dev/null 2>&1)
+n=$(printf '{"cwd":"%s"}' "$rb" | "$AW" hook nudge 2>/dev/null)
+check "nudge is quiet up to date, without a mark and on main" '[ -z "$n" ] && [ -z "$(printf "{\"cwd\":\"%s\"}" "$p1" | "$AW" hook nudge 2>/dev/null)" ] && [ -z "$(printf "{\"cwd\":\"%s\"}" "$T/demo" | "$AW" hook nudge 2>/dev/null)" ]'
 rd=$("$AW" new feat/ready-d --no-launch --no-setup 2>/dev/null)
 printf 'one-a\ntwo-d\nthree\nfour\nfive\n' > "$rd/q.txt" && git -C "$rd" commit -qam "d: q"
 printf 'one-a\ntwo-main\nthree\nfour\nfive\n' > q.txt && git commit -qam "main: q"
