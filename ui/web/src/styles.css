@@ -1235,6 +1235,12 @@ kbd {
 .cc-pr.is-draft { color: var(--muted); }
 .cc-pr.is-open { color: var(--good); border-color: color-mix(in srgb, var(--good) 35%, var(--border)); }
 .cc-pr.is-merged { color: var(--accent-text); border-color: var(--accent-ring); }
+/* Pull requests outside the control center: in a branch's detail and next to its label in the branch tree. */
+.fact-pr dd { font-family: var(--font); }
+.pr-hint { margin: 0; padding: 10px 16px; border-bottom: 1px solid var(--border); font-size: 12.5px; color: var(--muted); }
+.pr-hint-btn { padding: 0; border: 0; background: none; font: inherit; font-weight: 600; color: var(--accent-text); cursor: pointer; }
+.pr-hint-btn:hover { text-decoration: underline; }
+.graph-row .cc-pr { margin-left: 2px; }
 .cc-actions { flex: none; display: flex; align-items: center; gap: 4px; }
 .cc-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 18px; border: 1px dashed var(--border-strong); border-radius: var(--radius); color: var(--text-2); }
 .app.is-sm .cc-row { flex-wrap: wrap; }

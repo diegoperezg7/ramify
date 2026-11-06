@@ -6,9 +6,10 @@ import type { AgentSession, BranchHealth, Health, PullRequest } from '../types'
 import { AgentBadge } from './AgentBadge'
 import { Dialog } from './Dialog'
 import { GithubIcon } from './GithubIcon'
+import { PrChip } from './PrChip'
 import { ActivityCharts, DayPanel, NowPanel } from './Dashboard'
 import { HEAT_DAYS, Heatmap } from './Heatmap'
-import { friendlyMerge, mergeWords, MergeError, nextAction, type Action } from '../logic'
+import { friendlyMerge, mergeWords, MergeError, nextAction, prFor, type Action } from '../logic'
 
 /** Pull requests of ~400 changed lines or more are hard to review: say so. */
 const BIG = 400
@@ -193,8 +194,7 @@ export function ControlCenter() {
           </header>
           <ul>
             {board.health.branches.map((b) => {
-              // An old closed or merged pull request of the same branch name must not hide the open one.
-              const pr = board.prs.find((p) => p.branch === b.branch && p.state === 'OPEN') ?? board.prs.find((p) => p.branch === b.branch)
+              const pr = prFor(board.prs, b.branch)
               const live = sessionsOf(board.repo, b.branch)
               const state = stateOf(live)
               const agent = b.agent || live[0]?.agent || b.running[0] || ''
@@ -221,11 +221,7 @@ export function ControlCenter() {
                         </span>
                       )}
                       {b.unpushed !== null && b.unpushed > 0 && <span className="chip">{t('ccUnpushed', { n: b.unpushed })}</span>}
-                      {pr && (
-                        <a className={`chip cc-pr is-${pr.draft && pr.state === 'OPEN' ? 'draft' : pr.state.toLowerCase()}`} href={pr.url} target="_blank" rel="noreferrer" title={pr.title}>
-                          <GitPullRequest size={11} />#{pr.number} · {t(pr.state === 'MERGED' ? 'prMerged' : pr.state === 'CLOSED' ? 'prClosed' : pr.draft ? 'prDraft' : 'prOpen')}
-                        </a>
-                      )}
+                      {pr && <PrChip pr={pr} />}
                       {b.overlaps.length > 0 && <span className="chip chip-warn" title={t('ccOverlapHint')}><AlertTriangle size={11} />{t('ccOverlap', { branches: b.overlaps.join(', ') })}</span>}
                       {b.lastCommit && <span className="muted small">{relative(lang, b.lastCommit)}</span>}
                     </span>

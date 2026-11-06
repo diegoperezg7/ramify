@@ -26,7 +26,7 @@ export function Onboarding() {
   const toast = useStore((s) => s.toast)
   const setModal = useStore((s) => s.setModal)
   const ref = useRef<HTMLDialogElement>(null)
-  const [step, setStep] = useState<Step>('welcome')
+  const [step, setStep] = useState<Step>(() => useStore.getState().onboardingStep ?? 'welcome')
   const [tools, setTools] = useState<InstalledTools | null>(null)
   const [live, setLive] = useState(0)
   const [picked, setPicked] = useState<Set<string>>(new Set())

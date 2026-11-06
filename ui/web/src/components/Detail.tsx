@@ -1,11 +1,13 @@
 import { Check, Copy, ExternalLink, FolderOpen, GitMerge, Play, Trash2, X } from 'lucide-react'
 import { BrandIcon } from './BrandIcon'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { agentVar } from '../agents'
 import { bridge } from '../bridge'
 import { relTime } from '../i18n'
-import { friendlyMerge, mergeWords, shellArg } from '../logic'
+import { friendlyMerge, mergeWords, prFor, prSignInHint, shellArg } from '../logic'
 import { useStore } from '../store'
+import type { GithubAccount } from '../types'
+import { PrChip } from './PrChip'
 import { Dialog } from './Dialog'
 import { DiffStat, DiffView } from './DiffView'
 import { AgentBadge } from './AgentBadge'
@@ -35,6 +37,19 @@ export function Detail() {
   const [dialog, setDialog] = useState<'merge' | 'remove' | null>(null)
   const [force, setForce] = useState(false)
   const [copied, setCopied] = useState<string | null>(null)
+  const prs = useStore((s) => s.prs)
+  const modal = useStore((s) => s.modal)
+  const signInGithub = useStore((s) => s.signInGithub)
+  const github = useStore((s) => s.repos.find((r) => r.path === s.repo)?.github ?? null)
+  // Signed in, pull requests are read with the account even without gh; signed out, the detail says so.
+  // Read again when a dialog closes (the sign-in is one). Only a repository on GitHub asks.
+  const [account, setAccount] = useState<GithubAccount | null>(null)
+  useEffect(() => {
+    if (!github || modal) return
+    let live = true
+    bridge.githubAccount().then((a) => { if (live) setAccount(a) }, () => { if (live) setAccount(null) })
+    return () => { live = false }
+  }, [github, modal])
 
   const commit = useStore((s) => s.commit)
   if (commit) return <CommitDetail hash={commit} />
@@ -54,6 +69,9 @@ export function Detail() {
   // Pasted into a terminal: a branch made outside the app can hold ; $ ` and the like, so it is quoted.
   const command = `ramify open ${shellArg(w.branch)}${w.agent ? ` -a ${shellArg(w.agent)}` : ''}`
   const mergeBlocked = w.changes > 0 ? t('whyNoMergeChanges') : w.commits === 0 ? t('whyNoMergeCommits') : null
+  // Shown next to the merge button: with an open pull request, the merge happens on GitHub (squashed).
+  const pr = w.main ? undefined : prFor(prs, w.branch)
+  const signInHint = !w.main && !pr && prSignInHint(account, github)
 
   return (
     <section className="pane detail-pane" style={{ ['--c' as string]: w.main ? 'var(--lane-main)' : agentVar(w.agent) }}>
@@ -72,12 +90,18 @@ export function Detail() {
         <div><dt>{t('changes')}</dt><dd className={w.changes ? 'warn' : ''}>{w.changes}</dd></div>
         {!w.main && <div><dt>{t('commits')}</dt><dd>{w.commits}</dd></div>}
         <div><dt>{t('upstream')}</dt><dd>{upstreamLabel(w, t)}</dd></div>
+        {pr && <div className="fact-pr"><dt>{t('pr')}</dt><dd><PrChip pr={pr} /></dd></div>}
         {w.port && (
           <div><dt>{t('ports')}</dt><dd>
             <a href={`http://localhost:${w.port}`} target="_blank" rel="noreferrer">{w.port}–{w.port + 9}<ExternalLink size={12} /></a>
           </dd></div>
         )}
       </dl>
+      {signInHint && (
+        <p className="pr-hint">
+          {t('prSignIn')} <button type="button" className="pr-hint-btn" onClick={signInGithub}>{t('obGhSignIn')}</button>
+        </p>
+      )}
 
       <div className="actions">
         <div className="ide-row" role="group" aria-label={t('openIn')}>

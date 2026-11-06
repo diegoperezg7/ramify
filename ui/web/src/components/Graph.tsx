@@ -3,8 +3,10 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperti
 import { agentVar } from '../agents'
 import { layout } from '../graph'
 import { relTime } from '../i18n'
+import { prFor, squashMerged } from '../logic'
 import { useStore } from '../store'
-import type { Worktree } from '../types'
+import type { PullRequest, Worktree } from '../types'
+import { PrChip } from './PrChip'
 
 const LANE = 26
 const PAD = 18
@@ -29,6 +31,19 @@ export function Graph({ onPick }: { onPick?: (hash: string) => void } = {}) {
   const g = useMemo(() => layout(state.commits), [state.commits])
   const byBranch = useMemo(() => new Map(state.worktrees.map((w) => [w.branch, w])), [state.worktrees])
   const selectedBranch = state.worktrees.find((w) => w.path === selected)?.branch || null // '' (detached) highlights nothing
+  const prs = useStore((s) => s.prs)
+  // Squashed on GitHub: its commits never reach the base, so its lane would look unfinished until its worktree goes.
+  // It is shown dimmed, its pull request marked merged; nothing is hidden.
+  const squashed = useMemo(() => {
+    const out = new Set<string>()
+    for (const commit of state.commits) {
+      for (const raw of commit.refs) {
+        const ref = cleanRef(raw)
+        if (!ref.startsWith('tag: ') && squashMerged(prFor(prs, ref), commit.hash)) out.add(ref)
+      }
+    }
+    return out
+  }, [state.commits, prs])
 
   // Everything is "new" on the first render (the tree draws itself in); afterwards only
   // commits and lines that appear between refreshes animate in.
@@ -80,7 +95,8 @@ export function Graph({ onPick }: { onPick?: (hash: string) => void } = {}) {
     return j ? { ['--from' as string]: j.from, animationDelay: `${j.step * JOIN_STEP}ms`, animationDuration: `${JOIN_MS}ms` } : undefined
   }
 
-  const dimmed = (owner: string | null) => selectedBranch !== null && owner !== null && owner !== selectedBranch
+  // Another branch is selected, or this one is squashed on GitHub (unless it is the one selected).
+  const dimmed = (owner: string | null) => owner !== null && owner !== selectedBranch && (selectedBranch !== null || squashed.has(owner))
   const x = (col: number) => PAD + col * LANE
   const y = (row: number) => row * ROW + ROW / 2
   const graphWidth = Math.max(GRAPH_MIN, PAD * 2 + (g.lanes - 1) * LANE)
@@ -169,7 +185,7 @@ export function Graph({ onPick }: { onPick?: (hash: string) => void } = {}) {
                 onClick={() => (onPick ? onPick(commit.hash) : selectCommit(openCommit === commit.hash ? null : commit.hash))}
                 title={`${commit.hash}\n${commit.author} · ${new Date(commit.time * 1000).toLocaleString(lang)}`}>
                 <span className="refs">
-                  {commit.refs.map((ref) => <RefPill key={ref} raw={ref} byBranch={byBranch} />)}
+                  {commit.refs.map((ref) => <RefPill key={ref} raw={ref} byBranch={byBranch} prs={prs} />)}
                   {pending.has(commit.hash) && (
                     <span className="ref ref-pending" style={{ ['--c' as string]: pending.get(commit.hash)!.color }}>
                       +{pending.get(commit.hash)!.count} {t('uncommittedShort')}
@@ -194,7 +210,7 @@ function cleanRef(raw: string): string {
   return raw.replace(/^HEAD -> /, '')
 }
 
-function RefPill({ raw, byBranch }: { raw: string; byBranch: Map<string, Worktree> }) {
+function RefPill({ raw, byBranch, prs }: { raw: string; byBranch: Map<string, Worktree>; prs: PullRequest[] }) {
   if (raw === 'HEAD') return null
   const head = raw.startsWith('HEAD -> ')
   const ref = cleanRef(raw)
@@ -202,16 +218,22 @@ function RefPill({ raw, byBranch }: { raw: string; byBranch: Map<string, Worktre
     return <span className="ref ref-tag"><Tag size={11} aria-hidden="true" />{ref.slice(5)}</span>
   }
   const wt = byBranch.get(ref)
+  // Read-only, and not a link: the whole row is a button that opens the commit.
+  const pr = wt?.main ? undefined : prFor(prs, ref)
+  const chip = pr && <PrChip pr={pr} link={false} />
   if (wt) {
     return (
-      <span className={`ref ref-branch${head ? ' is-head' : ''}`} style={{ ['--c' as string]: wt.main ? 'var(--lane-main)' : agentVar(wt.agent) }}>
-        <span className="dot" />{ref}{!wt.main && wt.agent && <em>{wt.agent}</em>}
-      </span>
+      <>
+        <span className={`ref ref-branch${head ? ' is-head' : ''}`} style={{ ['--c' as string]: wt.main ? 'var(--lane-main)' : agentVar(wt.agent) }}>
+          <span className="dot" />{ref}{!wt.main && wt.agent && <em>{wt.agent}</em>}
+        </span>
+        {chip}
+      </>
     )
   }
   if (/^(origin|upstream)\//.test(ref)) {
     return <span className="ref ref-remote"><Cloud size={11} aria-hidden="true" />{ref}</span>
   }
   // A local branch without a worktree.
-  return <span className={`ref ref-branch${head ? ' is-head' : ''}`} style={{ ['--c' as string]: 'var(--lane-branch)' }}><span className="dot" />{ref}</span>
+  return <><span className={`ref ref-branch${head ? ' is-head' : ''}`} style={{ ['--c' as string]: 'var(--lane-branch)' }}><span className="dot" />{ref}</span>{chip}</>
 }

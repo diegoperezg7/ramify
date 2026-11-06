@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import { bridge, BridgeError } from './bridge'
 import { dict, format, type Key, type Lang } from './i18n'
-import type { AgentChild, AgentSession, Capabilities, CreateRequest, Detail, RepoInfo, Settings, State, UpdateState } from './types'
+import type { AgentChild, AgentSession, Capabilities, CreateRequest, Detail, PullRequest, RepoInfo, Settings, State, UpdateState } from './types'
 import { MergeError, type MergeProblem } from './logic'
 
 export type Theme = 'system' | 'light' | 'dark'
@@ -30,6 +30,13 @@ interface Store {
   diff: string | null
   settings: Settings | null
   modal: Modal
+  /** The step the introduction opens at when it is opened for one thing (GitHub sign-in from a branch's detail). */
+  onboardingStep: 'github' | null
+  /** Pull requests of the current repository, read-only: they are shown, never made or merged from here. */
+  prs: PullRequest[]
+  refreshPrs: () => Promise<void>
+  /** Open the introduction at its GitHub sign-in step. */
+  signInGithub: () => void
   lang: Lang
   theme: Theme
   density: Density
@@ -98,6 +105,10 @@ function save(key: string, value: string) {
 
 let pollSeq = 0
 let polling = false
+// Pull requests change slowly next to the 2.5 s poll: read them once a minute per repository, and right after an action.
+const PRS_EVERY_MS = 60_000
+let prsRepo: string | null = null
+let prsAt = 0
 const defaultLang: Lang = navigator.language.toLowerCase().startsWith('es') ? 'es' : 'en'
 let toastId = 0
 
@@ -116,6 +127,8 @@ export const useStore = create<Store>((set, get) => ({
   diff: null,
   settings: null,
   modal: null,
+  onboardingStep: null,
+  prs: [],
   lang: load<Lang>('ramify-lang', defaultLang, ['es', 'en']),
   theme: load<Theme>('ramify-theme', 'system', ['system', 'light', 'dark']),
   density: load<Density>('ramify-density', 'comfortable', ['comfortable', 'compact']),
@@ -181,12 +194,25 @@ export const useStore = create<Store>((set, get) => ({
       const stillThere = selected && state.worktrees.some((w) => w.path === selected)
       set({ state, conn: 'ok', lastSync: Date.now(), ...(selected && !stillThere ? { selected: null, detail: null, file: null } : {}) })
       if (stillThere) void get().refreshDetail()
+      void get().refreshPrs()
       if (caps?.multiRepo) void get().refreshRepos()
     } catch (e) {
       if (get().repo !== repo || seq !== pollSeq) return
       set({ conn: e instanceof BridgeError && e.status === 401 ? 'unauthorized' : 'offline' })
     }
   },
+
+  refreshPrs: async () => {
+    const { repo } = get()
+    if (repo === prsRepo && Date.now() - prsAt < PRS_EVERY_MS) return
+    prsRepo = repo
+    prsAt = Date.now()
+    // No GitHub, no session and no gh: an empty list, as everywhere else that reads them.
+    const prs = await bridge.pullRequests(repo).catch(() => [] as PullRequest[])
+    if (get().repo === repo) set({ prs })
+  },
+
+  signInGithub: () => set({ modal: 'onboarding', onboardingStep: 'github' }),
 
   refreshRepos: async () => {
     try {
@@ -225,7 +251,7 @@ export const useStore = create<Store>((set, get) => ({
 
   setRepo: (path) => {
     save('ramify-repo', path)
-    set({ repo: path, state: null, selected: null, commit: null, detail: null, file: null, diff: null, menuOpen: false, view: get().view === 'timeline' ? 'timeline' : 'repo' })
+    set({ repo: path, state: null, prs: [], selected: null, commit: null, detail: null, file: null, diff: null, menuOpen: false, view: get().view === 'timeline' ? 'timeline' : 'repo' })
     void get().poll(true)
   },
 
@@ -310,7 +336,7 @@ export const useStore = create<Store>((set, get) => ({
     set({ settings: s, caps: await bridge.capabilities().catch(() => get().caps) })
   },
 
-  setModal: (modal) => set(modal === null ? { modal, createPrefill: null } : { modal }),
+  setModal: (modal) => set(modal === null ? { modal, createPrefill: null, onboardingStep: null } : { modal }),
   setLang: (lang) => { save('ramify-lang', lang); set({ lang }) },
   setTheme: (theme) => { save('ramify-theme', theme); set({ theme }) },
   setDensity: (density) => { save('ramify-density', density); set({ density }) },
@@ -348,6 +374,7 @@ export const useStore = create<Store>((set, get) => ({
     try {
       const { message } = await action()
       get().toast('ok', message || get().t('done'))
+      prsAt = 0 // a merge or a removal can change a pull request: read them again now
       await get().poll(true)
       return true
     } catch (e) {
