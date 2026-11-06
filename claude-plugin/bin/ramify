@@ -132,29 +132,50 @@ find_wt() {
 
 alloc_port() {
   local used p
-  used=$(cat "$ROOT"/*/*/.worktree.env 2>/dev/null | sed -n 's/^PORT=//p' || true)
+  # The ports in use, one per line between newlines. Looked up in bash, not with printf | grep -q: under pipefail a
+  # grep that stops at the first match can leave printf writing to a closed pipe, and a taken port then read as free.
+  used=$'\n'$(cat "$ROOT"/*/*/.worktree.env 2>/dev/null | sed -n 's/^PORT=//p' || true)$'\n'
   p=$PORT_MIN
   while [ "$p" -le "$PORT_MAX" ]; do
-    if ! printf '%s\n' "$used" | grep -qx "$p" && ! port_busy "$p"; then
-      printf '%s\n' "$p"; return
-    fi
+    case "$used" in
+      *$'\n'"$p"$'\n'*) ;;
+      *) port_busy "$p" || { printf '%s\n' "$p"; return; } ;;
+    esac
     p=$((p + PORT_BLOCK))
   done
   die "no free port block between $PORT_MIN and $PORT_MAX"
 }
 
+# A file holding its owner's pid, created with noclobber: bash itself opens it with O_EXCL, so one ramify gets it.
+# Not mkdir: uutils mkdir, the default on Ubuntu 26.04, can tell two callers racing for one name that each made it.
 PORT_LOCK="$ROOT/.port-lock"
 port_lock() {
-  local i=0
+  local i=0 holder
   mkdir -p "$ROOT"
-  until mkdir "$PORT_LOCK" 2>/dev/null; do
-    # Left behind by a ramify that died holding it (older than a minute): take it over.
-    if [ -n "$(find "$PORT_LOCK" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then rmdir "$PORT_LOCK" 2>/dev/null; continue; fi
+  until (set -C; printf '%s\n' "$$" > "$PORT_LOCK") 2>/dev/null; do
+    # A folder is the lock of a ramify up to 0.8, with no pid in it: taken over as those did, once a minute old.
+    if [ -d "$PORT_LOCK" ] && [ -n "$(find "$PORT_LOCK" -maxdepth 0 -mmin +1 2>/dev/null)" ] && rmdir "$PORT_LOCK" 2>/dev/null; then
+      continue
+    fi
+    # Its owner is no longer running (killed while holding it): take it over, judged by the pid, never by age. One
+    # taker at a time (a noclobber file of its own), and only while the lock still names that owner.
+    holder=$(lock_holder)
+    if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null && (set -C; : > "$PORT_LOCK.$holder") 2>/dev/null; then
+      if [ "$(lock_holder)" = "$holder" ]; then rm -f "$PORT_LOCK"; fi
+      rm -f "$PORT_LOCK.$holder"
+      continue
+    fi
     i=$((i + 1)); [ "$i" -lt 300 ] || die "another ramify holds $PORT_LOCK; remove it if none is running"
     sleep 0.1
   done
 }
-port_unlock() { rmdir "$PORT_LOCK" 2>/dev/null || true; }
+port_unlock() { rm -f "$PORT_LOCK"; }
+# The pid in the lock, or nothing: no lock, one being written this instant, or a folder left by an older ramify.
+lock_holder() {
+  local h=""
+  { read -r h < "$PORT_LOCK"; } 2>/dev/null || true
+  case "$h" in ''|*[!0-9]*) ;; *) printf '%s\n' "$h" ;; esac
+}
 
 port_busy() {
   command -v lsof >/dev/null || return 1
@@ -947,7 +968,7 @@ cmd_hook() {
       n=1; branch=$base
       while :; do
         slug=$(slugify "$branch"); dir="$ROOT/$repo/$slug"
-        if [ -d "$dir" ] && [ -d "$ROOT/$repo/.claims/$slug" ]; then
+        if [ -d "$dir" ] && [ -e "$ROOT/$repo/.claims/$slug" ]; then
           :  # still being made for another conversation (git worktree add, then npm ci…): taken
         elif [ -d "$dir" ]; then
           owner=$(env_get "$dir" WT_SESSION)
@@ -955,15 +976,17 @@ cmd_hook() {
           if of_repo "$dir" "$main" && { [ -z "$session" ] || [ -z "$owner" ] || [ "$owner" = "$session" ]; }; then
             (cd "$dir" && abspwd); exit 0
           fi
-        elif mkdir "$ROOT/$repo/.claims/$slug" 2>/dev/null; then
-          break  # claimed: two conversations starting at once cannot both take this name
+        elif (set -C; : > "$ROOT/$repo/.claims/$slug") 2>/dev/null; then
+          # Claimed: two conversations starting at once cannot both take this name. A file made with noclobber
+          # (O_EXCL, from bash itself), not mkdir: uutils mkdir can tell two callers that each made the folder.
+          break
         fi
         n=$((n + 1)); branch="$base-$n"
       done
       # The claim goes when this ends, also when create stops: a failed name must not stay reserved.
       # (The path is fixed now: these variables are local and gone by the time the script exits.)
       # shellcheck disable=SC2064
-      trap "rmdir -- $(printf '%q' "$ROOT/$repo/.claims/$slug") 2>/dev/null || true" EXIT
+      trap "rm -f -- $(printf '%q' "$ROOT/$repo/.claims/$slug")" EXIT
       CREATE_SESSION=$session create "$branch" "" 1 claude
       printf '%s\n' "$CREATED_WT" ;;
     remove)

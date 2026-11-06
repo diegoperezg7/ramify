@@ -2,7 +2,7 @@
 // so it is marked `todo`: the run reports it without failing. Drop the `todo` when its fix lands: the test then
 // guards against the bug coming back.
 import { execFile, execFileSync, spawn, spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -99,16 +99,91 @@ describe('CLI (ramify)', { skip: process.platform === 'win32' }, () => {
     assert.equal(existsSync(join(T, 'wts', name, '.claims', 'worktree-bad..name')), false)
   })
 
-  it('worktrees made at the same time get different ports', async () => {
+  it('hook create does not take a name another conversation claimed, where mkdir tells it it made the claim', () => {
     const r = repo()
-    const root = join(T, 'wts-ports')
+    const root = join(T, 'wts-claim-loose')
+    // Another conversation claimed feat-pay and has not run git worktree add yet: the claim, no folder.
+    mkdirSync(join(root, r.split('/').pop()!, '.claims', 'feat-pay'), { recursive: true })
+    const res = spawnSync('bash', [BIN, 'hook', 'create'], {
+      cwd: r, input: JSON.stringify({ name: 'feat-pay', cwd: r, session_id: 'B' }), encoding: 'utf8',
+      env: { ...process.env, PATH: looseMkdirPath(), RAMIFY_ROOT: root },
+    })
+    const got = res.stdout.trim().split('\n').pop()!
+    assert.ok(got, res.stderr)
+    assert.equal(git(got, 'branch', '--show-current').trim(), 'feat/pay-2')
+  })
+
+  /** PATH with a mkdir that never says the folder already exists: the worst case of uutils mkdir, the default on
+   * Ubuntu 26.04, which can report success to two callers racing for one name. */
+  function looseMkdirPath() {
+    const bin = join(T, 'loose-mkdir')
+    if (!existsSync(bin)) {
+      mkdirSync(bin)
+      writeFileSync(join(bin, 'mkdir'), '#!/bin/sh\nexec /bin/mkdir -p "$@"\n', { mode: 0o755 })
+    }
+    return `${bin}:${process.env.PATH}`
+  }
+
+  /** Four `ramify new` started at once in a fresh root: the port each one got. */
+  async function portsOfFourAtOnce(root: string, env: NodeJS.ProcessEnv = {}) {
+    const r = repo()
     const make = (b: string) => new Promise<void>((done) => {
-      execFile('bash', [BIN, 'new', b, '--no-launch'], { cwd: r, env: { ...process.env, RAMIFY_ROOT: root } }, () => done())
+      execFile('bash', [BIN, 'new', b, '--no-launch'], { cwd: r, env: { ...process.env, ...env, RAMIFY_ROOT: root } }, () => done())
     })
     await Promise.all(['p1', 'p2', 'p3', 'p4'].map(make))
     const name = r.split('/').pop()!
-    const ports = ['p1', 'p2', 'p3', 'p4'].map((b) => /^PORT=(\d+)$/m.exec(readFileSync(join(root, name, b, '.worktree.env'), 'utf8'))?.[1])
+    return ['p1', 'p2', 'p3', 'p4'].map((b) => /^PORT=(\d+)$/m.exec(readFileSync(join(root, name, b, '.worktree.env'), 'utf8'))?.[1])
+  }
+
+  it('worktrees made at the same time get different ports', async () => {
+    const ports = await portsOfFourAtOnce(join(T, 'wts-ports'))
     assert.equal(new Set(ports).size, 4, ports.join(' '))
+  })
+
+  it('worktrees made at the same time get different ports where mkdir tells two callers it made the same folder', async () => {
+    const ports = await portsOfFourAtOnce(join(T, 'wts-ports-loose'), { PATH: looseMkdirPath() })
+    assert.equal(new Set(ports).size, 4, ports.join(' '))
+  })
+
+  it('a port lock left by a ramify that is no longer running is taken over at once', () => {
+    const r = repo()
+    const root = join(T, 'wts-lock-dead')
+    mkdirSync(root)
+    const dead = spawnSync('true').pid // exited and reaped: no process has this pid now
+    writeFileSync(join(root, '.port-lock'), `${dead}\n`)
+    const res = spawnSync('bash', [BIN, 'new', 'feat-d', '--no-launch'], { cwd: r, encoding: 'utf8', timeout: 15_000, env: { ...process.env, RAMIFY_ROOT: root } })
+    assert.equal(res.status, 0, res.stderr)
+    assert.equal(existsSync(join(root, '.port-lock')), false)
+  })
+
+  it('a port lock whose owner is still running is waited for, however old it is', async () => {
+    const r = repo()
+    const root = join(T, 'wts-lock-live')
+    mkdirSync(root)
+    const lock = join(root, '.port-lock')
+    writeFileSync(lock, `${process.pid}\n`)
+    const hourAgo = new Date(Date.now() - 3_600_000)
+    utimesSync(lock, hourAgo, hourAgo)
+    const child = spawn('bash', [BIN, 'new', 'feat-l', '--no-launch'], { cwd: r, stdio: 'ignore', timeout: 20_000, env: { ...process.env, RAMIFY_ROOT: root } })
+    const exited = new Promise<number | null>((done) => child.on('exit', (code) => done(code)))
+    await new Promise((done) => setTimeout(done, 1500))
+    assert.equal(child.exitCode, null, 'ramify new stopped instead of waiting for the lock')
+    assert.equal(existsSync(join(root, r.split('/').pop()!, 'feat-l')), false)
+    rmSync(lock)
+    assert.equal(await exited, 0)
+  })
+
+  it('a port lock folder an older ramify left more than a minute ago does not stop ramify new', () => {
+    const r = repo()
+    const root = join(T, 'wts-lock-folder')
+    const lock = join(root, '.port-lock')
+    mkdirSync(lock, { recursive: true })
+    const twoMinutesAgo = new Date(Date.now() - 120_000)
+    utimesSync(lock, twoMinutesAgo, twoMinutesAgo)
+    // Waiting on it lasts 30 s before giving up; a take-over ends in well under 10.
+    const res = spawnSync('bash', [BIN, 'new', 'feat-o', '--no-launch'], { cwd: r, encoding: 'utf8', timeout: 10_000, env: { ...process.env, RAMIFY_ROOT: root } })
+    assert.equal(res.status, 0, res.stderr)
+    assert.match(readFileSync(join(root, r.split('/').pop()!, 'feat-o', '.worktree.env'), 'utf8'), /^PORT=\d+$/m)
   })
 
   it('ramify move leaves the changes in place when it cannot create the worktree', () => {
