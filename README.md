@@ -352,6 +352,7 @@ ramify open fix/cart -a gemini                  # reopen an existing worktree wi
 ramify ls                                       # every worktree at a glance
 ramify graph                                    # branch graph with the agent on each branch
 ramify who src/cart.ts src/pay/                 # other worktrees changing these files (exit 1 if any)
+ramify ready                                    # branch done: bring main in, join the merge queue (1 wait, 2 conflict)
 ramify ui                                       # live web dashboard in the browser
 ramify app                                      # open this repository in the desktop app
 ramify rm fix/cart                              # refuses if anything would be lost
@@ -438,6 +439,14 @@ and exits 1 when there are any; without paths it checks the files the current wo
 `coordinar` skill runs it before a change and, on an overlap, tells you and can message the other Claude Code
 session (`ListAgents` / `SendMessage`) instead of editing the same files.
 
+**When a branch is done, say so.** `ramify ready`, run in its worktree with everything committed, brings `main` in
+and checks the branches already marked ready. Exit 0: no other ready branch changes the same files, so this one is
+marked ready to merge. Exit 1: one does; nothing is marked, and this branch waits for that one to be merged. Exit 2:
+`main` conflicts with this branch; the merge is undone and the files are listed: merge `main`, resolve, commit and run
+it again. `ramify ls` shows the queue in its READY column: `ready`, `stale` once the branch or `main` moved since, and
+`wait` for a branch waiting its turn. With the plugin, Claude Code hears it in its next turn when `main` moves under a
+branch marked ready or waiting; other agents see it in `ramify ls`, and the desktop app can notify you.
+
 ### Safety
 
 - `rm` refuses when there are uncommitted changes, or commits that are neither merged nor pushed.
@@ -478,12 +487,13 @@ Part of that is enforced; the rest is instructions the agents are given.
 
 ### Configuration
 
-| Variable          | Default        |
-|-------------------|----------------|
-| `RAMIFY_ROOT`     | `~/.worktrees` |
-| `RAMIFY_PORT_MIN` | `4100`         |
-| `RAMIFY_PORT_MAX` | `4990`         |
-| `NO_COLOR`        | unset          |
+| Variable               | Default                                          |
+|------------------------|--------------------------------------------------|
+| `RAMIFY_ROOT`          | `~/.worktrees`                                   |
+| `RAMIFY_PORT_MIN`      | `4100`                                           |
+| `RAMIFY_PORT_MAX`      | `4990`                                           |
+| `RAMIFY_FETCH_TIMEOUT` | `30` (seconds `ramify ready` waits for `origin`) |
+| `NO_COLOR`             | unset                                            |
 
 ### Tests
 
@@ -493,7 +503,8 @@ npm run test:core             # engine, session detection, GitHub sign-in, IPC c
 npm run test:e2e -w packages/core   # the real UI in Chromium: browser host, editor host, no clipping 390–1920px
 ```
 
-All of them run in CI; the core suite and the Windows installer build also run on Windows.
+All of them run in CI; the core suite, the Windows installer build and the checks of `ramify install guard`
+(`bash tests/git-guard.sh` under Git Bash, also part of `tests/run.sh`) also run on Windows.
 
 ### Contributing
 

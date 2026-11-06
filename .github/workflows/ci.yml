@@ -7,7 +7,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: shellcheck
-        run: shellcheck -S warning ramify install.sh tests/run.sh examples/*/*.sh scripts/*.sh
+        run: shellcheck -S warning ramify install.sh tests/run.sh tests/git-guard.sh examples/*/*.sh scripts/*.sh
       - name: tests
         run: bash tests/run.sh
 
@@ -48,6 +48,9 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v5
+      - name: the shared branch guarded by git itself (ramify install guard, under Git Bash)
+        shell: bash
+        run: bash tests/git-guard.sh
       - uses: actions/setup-node@v5
         with:
           node-version: 24

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { before, describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { staleReady, staleWait } from '../src/attention.ts'
 import { Engine, gitBash, normPath } from '../src/engine.ts'
 
 const BIN = resolve(import.meta.dirname, '../../../ramify')
@@ -99,6 +100,52 @@ describe('control center', () => {
     assert.equal(by['feat/a'].ready, 'stale')
     assert.equal(by['feat/b'].ready, null)
     assert.equal(by['fix/done'].ready, null)
+  })
+
+  it('health carries waiting: ready found a branch marked before it changing the same files', async () => {
+    // feat/a brings the late commit in and is ready again; feat/c changes cart.ts too, so it has to wait its turn.
+    ramifyIn(a, 'ready')
+    const c = rw('new', 'feat/c', '--no-launch', '--no-setup')
+    writeFileSync(join(c, 'cart.ts'), 'export const total = 4\n')
+    git(c, 'commit', '-qam', 'feat: total 4')
+    assert.throws(() => ramifyIn(c, 'ready'), (e: { status?: number }) => e.status === 1)
+    const list = await engine.worktrees(REPO)
+    assert.equal(list.find((w) => w.branch === 'feat/c')?.ready, 'waiting')
+    const by = Object.fromEntries((await engine.health(REPO)).branches.map((x) => [x.branch, x]))
+    assert.equal(by['feat/c'].ready, 'waiting')
+    assert.equal(by['feat/c'].behind, 0)
+    assert.equal(staleWait(by['feat/c']), false) // the base has not moved: nothing to tell yet
+    assert.equal(by['feat/a'].ready, 'ready')
+  })
+
+  it('after a merge from the app, the other branch marked ready goes stale and is the one to tell', async () => {
+    // Two branches finish at once on different files: both are marked ready. A is merged the way the app merges.
+    const R = `${T}/queue`
+    execFileSync('git', ['init', '-q', '-b', 'main', R])
+    writeFileSync(join(R, 'a.ts'), 'a\n')
+    writeFileSync(join(R, 'b.ts'), 'b\n')
+    git(R, 'add', '.')
+    git(R, 'commit', '-qm', 'init')
+    const made = (branch: string) => ramifyIn(R, 'new', branch, '--no-launch', '--no-setup').trim().split('\n').pop() ?? ''
+    const qa = made('feat/qa')
+    const qb = made('feat/qb')
+    writeFileSync(join(qa, 'a.ts'), 'a2\n')
+    git(qa, 'commit', '-qam', 'a')
+    writeFileSync(join(qb, 'b.ts'), 'b2\n')
+    git(qb, 'commit', '-qam', 'b')
+    ramifyIn(qa, 'ready')
+    ramifyIn(qb, 'ready')
+    let by = Object.fromEntries((await engine.health(R)).branches.map((x) => [x.branch, x]))
+    assert.equal(by['feat/qa'].ready, 'ready')
+    assert.equal(by['feat/qb'].ready, 'ready')
+    assert.equal(staleReady(by['feat/qb']), false)
+    await engine.merge(R, qa)
+    by = Object.fromEntries((await engine.health(R)).branches.map((x) => [x.branch, x]))
+    assert.equal(by['feat/qb'].ready, 'stale')
+    assert.equal(by['feat/qb'].behind, 2) // A's commit and the merge commit: the app merges with --no-ff
+    assert.equal(staleReady(by['feat/qb']), true)
+    assert.equal(by['feat/qa'].ready, null) // in the base now: out of the queue
+    assert.equal(staleReady(by['feat/qa']), false)
   })
 
   it('does not open a pull request without a GitHub remote', async () => {

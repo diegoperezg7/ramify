@@ -13,8 +13,12 @@ export interface Worktree {
   port: number | null
   /** Claude Code conversation whose subagent made this worktree (WT_SESSION, from the WorktreeCreate hook). */
   session?: string
-  /** Its agent ran `ramify ready`: still valid (ready), or the branch or the base moved since (stale). Null: not marked, or merged. */
-  ready?: 'ready' | 'stale' | null
+  /**
+   * Its agent ran `ramify ready`: still valid (ready), or the branch or the base moved since (stale), or a branch marked
+   * before it changes the same files (waiting; with behind > 0 the base moved since, so its turn may have come).
+   * Null: not marked, or merged.
+   */
+  ready?: 'ready' | 'stale' | 'waiting' | null
   /** Commits of the base the branch does not have yet (0 for the main checkout). */
   behind?: number
 }
@@ -118,7 +122,7 @@ export interface BranchHealth {
   /** Other branches that change some of the same files. */
   overlaps: string[]
   /** Its place in the merge queue, from `ramify ready` (see Worktree.ready). */
-  ready?: 'ready' | 'stale' | null
+  ready?: 'ready' | 'stale' | 'waiting' | null
 }
 
 /** The base against its remote branch (main against origin/main), after the last fetch. */

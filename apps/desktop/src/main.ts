@@ -8,7 +8,7 @@ import {
   cloneGithub, createHandlers, defaultProjectsDir, dispatch, Engine, EngineError, githubRepos, idesFor, openInTerminal, originSlug,
   accessibleRepos, AuthError, currentUser, hardenedGitEnv, isSafeExternal, normPath, pullRequestsWithToken, riskyGitConfig, sanitizeSettings, strings, installedTools, pollForTokens, publishGithub, pullRequestFor, pullRequestWithToken,
   refreshTokens, requestDeviceCode, codexThreads, IDE_IDLE_MS, inTempDir, isActive, scanRepos, workPlace, scanSessions, SessionLog, sessionsCsv, type Resolved, type Tokens,
-  actionWords, agoWords, attentionCount, branchKey, mergeReady, sessionAttention,
+  actionWords, agoWords, attentionCount, branchKey, mergeReady, sessionAttention, staleReady, staleWait,
   gitBash, setupApply, setupStatus, setupUndo, type SetupContext,
 } from '../../../packages/core/src/index.ts'
 import { GITHUB_APP } from './github-app.ts'
@@ -467,11 +467,17 @@ async function careForBranches() {
       if (!config.settings.watchBranches) continue
       if (b.behind >= 20) tell(`behind:${b.path}:${Math.floor(b.behind / 20)}`, es() ? `${b.branch} se queda atrás` : `${b.branch} is falling behind`,
         es() ? `${name}: ${b.behind} commits nuevos en ${health.base}. Tráelos antes de que crezca el conflicto.` : `${name}: ${b.behind} new commits in ${health.base}. Bring them in before the conflict grows.`, { repo, path: b.path })
-      // Marked ready by its agent (ramify ready), then the base moved: once per move of the base.
-      if (b.ready === 'stale' && b.behind > 0) {
+      // Marked ready by its agent (ramify ready), or waiting for a branch marked before it that changes the same
+      // files, then the base moved: once per move of the base.
+      if (staleReady(b) || staleWait(b)) {
         baseTip ??= (await gitOut(['-C', repo, 'rev-parse', health.base]).catch(() => '')).trim()
-        tell(`stale:${b.path}:${baseTip}`, es() ? `${b.branch} ya no está lista` : `${b.branch} is no longer ready`,
-          es() ? `${name}: estaba lista, pero ${health.base} se ha movido. Su agente debe ejecutar ramify ready otra vez.` : `${name}: it was ready, but ${health.base} has moved. Its agent should run ramify ready again.`, { repo, path: b.path })
+        if (staleReady(b)) {
+          tell(`stale:${b.path}:${baseTip}`, es() ? `${b.branch} ya no está lista` : `${b.branch} is no longer ready`,
+            es() ? `${name}: estaba lista, pero ${health.base} se ha movido. Su agente debe ejecutar ramify ready otra vez.` : `${name}: it was ready, but ${health.base} has moved. Its agent should run ramify ready again.`, { repo, path: b.path })
+        } else {
+          tell(`waited:${b.path}:${baseTip}`, es() ? `${b.branch} esperaba turno` : `${b.branch} was waiting its turn`,
+            es() ? `${name}: ${health.base} se ha movido. Su agente debe repetir ramify ready.` : `${name}: ${health.base} has moved. Its agent should run ramify ready again.`, { repo, path: b.path })
+        }
       }
       for (const other of b.overlaps) {
         const pair = [b.branch, other].sort().join(' ↔ ')

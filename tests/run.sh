@@ -166,6 +166,7 @@ check "hook create prints the worktree path" '[ "$path" = "$W/worktree-bold-oak"
 check "hook create records claude as agent" 'grep -qx "WT_AGENT=claude" "$path/.worktree.env"'
 printf '{"worktree_path":"%s"}' "$path" | "$AW" hook remove 2>/dev/null
 check "hook remove deletes it" '[ ! -d "$path" ]'
+check "an unknown hook lists every one, nudge included" '! "$AW" hook nope </dev/null 2>"$T/hook-usage.err" && grep -q "create|remove|session-start|guard|nudge" "$T/hook-usage.err"'
 
 echo "install"
 mkdir -p "$HOME/.claude" "$HOME/.codex"
@@ -317,15 +318,22 @@ check "ready brings the base in and marks the tip and the base (exit $c)" '[ "$c
 check "ls shows it ready and behind nothing" '"$AW" ls 2>/dev/null | grep "^feat-ready-a .* ready " >/dev/null && "$AW" ls --json | jq -e ".[] | select(.branch == \"feat/ready-a\") | .ready == \"ready\" and .behind == 0" >/dev/null'
 check "ls --json: the main checkout has no mark and is behind nothing" '"$AW" ls --json | jq -e ".[] | select(.main) | .ready == null and .behind == 0" >/dev/null'
 printf 'one\ntwo\nthree\nfour\nfive-b\n' > "$rb/q.txt" && git -C "$rb" commit -qam "b: q"
+# A mark from an earlier ramify ready, stale by now: an overlap takes it out of the queue too.
+printf 'WT_READY=%s\nWT_READY_BASE=%s\n' "$(git -C "$rb" rev-parse HEAD~1)" "$(git rev-parse HEAD~1)" >> "$rb/.worktree.env"
 out=$(cd "$rb" && "$AW" ready 2>/dev/null); c=$?
-check "an overlap with a branch already ready exits 1 and marks nothing" '[ "$c" = 1 ] && printf "%s" "$out" | grep -q "^feat/ready-a.*q.txt$" && [ -z "$(mark "$rb" WT_READY)" ]'
+check "an overlap with a branch already ready exits 1, marks nothing and drops an earlier mark" '[ "$c" = 1 ] && printf "%s" "$out" | grep -q "^feat/ready-a.*q.txt$" && [ -z "$(mark "$rb" WT_READY)" ] && [ -z "$(mark "$rb" WT_READY_BASE)" ]'
+check "it waits at the base tip it checked: WT_READY_WAIT, ls READY wait, --json waiting" '[ "$(mark "$rb" WT_READY_WAIT)" = "$(git rev-parse main)" ] && "$AW" ls 2>/dev/null | grep "^feat-ready-b .* wait " >/dev/null && "$AW" ls --json | jq -e ".[] | select(.branch == \"feat/ready-b\") | .ready == \"waiting\" and .behind == 0" >/dev/null'
+check "nudge is quiet for a waiting branch while the base stays where it was" '[ -z "$(printf "{\"cwd\":\"%s\"}" "$rb" | "$AW" hook nudge 2>/dev/null)" ]'
 # A branch that is not marked ready changes the same file: plain who sees it, ready does not wait for it.
 echo mine > "$p1/q.txt"
 check "who still sees a branch not marked ready" '! (cd "$rb" && "$AW" who q.txt >/dev/null 2>&1)'
 git merge -q --no-ff --no-edit feat/ready-a
 check "a merged branch leaves the queue" '"$AW" ls --json | jq -e ".[] | select(.branch == \"feat/ready-a\") | .ready == null" >/dev/null'
+n=$(printf '{"cwd":"%s"}' "$rb" | "$AW" hook nudge 2>/dev/null)
+check "once the base moves nudge tells the waiting branch to run ramify ready again" 'printf "%s" "$n" | jq -e ".hookSpecificOutput.additionalContext | contains(\"was waiting for its turn\") and contains(\"main has moved\") and contains(\"ready\")" >/dev/null && "$AW" ls --json | jq -e ".[] | select(.branch == \"feat/ready-b\") | .ready == \"waiting\" and .behind > 0" >/dev/null'
 (cd "$rb" && "$AW" ready >/dev/null 2>&1); c=$?
 check "once the other is merged ready passes, branches not marked ready do not count (exit $c)" '[ "$c" = 0 ] && [ "$(mark "$rb" WT_READY)" = "$(git -C "$rb" rev-parse HEAD)" ]'
+check "marking it ready takes the wait off" '! grep -q "^WT_READY_WAIT=" "$rb/.worktree.env" && "$AW" ls --json | jq -e ".[] | select(.branch == \"feat/ready-b\") | .ready == \"ready\"" >/dev/null'
 rm -f "$p1/q.txt"
 rc=$("$AW" new feat/ready-c --no-launch --no-setup 2>/dev/null)
 echo c > "$rc/c.txt" && git -C "$rc" add c.txt && git -C "$rc" commit -qm c
@@ -350,6 +358,15 @@ git init -q -b main "$T/solo" && git -C "$T/solo" commit -q --allow-empty -m ini
 so=$(cd "$T/solo" && "$AW" new feat/solo --no-launch --no-setup 2>/dev/null)
 echo s > "$so/s.txt" && git -C "$so" add s.txt && git -C "$so" commit -qm s
 check "ready works without a remote" '(cd "$so" && "$AW" ready >/dev/null 2>&1) && [ "$(mark "$so" WT_READY)" = "$(git -C "$so" rev-parse HEAD)" ]'
+# A remote that never answers (a network gone, a host that hangs): ready stops the fetch at the limit, says so and
+# goes on against the local base, leaving nothing it started running.
+printf '#!/bin/bash\nsleep 60\n' > "$T/hang-remote"; chmod +x "$T/hang-remote"
+git -C "$T/solo" remote add origin "ext::$T/hang-remote"; git -C "$T/solo" config protocol.ext.allow always
+grep -v '^WT_READY' "$so/.worktree.env" > "$T/env.tmp"; cat "$T/env.tmp" > "$so/.worktree.env"
+s0=$SECONDS
+out=$(cd "$so" && RAMIFY_FETCH_TIMEOUT=2 "$AW" ready 2>&1); c=$?; took=$((SECONDS - s0))
+check "a fetch that hangs is stopped at RAMIFY_FETCH_TIMEOUT and ready goes on (exit $c, ${took}s)" '[ "$c" = 0 ] && [ "$took" -lt 10 ] && printf "%s" "$out" | grep -q "more than 2s" && [ "$(mark "$so" WT_READY)" = "$(git -C "$so" rev-parse HEAD)" ]'
+check "nothing the fetch started is left running" '! ps -A -o args= | grep -F "$T/hang-remote" | grep -qv grep'
 cd "$T/demo" || exit 1
 
 echo "move work off main"
@@ -387,40 +404,9 @@ else
   echo "  skip: tmux is not installed"
 fi
 
-echo "the shared branch guarded by git itself (agents without Claude Code hooks)"
-git init -q --bare "$T/gm-origin.git"
-git clone -q "$T/gm-origin.git" "$T/gm" 2>/dev/null
-cd "$T/gm" || exit 1
-git checkout -q -b main
-echo hi > a.txt; git add a.txt; git commit -qm init; git push -q origin main 2>/dev/null
-"$AW" install guard 2>/dev/null
-check "install guard turns on ramify.guardMain and adds both hooks" '[ "$(git config --bool ramify.guardMain)" = true ] && grep -q "ramify: secret scan" .git/hooks/pre-commit && grep -q "ramify: secret scan" .git/hooks/pre-push'
-echo more >> a.txt; git add a.txt
-git commit -qm direct 2>"$T/gm-commit.err"; c=$?
-check "pre-commit refuses a commit on main with guardMain (exit $c)" '[ "$c" != 0 ] && [ "$(git rev-list --count HEAD)" = 1 ] && grep -q "shared branch" "$T/gm-commit.err"'
-RAMIFY_ALLOW_MAIN=1 git commit -qm allowed 2>/dev/null; c=$?
-check "pre-commit allows it with RAMIFY_ALLOW_MAIN=1 (exit $c)" '[ "$c" = 0 ] && [ "$(git rev-list --count HEAD)" = 2 ]'
-git push -q origin main 2>"$T/gm-push.err"; c=$?
-check "pre-push refuses a push to main (exit $c) and origin keeps its main" '[ "$c" != 0 ] && [ "$(git --git-dir="$T/gm-origin.git" rev-list --count main)" = 1 ] && grep -q "shared branch" "$T/gm-push.err"'
-gw=$("$AW" new feat/gm --no-launch --no-setup 2>/dev/null)
-echo wt > "$gw/b.txt"; git -C "$gw" add b.txt
-git -C "$gw" commit -qm "in a worktree" 2>/dev/null; c=$?
-check "pre-commit allows commits in a worktree (exit $c)" '[ "$c" = 0 ] && [ "$(git -C "$gw" log -1 --format=%s)" = "in a worktree" ]'
-git -C "$gw" push -q origin feat/gm 2>/dev/null; c=$?
-check "pre-push allows a branch of its own (exit $c)" '[ "$c" = 0 ] && git --git-dir="$T/gm-origin.git" show-ref -q refs/heads/feat/gm'
-git -C "$gw" push -q origin HEAD:main 2>/dev/null; c=$?
-check "pre-push refuses a push to main from a worktree too (exit $c)" '[ "$c" != 0 ] && [ "$(git --git-dir="$T/gm-origin.git" rev-list --count main)" = 1 ]'
-git config ramify.allowMain true
-git push -q origin main 2>/dev/null; c=$?
-check "git config ramify.allowMain lets the push through (exit $c)" '[ "$c" = 0 ] && [ "$(git --git-dir="$T/gm-origin.git" rev-list --count main)" = 2 ]'
-git config --unset ramify.allowMain
-# The app runs git with core.hooksPath=/dev/null (hardenedGitEnv): its merges and pushes are not the agents'.
-GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null git merge -q --no-ff --no-edit feat/gm \
-  && GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.hooksPath GIT_CONFIG_VALUE_0=/dev/null git push -q origin main 2>/dev/null; c=$?
-check "a merge into main and its push, run as the app runs git, go through (exit $c)" '[ "$c" = 0 ] && [ "$(git --git-dir="$T/gm-origin.git" rev-parse main)" = "$(git rev-parse main)" ]'
-printf '#!/bin/sh\nexit 0\n' > .git/hooks/pre-commit
-"$AW" install guard 2>"$T/gm-install.err"
-check "install guard leaves a pre-commit that is not ramify's and says so" '! grep -q "ramify: secret scan" .git/hooks/pre-commit && grep -q "not ramify" "$T/gm-install.err"'
+# Also run on its own (Windows CI, under Git Bash): only bash and git, so it lives in a script of its own.
+# shellcheck source=tests/git-guard.sh
+. "$(dirname "$AW")/tests/git-guard.sh"
 
 echo "secret scan before commit and push"
 if command -v gitleaks >/dev/null; then
