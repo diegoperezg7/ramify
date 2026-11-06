@@ -317,15 +317,22 @@ check "ready brings the base in and marks the tip and the base (exit $c)" '[ "$c
 check "ls shows it ready and behind nothing" '"$AW" ls 2>/dev/null | grep "^feat-ready-a .* ready " >/dev/null && "$AW" ls --json | jq -e ".[] | select(.branch == \"feat/ready-a\") | .ready == \"ready\" and .behind == 0" >/dev/null'
 check "ls --json: the main checkout has no mark and is behind nothing" '"$AW" ls --json | jq -e ".[] | select(.main) | .ready == null and .behind == 0" >/dev/null'
 printf 'one\ntwo\nthree\nfour\nfive-b\n' > "$rb/q.txt" && git -C "$rb" commit -qam "b: q"
+# A mark from an earlier ramify ready, stale by now: an overlap takes it out of the queue too.
+printf 'WT_READY=%s\nWT_READY_BASE=%s\n' "$(git -C "$rb" rev-parse HEAD~1)" "$(git rev-parse HEAD~1)" >> "$rb/.worktree.env"
 out=$(cd "$rb" && "$AW" ready 2>/dev/null); c=$?
-check "an overlap with a branch already ready exits 1 and marks nothing" '[ "$c" = 1 ] && printf "%s" "$out" | grep -q "^feat/ready-a.*q.txt$" && [ -z "$(mark "$rb" WT_READY)" ]'
+check "an overlap with a branch already ready exits 1, marks nothing and drops an earlier mark" '[ "$c" = 1 ] && printf "%s" "$out" | grep -q "^feat/ready-a.*q.txt$" && [ -z "$(mark "$rb" WT_READY)" ] && [ -z "$(mark "$rb" WT_READY_BASE)" ]'
+check "it waits at the base tip it checked: WT_READY_WAIT, ls READY wait, --json waiting" '[ "$(mark "$rb" WT_READY_WAIT)" = "$(git rev-parse main)" ] && "$AW" ls 2>/dev/null | grep "^feat-ready-b .* wait " >/dev/null && "$AW" ls --json | jq -e ".[] | select(.branch == \"feat/ready-b\") | .ready == \"waiting\" and .behind == 0" >/dev/null'
+check "nudge is quiet for a waiting branch while the base stays where it was" '[ -z "$(printf "{\"cwd\":\"%s\"}" "$rb" | "$AW" hook nudge 2>/dev/null)" ]'
 # A branch that is not marked ready changes the same file: plain who sees it, ready does not wait for it.
 echo mine > "$p1/q.txt"
 check "who still sees a branch not marked ready" '! (cd "$rb" && "$AW" who q.txt >/dev/null 2>&1)'
 git merge -q --no-ff --no-edit feat/ready-a
 check "a merged branch leaves the queue" '"$AW" ls --json | jq -e ".[] | select(.branch == \"feat/ready-a\") | .ready == null" >/dev/null'
+n=$(printf '{"cwd":"%s"}' "$rb" | "$AW" hook nudge 2>/dev/null)
+check "once the base moves nudge tells the waiting branch to run ramify ready again" 'printf "%s" "$n" | jq -e ".hookSpecificOutput.additionalContext | contains(\"was waiting for its turn\") and contains(\"main has moved\") and contains(\"ready\")" >/dev/null && "$AW" ls --json | jq -e ".[] | select(.branch == \"feat/ready-b\") | .ready == \"waiting\" and .behind > 0" >/dev/null'
 (cd "$rb" && "$AW" ready >/dev/null 2>&1); c=$?
 check "once the other is merged ready passes, branches not marked ready do not count (exit $c)" '[ "$c" = 0 ] && [ "$(mark "$rb" WT_READY)" = "$(git -C "$rb" rev-parse HEAD)" ]'
+check "marking it ready takes the wait off" '! grep -q "^WT_READY_WAIT=" "$rb/.worktree.env" && "$AW" ls --json | jq -e ".[] | select(.branch == \"feat/ready-b\") | .ready == \"ready\"" >/dev/null'
 rm -f "$p1/q.txt"
 rc=$("$AW" new feat/ready-c --no-launch --no-setup 2>/dev/null)
 echo c > "$rc/c.txt" && git -C "$rc" add c.txt && git -C "$rc" commit -qm c

@@ -101,6 +101,21 @@ describe('control center', () => {
     assert.equal(by['fix/done'].ready, null)
   })
 
+  it('health carries waiting: ready found a branch marked before it changing the same files', async () => {
+    // feat/a brings the late commit in and is ready again; feat/c changes cart.ts too, so it has to wait its turn.
+    ramifyIn(a, 'ready')
+    const c = rw('new', 'feat/c', '--no-launch', '--no-setup')
+    writeFileSync(join(c, 'cart.ts'), 'export const total = 4\n')
+    git(c, 'commit', '-qam', 'feat: total 4')
+    assert.throws(() => ramifyIn(c, 'ready'), (e: { status?: number }) => e.status === 1)
+    const list = await engine.worktrees(REPO)
+    assert.equal(list.find((w) => w.branch === 'feat/c')?.ready, 'waiting')
+    const by = Object.fromEntries((await engine.health(REPO)).branches.map((x) => [x.branch, x]))
+    assert.equal(by['feat/c'].ready, 'waiting')
+    assert.equal(by['feat/c'].behind, 0)
+    assert.equal(by['feat/a'].ready, 'ready')
+  })
+
   it('does not open a pull request without a GitHub remote', async () => {
     await assert.rejects(engine.openPr(REPO, a), /no GitHub remote/)
   })

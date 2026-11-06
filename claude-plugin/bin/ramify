@@ -93,11 +93,17 @@ slugify() { printf '%s' "$1" | tr '/ ' '--' | tr -cd 'A-Za-z0-9._-'; }
 
 env_get() { [ -f "$1/.worktree.env" ] || return 0; sed -n "s/^$2=//p" "$1/.worktree.env" | head -1; }
 
-env_set() {
+env_unset() {
   local f="$1/.worktree.env" tmp
   [ -f "$f" ] || return 0
   tmp=$(grep -v "^$2=" "$f" || true)
-  printf '%s\n%s=%s\n' "$tmp" "$2" "$3" | sed '/^$/d' > "$f"
+  printf '%s\n' "$tmp" | sed '/^$/d' > "$f"
+}
+
+env_set() {
+  [ -f "$1/.worktree.env" ] || return 0
+  env_unset "$1" "$2"
+  printf '%s=%s\n' "$2" "$3" >> "$1/.worktree.env"
 }
 
 # A folder under $ROOT/<name> belongs to this repository: two repositories with the same folder name share it.
@@ -460,14 +466,19 @@ cmd_who() {
 is_oid() { [[ $1 =~ ^([0-9a-f]{40}|[0-9a-f]{64})$ ]]; }
 
 # Where a worktree stands in the merge queue against the base tip $2: "ready" while its HEAD is the commit
-# `ramify ready` checked and the base is still in it, "stale" once either moved, nothing when it was never marked or
-# its work is in the base already (merged). Worked out on every read: no one rewrites another worktree's env.
+# `ramify ready` checked and the base is still in it, "stale" once either moved, "waiting" when ready found a branch
+# marked before it that changes the same files, nothing when it was never marked or its work is in the base already
+# (merged). A waiting branch had brought the base in before it began to wait, so base commits it lacks (behind) mean
+# the base moved since: what it waited for may be merged, time to run ready again. Worked out on every read: no one
+# rewrites another worktree's env.
 ready_state() {
-  local at="$1" tip="$2" mark markbase head
-  mark=$(env_get "$at" WT_READY); markbase=$(env_get "$at" WT_READY_BASE)
-  is_oid "$mark" && is_oid "$markbase" && is_oid "$tip" || return 0
+  local at="$1" tip="$2" mark markbase waitbase head
+  mark=$(env_get "$at" WT_READY); markbase=$(env_get "$at" WT_READY_BASE); waitbase=$(env_get "$at" WT_READY_WAIT)
+  is_oid "$tip" || return 0
+  is_oid "$waitbase" || { is_oid "$mark" && is_oid "$markbase"; } || return 0
   head=$(git -C "$at" rev-parse -q --verify HEAD 2>/dev/null) || return 0
   ! git -C "$at" merge-base --is-ancestor HEAD "$tip" 2>/dev/null || return 0
+  if is_oid "$waitbase"; then echo waiting; return 0; fi
   # The base moved to commits the branch already has (it brought them in itself): still ready.
   if [ "$head" = "$mark" ] && { [ "$tip" = "$markbase" ] || git -C "$at" merge-base --is-ancestor "$tip" HEAD 2>/dev/null; }; then
     echo ready
@@ -480,7 +491,9 @@ ready_state() {
 # branch already waiting (marked ready, mark still valid) changes the same files, and marks this one in its
 # .worktree.env: WT_READY (this commit) and WT_READY_BASE (the base tip it was checked against). The mark goes
 # stale by itself when either moves (`ramify ls`, READY); then run it again. Exit 1: uncommitted changes, no commits
-# or an overlap, nothing marked. Exit 2: the base conflicts with this branch; the merge is undone, the tree as it was.
+# or an overlap, nothing marked; on an overlap it records WT_READY_WAIT (the base tip it waits at) instead, so the
+# hook and the app can say when the base moves. Exit 2: the base conflicts with this branch; the merge is undone,
+# the tree as it was.
 cmd_ready() {
   local main here base tip branch out conflicted ahead
   main=$(main_checkout "$PWD")
@@ -514,10 +527,14 @@ cmd_ready() {
     exit 2
   fi
   if ! WHO_QUEUE=$tip cmd_who; then
+    # Out of the queue (an earlier mark goes too), waiting at this base tip: when it moves, the turn may have come.
+    env_unset "$here" WT_READY; env_unset "$here" WT_READY_BASE
+    env_set "$here" WT_READY_WAIT "$tip"
     log "${Y}branches marked ready before this one change the same files: nothing was marked.${N}"
     log "Wait until they are merged (or agree with their agents or the user), then run ramify ready again."
     exit 1
   fi
+  env_unset "$here" WT_READY_WAIT
   env_set "$here" WT_READY "$(git -C "$here" rev-parse HEAD)"
   env_set "$here" WT_READY_BASE "$tip"
   log "${G}ready${N} $branch: up to date with $base, no overlap with the other branches marked ready"
@@ -576,7 +593,7 @@ cmd_ls() {
             if [ "$cur" = "$main" ]; then commits=-; fi
             if [ "$dirty" = 0 ]; then c1=$D; else c1=$Y; fi
             if [ -n "$active" ]; then c2=$G; else c2=$D; active=-; fi
-            case "$ready" in ready) c3=$G ;; stale) c3=$Y ;; *) c3=$D; ready=- ;; esac
+            case "$ready" in ready) c3=$G ;; stale) c3=$Y ;; waiting) c3=$Y; ready='wait' ;; *) c3=$D; ready=- ;; esac
             printf -v dirty '%-8s' "$dirty"; printf -v active '%-13s' "$active"; printf -v ready '%-6s' "$ready"
             printf "%-20s ${M}%-24s${N} %-9s ${c2}%s${N} ${c1}%s${N} %-8s %-9s ${c3}%s${N} %s\n" "$name" "${branch:-(detached)}" \
               "${agent:--}" "$active" "$dirty" "$commits" "$sync" "$ready" "${port:+$port-$((port + PORT_BLOCK - 1))}"
@@ -932,25 +949,32 @@ cmd_hook() {
       # Claude Code already asked for confirmation: discard changes, but keep the branch.
       remove_wt "$main" "$wt" 1 ;;
     nudge)
-      # On every prompt (UserPromptSubmit): a branch marked ready whose base moved since hears it in its next turn.
-      # Quiet everywhere else, and it never blocks the prompt.
-      local tip
+      # On every prompt (UserPromptSubmit): a branch marked ready, or waiting for its turn, whose base moved since
+      # hears it in its next turn. Quiet everywhere else, and it never blocks the prompt.
+      local tip state why
       cwd=$(printf '%s' "$input" | jq -r '.cwd // empty')
       wt=$(git -C "${cwd:-$PWD}" rev-parse --show-toplevel 2>/dev/null) || exit 0
       [ -f "$wt/.worktree.env" ] || exit 0
       main=$(main_checkout "$wt" 2>/dev/null) || exit 0
       base=$(default_branch "$main"); [ -n "$base" ] || exit 0
       tip=$(git -C "$main" rev-parse -q --verify "$base^{commit}" 2>/dev/null) || exit 0
-      [ "$(ready_state "$wt" "$tip")" = stale ] || exit 0
-      # Stale only because of its own new commits: the agent made them and knows; nothing to say.
+      state=$(ready_state "$wt" "$tip")
+      case "$state" in stale|waiting) ;; *) exit 0 ;; esac
+      # Stale only because of its own new commits: the agent made them and knows; nothing to say. A waiting branch
+      # lacks base commits only once the base moved past the tip it waits at.
       n=$(git -C "$wt" rev-list --count "HEAD..$tip" 2>/dev/null || echo 0)
       [ "$n" != 0 ] || exit 0
-      branch=$(git -C "$wt" branch --show-current)
-      jq -n --arg b "$base" --arg br "${branch:-this branch}" --arg n "$n" --arg bin "$(cd "$SELF_DIR" && pwd)/ramify" \
+      branch=$(git -C "$wt" branch --show-current); branch=${branch:-this branch}
+      if [ "$state" = waiting ]; then
+        why="$branch was waiting for its turn: a branch marked ready before it changes the same files. $base has moved since ($n commit(s) $branch does not have yet), so what it waited for may be merged now."
+      else
+        why="$base has moved since $branch was marked ready to merge ($n commit(s) it does not have yet)."
+      fi
+      jq -n --arg b "$base" --arg why "$why" --arg bin "$(cd "$SELF_DIR" && pwd)/ramify" \
         '{hookSpecificOutput: {hookEventName: "UserPromptSubmit", additionalContext:
-        ("ramify: " + $b + " has moved since " + $br + " was marked ready to merge (" + $n + " commit(s) it does not have yet). "
+        ("ramify: " + $why + " "
         + "Run `\"" + $bin + "\" ready` again in this worktree before asking for the merge: it brings " + $b + " in, checks "
-        + "the other branches marked ready and marks this one again. Exit 1: another ready branch changes the same files; "
+        + "the other branches marked ready and marks this one. Exit 1: another ready branch changes the same files; "
         + "exit 2: " + $b + " conflicts with this branch (the files are listed): merge " + $b + ", resolve and commit, then run it again.")}}' ;;
     session-start)
       # A session that opens on the shared branch learns to take a worktree of its own before changing files.

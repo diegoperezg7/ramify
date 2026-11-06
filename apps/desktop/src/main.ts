@@ -467,11 +467,17 @@ async function careForBranches() {
       if (!config.settings.watchBranches) continue
       if (b.behind >= 20) tell(`behind:${b.path}:${Math.floor(b.behind / 20)}`, es() ? `${b.branch} se queda atrás` : `${b.branch} is falling behind`,
         es() ? `${name}: ${b.behind} commits nuevos en ${health.base}. Tráelos antes de que crezca el conflicto.` : `${name}: ${b.behind} new commits in ${health.base}. Bring them in before the conflict grows.`, { repo, path: b.path })
-      // Marked ready by its agent (ramify ready), then the base moved: once per move of the base.
-      if (b.ready === 'stale' && b.behind > 0) {
+      // Marked ready by its agent (ramify ready), or waiting for a branch marked before it that changes the same
+      // files, then the base moved: once per move of the base.
+      if ((b.ready === 'stale' || b.ready === 'waiting') && b.behind > 0) {
         baseTip ??= (await gitOut(['-C', repo, 'rev-parse', health.base]).catch(() => '')).trim()
-        tell(`stale:${b.path}:${baseTip}`, es() ? `${b.branch} ya no está lista` : `${b.branch} is no longer ready`,
-          es() ? `${name}: estaba lista, pero ${health.base} se ha movido. Su agente debe ejecutar ramify ready otra vez.` : `${name}: it was ready, but ${health.base} has moved. Its agent should run ramify ready again.`, { repo, path: b.path })
+        if (b.ready === 'stale') {
+          tell(`stale:${b.path}:${baseTip}`, es() ? `${b.branch} ya no está lista` : `${b.branch} is no longer ready`,
+            es() ? `${name}: estaba lista, pero ${health.base} se ha movido. Su agente debe ejecutar ramify ready otra vez.` : `${name}: it was ready, but ${health.base} has moved. Its agent should run ramify ready again.`, { repo, path: b.path })
+        } else {
+          tell(`waited:${b.path}:${baseTip}`, es() ? `${b.branch} esperaba turno` : `${b.branch} was waiting its turn`,
+            es() ? `${name}: ${health.base} se ha movido. Su agente debe repetir ramify ready.` : `${name}: ${health.base} has moved. Its agent should run ramify ready again.`, { repo, path: b.path })
+        }
       }
       for (const other of b.overlaps) {
         const pair = [b.branch, other].sort().join(' ↔ ')
