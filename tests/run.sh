@@ -226,6 +226,30 @@ g=$(printf '{"cwd":"%s","tool_name":"Bash","tool_input":{"command":"cd %s && git
 check "a terminal commit after cd into its worktree is allowed" '[ -z "$g" ]'
 g=$(printf '{"cwd":"%s","tool_name":"Bash","tool_input":{"command":"git status && git log -1"}}' "$T/demo" | "$AW" hook guard 2>/dev/null)
 check "other terminal commands on the shared branch are allowed" '[ -z "$g" ]'
+# The guard's answer to a terminal command run from a folder ($1), and whether it is a deny.
+gb() { jq -n --arg d "$1" --arg c "$2" '{cwd: $d, tool_name: "Bash", tool_input: {command: $c}}' | "$AW" hook guard 2>/dev/null; }
+denied() { printf '%s' "$1" | jq -e '.hookSpecificOutput.permissionDecision == "deny"' >/dev/null; }
+for c in "git merge feat/login" "git cherry-pick abc123" "git revert HEAD" "git am fix.patch" "git rebase feat/login" \
+         "git reset --hard origin/main" "git pull origin feat/login" "git fetch -q && git merge --no-ff feat/login" 'bash -c "git merge feat/login"'; do
+  check "on the shared branch the guard denies: $c" 'denied "$(gb "$T/demo" "$c")"'
+done
+for c in "git fetch origin" "git pull --ff-only" "git merge --abort" "git reset HEAD a.txt" "git log --grep merge"; do
+  check "on the shared branch the guard allows: $c" '[ -z "$(gb "$T/demo" "$c")" ]'
+done
+for c in "git push origin HEAD:main" "git push origin :main" "git push -f origin feat/login:refs/heads/main" "git push --all origin"; do
+  check "a push to main from a worktree is denied: $c" 'denied "$(gb "$p1" "$c")"'
+done
+check "git push origin main from the main checkout is denied" 'denied "$(gb "$T/demo" "git push origin main")"'
+check "a bare git push from the main checkout on main is denied" 'denied "$(gb "$T/demo" "git push")"'
+for c in "git push" "git push -u origin feat/login" "git push origin HEAD" "git merge main" "git rebase main" \
+         'git commit -m "say git push origin main and git merge x"'; do
+  check "in its worktree the guard allows: $c" '[ -z "$(gb "$p1" "$c")" ]'
+done
+check "RAMIFY_ALLOW_MAIN lets one session push to main" '[ -z "$(export RAMIFY_ALLOW_MAIN=1; gb "$p1" "git push origin HEAD:main")" ]'
+check "a terminal write without git on the shared branch is not judged (documented limit)" '[ -z "$(gb "$T/demo" "echo hi > a.txt")" ]'
+g=$(printf '{"cwd":"%s","tool_name":"Write","tool_input":{"file_path":"%s/a.txt"}}' "$p1" "$p2" | "$AW" hook guard 2>/dev/null)
+check "an edit from one worktree into another is allowed (ramify who warns)" '[ -z "$g" ]'
+check "a commit from one worktree in another (git -C) is allowed" '[ -z "$(gb "$p1" "git -C $p2 commit -am x")" ]'
 ss=$(printf '{"cwd":"%s"}' "$p1" | "$AW" hook session-start 2>/dev/null)
 check "a session inside a worktree gets no warning" '[ -z "$ss" ]'
 g=$(printf '{"cwd":"/","tool_name":"Write","tool_input":{"file_path":"%s/notes.txt"}}' "$T" | "$AW" hook guard 2>/dev/null)
@@ -235,6 +259,7 @@ g=$(printf '{"cwd":"%s","tool_name":"Write","tool_input":{"file_path":"%s/x.txt"
 check "git config ramify.allowMain lets this repository edit on main" '[ -z "$g" ]'
 g=$(printf '{"cwd":"%s","tool_name":"Bash","tool_input":{"command":"git commit -m wip"}}' "$T/demo" | "$AW" hook guard 2>/dev/null)
 check "git config ramify.allowMain lets this repository commit on main" '[ -z "$g" ]'
+check "git config ramify.allowMain lets this repository merge into and push to main" '[ -z "$(gb "$T/demo" "git merge feat/login")" ] && [ -z "$(gb "$p1" "git push origin HEAD:main")" ]'
 git config --unset ramify.allowMain
 g=$(printf '{"cwd":"%s","tool_name":"Write","tool_input":{"file_path":"%s/x.txt"}}' "$T/demo" "$T/demo" | RAMIFY_ALLOW_MAIN=1 "$AW" hook guard 2>/dev/null)
 check "RAMIFY_ALLOW_MAIN lets one session edit on main" '[ -z "$g" ]'

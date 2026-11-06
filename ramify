@@ -631,21 +631,151 @@ shared_branch_at() {
   printf '%s' "$branch"
 }
 
-# The folder a terminal command commits in, when the command runs `git commit`: the -C folder,
-# else a leading `cd <dir> &&`, else the session folder. Prints nothing when there is no commit.
-commit_dir() {
-  local cmd="$1" cwd="$2" dir
-  # git by any path (/usr/bin/git), inside quotes (bash -c "git …") and after global options (-C dir, -c k=v, -P, --no-pager…).
-  printf '%s' "$cmd" | grep -Eq '(^|[;&|("'"'"'`]|[[:space:]])([^[:space:];&|("'"'"'`]*/)?git([[:space:]]+(-[Cc][[:space:]]+[^[:space:]]+|-[A-Za-z]|--[A-Za-z][^[:space:]]*))*[[:space:]]+commit([[:space:]]|$)' || return 1
-  dir=$(printf '%s' "$cmd" | sed -nE 's/.*git[[:space:]]+-C[[:space:]]+("([^"]*)"|'"'"'([^'"'"']*)'"'"'|([^[:space:]]+)).*/\2\3\4/p' | head -1)
-  [ -n "$dir" ] || dir=$(printf '%s' "$cmd" | sed -nE 's/^[[:space:]]*cd[[:space:]]+("([^"]*)"|'"'"'([^'"'"']*)'"'"'|([^[:space:];&]+))[[:space:]]*(&&|;).*/\2\3\4/p' | head -1)
-  case "$dir" in
-    '') dir="$cwd" ;;
-    \~|\~/*) dir="$HOME${dir#\~}" ;;
-    /*|[A-Za-z]:*) ;;
-    *) dir="$cwd/$dir" ;;
-  esac
-  printf '%s' "$dir"
+# The git commands of a terminal line ($1, run from the folder $2), one per line, tab separated:
+#   <subcommand> <folder> <unknown> <abort> <hard> <refs>
+# <folder> is where each one runs: its -C folder, else the last `cd <dir>` before it, else $2. git counts by
+# any path (/usr/bin/git) and after global options (-c k=v, -P, --no-pager…). Quotes are honoured, so a commit
+# message that mentions git is no git command, and `bash -c "…"` is read as the line it runs. A folder named
+# by a variable or a command ($WT_PATH, $(…)) cannot be known here: the folder before it stays and <unknown>
+# is 1. <abort> is 1 with --abort or --quit, <hard> with --hard. <refs>: for push, the branches it updates
+# on the remote ("@" the current one, "*" all of them); for pull, the branches it brings in.
+git_calls() {
+  printf '%s' "$1" | awk -v cwd="$2" -v home="$HOME" '
+    function add(w, sep) { n++; W[n] = w; S[n] = sep }
+    function cut() { if (n && !S[n]) add("", 1); start = 1 }
+    function word(w, depth) {
+      if (depth < 3 && shell && n && !S[n] && W[n] ~ /^-[A-Za-z]*c$/) { cut(); line(w, depth + 1); cut(); return }
+      if (start && w !~ /^[A-Za-z_][A-Za-z0-9_]*=/) { start = 0; shell = (w ~ /(^|\/)(ba|z|da|k)?sh$/) }
+      add(w, 0)
+    }
+    # Words and command separators of a shell line, without its quotes.
+    function line(s, depth,    i, len, c, w, has, rest, j) {
+      len = length(s); w = ""; has = 0
+      for (i = 1; i <= len; i++) {
+        c = substr(s, i, 1)
+        if (c == "\047") {
+          rest = substr(s, i + 1); j = index(rest, "\047"); if (!j) j = length(rest) + 1
+          w = w substr(rest, 1, j - 1); i += j; has = 1
+        } else if (c == "\"") {
+          for (i++; i <= len && substr(s, i, 1) != "\""; i++) {
+            if (substr(s, i, 1) == "\\" && i < len) i++
+            w = w substr(s, i, 1)
+          }
+          has = 1
+        } else if (c == "\\" && i < len) {
+          i++; if (substr(s, i, 1) != "\n") { w = w substr(s, i, 1); has = 1 }
+        } else if (c == " " || c == "\t") {
+          if (has) word(w, depth); w = ""; has = 0
+        } else if (index(";&|()\n", c)) {
+          if (has) word(w, depth); w = ""; has = 0; cut()
+        } else { w = w c; has = 1 }
+      }
+      if (has) word(w, depth)
+    }
+    function resolve(base, d) {
+      if (d ~ /[$`]/ || d == "-") return ""
+      if (d == "~") return home
+      if (substr(d, 1, 2) == "~/") return home substr(d, 2)
+      if (d ~ /^\// || d ~ /^[A-Za-z]:/) return d
+      return base "/" d
+    }
+    # The branch a refspec updates (push) or brings in (pull).
+    function ref(verb, r,    i) {
+      gsub(/[\t\n]/, " ", r); sub(/^\+/, "", r); i = index(r, ":")
+      if (verb == "push") { if (i) r = substr(r, i + 1); else if (r == "HEAD" || r == "@") r = "@" }
+      else if (i) r = substr(r, 1, i - 1)
+      sub(/^refs\/heads\//, "", r)
+      return r == "" ? "*" : r
+    }
+    { text = text (NR > 1 ? "\n" : "") $0 }
+    END {
+      start = 1; line(text, 0)
+      dir = cwd; unknown = 0; first = 1
+      for (k = 1; k <= n; k++) {
+        if (S[k]) { first = 1; continue }
+        w = W[k]
+        if (first && w ~ /^[A-Za-z_][A-Za-z0-9_]*=/) continue
+        if (first && (w == "cd" || w == "pushd")) {
+          t = (k < n && !S[k + 1]) ? W[++k] : "~"
+          r = resolve(dir, t); if (r == "") unknown = 1; else dir = r
+          first = 0; continue
+        }
+        first = 0
+        if (w !~ /^`?([^ ]*\/)?git$/) continue
+        gdir = dir; gunknown = unknown
+        for (k++; k <= n && !S[k]; k++) {
+          a = W[k]
+          if (a == "-C" && k < n && !S[k + 1]) { r = resolve(gdir, W[++k]); if (r == "") gunknown = 1; else gdir = r }
+          else if ((a == "-c" || a == "--git-dir" || a == "--work-tree" || a == "--namespace") && k < n && !S[k + 1]) k++
+          else if (a !~ /^-/) break
+        }
+        if (k > n || S[k]) { k--; continue }
+        verb = W[k]; abort = 0; hard = 0; all = 0; tags = 0; pos = 0; refs = ""
+        for (k++; k <= n && !S[k]; k++) {
+          a = W[k]
+          if (a == "--abort" || a == "--quit") abort = 1
+          else if (a == "--hard") hard = 1
+          else if (a == "--all" || a == "--mirror" || a == "--branches") all = 1
+          else if (a == "--tags") tags = 1
+          else if (a ~ /^-/) continue
+          else if (a ~ /^[0-9]*[<>]/) { if (a ~ /^[0-9]*[<>]+&?$/ && k < n && !S[k + 1]) k++ }
+          else if (++pos > 1) refs = refs " " ref(verb, a)
+        }
+        k--
+        if (verb == "push" && all) refs = refs " *"
+        if (verb == "push" && pos <= 1 && !all && !tags) refs = refs " @"
+        gsub(/[\t\n]/, " ", verb); gsub(/[\t\n]/, " ", gdir)
+        printf "%s\t%s\t%d\t%d\t%d\t%s\n", verb, gdir, gunknown, abort, hard, substr(refs, 2)
+      }
+    }'
+}
+
+# The default branch of the repository at $1 while it is protected: not when the session allows changing it
+# (RAMIFY_ALLOW_MAIN=1) or the repository does (git config ramify.allowMain true). Fails outside a repository.
+protected_branch() {
+  local dir="$1" main
+  [ -n "${RAMIFY_ALLOW_MAIN:-}" ] && return 1
+  while [ ! -d "$dir" ] && [ "$dir" != / ]; do dir=$(dirname "$dir"); done
+  main=$(main_checkout "$dir" 2>/dev/null) || return 1
+  [ "$(git -C "$main" config --bool ramify.allowMain 2>/dev/null)" = true ] && return 1
+  default_branch "$main"
+}
+
+# Why a terminal line ($1, run from $2) must not run, if it must not: the first of its git commands that would
+# change the shared branch. On it, in the main checkout: commit, merge, cherry-pick, revert, am, rebase,
+# reset --hard, or a pull of another branch. From anywhere: a push that updates the default branch.
+# fetch and pull --ff-only of the branch itself stay allowed. Prints nothing when the line may run.
+git_refusal() {
+  local verb dir abort hard refs b what cur
+  while IFS=$'\t' read -r verb dir _ abort hard refs; do
+    b=""; what=""
+    case "$verb" in
+      commit) b=$(shared_branch_at "$dir") && what=commit ;;
+      merge|cherry-pick|revert|am|rebase) [ "$abort" = 1 ] || { b=$(shared_branch_at "$dir") && what="git $verb"; } ;;
+      reset) [ "$hard" = 0 ] || { b=$(shared_branch_at "$dir") && what="git reset --hard"; } ;;
+      pull)
+        b=$(shared_branch_at "$dir") || continue
+        # Bringing in another branch (git pull origin feat/x) is a merge into the shared branch.
+        [ -z "$(printf '%s' "$refs" | tr ' ' '\n' | grep -vxF -e "$b" -e '')" ] || what="git pull" ;;
+      push)
+        b=$(protected_branch "$dir") && [ -n "$b" ] || continue
+        case " $refs " in *" $b "*|*" * "*) what=push ;; esac
+        case " $refs " in *" @ "*)
+          cur=$(git -C "$dir" branch --show-current 2>/dev/null) || cur=""
+          [ "$cur" != "$b" ] || what=push ;;
+        esac ;;
+    esac
+    [ -n "$what" ] || continue
+    if [ "$what" = commit ]; then
+      printf '%s' "This commit would land on $b, the shared branch. Call the EnterWorktree tool first with a short conventional name for the task (feat-..., fix-...), make the change there and commit in that worktree. (To allow commits on $b in this repository the user runs: git config ramify.allowMain true)"
+    elif [ "$what" = push ]; then
+      printf '%s' "This push would update $b, the shared branch, on the remote. Push the branch of your own instead (git push -u origin <your branch>); bringing it into $b is for the user to do (from the Ramify app, for one). (To allow pushes to $b in this repository the user runs: git config ramify.allowMain true)"
+    else
+      printf '%s' "$what here would change $b, the shared branch, which only the user changes. Make changes in a worktree of your own (call the EnterWorktree tool with a short conventional name, feat-... or fix-...); when a branch is ready, tell the user: merging it into $b is theirs to do (from the Ramify app, for one). (To allow this on $b in this repository the user runs: git config ramify.allowMain true)"
+    fi
+    return 0
+  done < <(git_calls "$1" "$2")
+  return 0
 }
 
 cmd_hook() {
@@ -713,7 +843,8 @@ cmd_hook() {
         + "and ports the project needs, and you continue there. Reading code and answering questions do not need it. "
         + "Edits on " + $b + " are blocked unless the user runs: git config ramify.allowMain true")}}' ;;
     guard)
-      # A commit from the terminal on the shared branch is refused like an edit.
+      # A terminal command that would change the shared branch (a commit, a merge… on it, a push to it) is
+      # refused like an edit.
       cmd=$(printf '%s' "$input" | jq -r '.tool_input.command // empty')
       if [ -n "$cmd" ] && printf '%s' "$cmd" | grep -Eiq 'ramify\.allowmain'; then
         jq -n '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason:
@@ -721,12 +852,9 @@ cmd_hook() {
         exit 0
       fi
       if [ -n "$cmd" ]; then
-        dir=$(commit_dir "$cmd" "$(printf '%s' "$input" | jq -r '.cwd // empty')") || exit 0
-        branch=$(shared_branch_at "$dir") || exit 0
-        jq -n --arg b "$branch" '{hookSpecificOutput: {hookEventName: "PreToolUse", permissionDecision: "deny", permissionDecisionReason:
-          ("This commit would land on " + $b + ", the shared branch. Call the EnterWorktree tool first with a short conventional "
-          + "name for the task (feat-..., fix-...), make the change there and commit in that worktree. "
-          + "(To allow commits on " + $b + " in this repository the user runs: git config ramify.allowMain true)")}}'
+        cwd=$(printf '%s' "$input" | jq -r '.cwd // empty')
+        git_refusal "$cmd" "${cwd:-$PWD}" | jq -Rs 'select(length > 0) | {hookSpecificOutput: {hookEventName: "PreToolUse",
+          permissionDecision: "deny", permissionDecisionReason: .}}'
         exit 0
       fi
       # Edits on the shared branch are refused with the way out: a worktree of its own.
