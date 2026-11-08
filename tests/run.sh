@@ -44,6 +44,17 @@ check ".worktree.env not visible to git" '[ -z "$(git -C "$W/feat-login" status 
 "$AW" new pagos 2>/dev/null >/dev/null
 p1=$(sed -n 's/^PORT=//p' "$W/feat-login/.worktree.env"); p2=$(sed -n 's/^PORT=//p' "$W/pagos/.worktree.env")
 check "each worktree gets its own port block" '[ "$p1" != "$p2" ] && [ $((p2 - p1)) -ge 10 ]'
+# A block where anything listens, on any of its ports, is skipped (not only when its first port is taken).
+if command -v lsof >/dev/null && command -v python3 >/dev/null; then
+  python3 -c 'import socket, time; s = socket.socket(); s.bind(("127.0.0.1", 47103)); s.listen(1); time.sleep(20)' &
+  lpid=$!; sleep 1
+  pl=$(RAMIFY_PORT_MIN=47100 RAMIFY_PORT_MAX=47190 "$AW" new portblock --no-setup --no-launch 2>/dev/null)
+  check "a port block with something listening on one of its ports is skipped" '[ "$(sed -n "s/^PORT=//p" "$pl/.worktree.env")" = 47110 ]'
+  kill "$lpid" 2>/dev/null; wait "$lpid" 2>/dev/null
+  "$AW" rm portblock 2>/dev/null
+else
+  echo "  skip: lsof or python3 is not installed"
+fi
 
 git init -q "$T/empty"
 check "new fails cleanly in a repo without commits" '! (cd "$T/empty" && "$AW" new x 2>/dev/null) && [ ! -e "$RAMIFY_ROOT/empty/x" ]'
@@ -276,6 +287,16 @@ ss=$(printf '{"cwd":"%s"}' "$p1" | "$AW" hook session-start 2>/dev/null)
 check "a session inside a worktree gets no warning" '[ -z "$ss" ]'
 g=$(printf '{"cwd":"/","tool_name":"Write","tool_input":{"file_path":"%s/notes.txt"}}' "$T" | "$AW" hook guard 2>/dev/null)
 check "files outside any repository are allowed" '[ -z "$g" ]'
+mkdir -p "$W/.claims"
+sh -c 'exit 0' & dead=$!; wait "$dead"
+echo "$dead" > "$W/.claims/feat-stale"
+sc=$(printf '{"name":"feat-stale","cwd":"%s","session_id":"s-stale"}' "$T/demo" | "$AW" hook create 2>/dev/null | tail -1)
+check "a claim left by a ramify that is no longer running is taken back" '[ "$(git -C "$sc" branch --show-current)" = feat/stale ] && [ ! -e "$W/.claims/feat-stale" ]'
+echo "$$" > "$W/.claims/feat-live"
+sl=$(printf '{"name":"feat-live","cwd":"%s","session_id":"s-live"}' "$T/demo" | "$AW" hook create 2>/dev/null | tail -1)
+check "a claim of a ramify still running keeps its name taken" '[ "$(git -C "$sl" branch --show-current)" = feat/live-2 ] && [ -e "$W/.claims/feat-live" ]'
+rm -f "$W/.claims/feat-live"
+"$AW" rm "$sc" --force 2>/dev/null; "$AW" rm "$sl" --force 2>/dev/null
 git config ramify.allowMain true
 g=$(printf '{"cwd":"%s","tool_name":"Write","tool_input":{"file_path":"%s/x.txt"}}' "$T/demo" "$T/demo" | "$AW" hook guard 2>/dev/null)
 check "git config ramify.allowMain lets this repository edit on main" '[ -z "$g" ]'

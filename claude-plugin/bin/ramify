@@ -130,16 +130,24 @@ find_wt() {
   printf '%s\n' "$path"
 }
 
+# The first free block of PORT_BLOCK ports: no worktree has it and nothing listens on any port of it.
 alloc_port() {
-  local used p
+  local used listening p q free
   # The ports in use, one per line between newlines. Looked up in bash, not with printf | grep -q: under pipefail a
   # grep that stops at the first match can leave printf writing to a closed pipe, and a taken port then read as free.
   used=$'\n'$(cat "$ROOT"/*/*/.worktree.env 2>/dev/null | sed -n 's/^PORT=//p' || true)$'\n'
+  listening=$'\n'$(listening_ports)$'\n'
   p=$PORT_MIN
   while [ "$p" -le "$PORT_MAX" ]; do
     case "$used" in
       *$'\n'"$p"$'\n'*) ;;
-      *) port_busy "$p" || { printf '%s\n' "$p"; return; } ;;
+      *)
+        free=1; q=$p
+        while [ "$q" -lt $((p + PORT_BLOCK)) ]; do
+          case "$listening" in *$'\n'"$q"$'\n'*) free=0; break ;; esac
+          q=$((q + 1))
+        done
+        [ "$free" = 0 ] || { printf '%s\n' "$p"; return; } ;;
     esac
     p=$((p + PORT_BLOCK))
   done
@@ -150,36 +158,43 @@ alloc_port() {
 # Not mkdir: uutils mkdir, the default on Ubuntu 26.04, can tell two callers racing for one name that each made it.
 PORT_LOCK="$ROOT/.port-lock"
 port_lock() {
-  local i=0 holder
+  local i=0
   mkdir -p "$ROOT"
   until (set -C; printf '%s\n' "$$" > "$PORT_LOCK") 2>/dev/null; do
     # A folder is the lock of a ramify up to 0.8, with no pid in it: taken over as those did, once a minute old.
     if [ -d "$PORT_LOCK" ] && [ -n "$(find "$PORT_LOCK" -maxdepth 0 -mmin +1 2>/dev/null)" ] && rmdir "$PORT_LOCK" 2>/dev/null; then
       continue
     fi
-    # Its owner is no longer running (killed while holding it): take it over, judged by the pid, never by age. One
-    # taker at a time (a noclobber file of its own), and only while the lock still names that owner.
-    holder=$(lock_holder)
-    if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null && (set -C; : > "$PORT_LOCK.$holder") 2>/dev/null; then
-      if [ "$(lock_holder)" = "$holder" ]; then rm -f "$PORT_LOCK"; fi
-      rm -f "$PORT_LOCK.$holder"
-      continue
-    fi
+    # Its owner is no longer running (killed while holding it): taken over, judged by the pid, never by age.
+    reclaim_stale "$PORT_LOCK" && continue
     i=$((i + 1)); [ "$i" -lt 300 ] || die "another ramify holds $PORT_LOCK; remove it if none is running"
     sleep 0.1
   done
 }
 port_unlock() { rm -f "$PORT_LOCK"; }
-# The pid in the lock, or nothing: no lock, one being written this instant, or a folder left by an older ramify.
-lock_holder() {
+
+# The pid written in a lock file, or nothing: no file, one being written this instant, or no pid in it.
+pid_in() {
   local h=""
-  { read -r h < "$PORT_LOCK"; } 2>/dev/null || true
+  { read -r h < "$1"; } 2>/dev/null || true
   case "$h" in ''|*[!0-9]*) ;; *) printf '%s\n' "$h" ;; esac
 }
 
-port_busy() {
-  command -v lsof >/dev/null || return 1
-  lsof -nP -iTCP:"$1" -sTCP:LISTEN >/dev/null 2>&1
+# Remove the lock file $1 when the process named in it is no longer running. One taker at a time (a noclobber
+# file of its own), and only while the lock still names that process: a fresh one taken meanwhile stays.
+reclaim_stale() {
+  local f="$1" holder
+  holder=$(pid_in "$f")
+  if [ -z "$holder" ] || kill -0 "$holder" 2>/dev/null; then return 1; fi
+  (set -C; : > "$f.$holder") 2>/dev/null || return 1
+  if [ "$(pid_in "$f")" = "$holder" ]; then rm -f "$f"; fi
+  rm -f "$f.$holder"
+}
+
+# The TCP ports something listens on here, one per line (none without lsof).
+listening_ports() {
+  command -v lsof >/dev/null || return 0
+  lsof -nP -iTCP -sTCP:LISTEN -Fn 2>/dev/null | sed -n 's/^n.*:\([0-9][0-9]*\)$/\1/p' | sort -u || true
 }
 
 # Copy the ignored files listed in .worktreeinclude (gitignore syntax) into the worktree.
@@ -968,6 +983,8 @@ cmd_hook() {
       n=1; branch=$base
       while :; do
         slug=$(slugify "$branch"); dir="$ROOT/$repo/$slug"
+        # A claim whose conversation's ramify is gone (killed before its trap ran) frees its name again.
+        [ ! -e "$ROOT/$repo/.claims/$slug" ] || reclaim_stale "$ROOT/$repo/.claims/$slug" || true
         if [ -d "$dir" ] && [ -e "$ROOT/$repo/.claims/$slug" ]; then
           :  # still being made for another conversation (git worktree add, then npm ci…): taken
         elif [ -d "$dir" ]; then
@@ -976,9 +993,10 @@ cmd_hook() {
           if of_repo "$dir" "$main" && { [ -z "$session" ] || [ -z "$owner" ] || [ "$owner" = "$session" ]; }; then
             (cd "$dir" && abspwd); exit 0
           fi
-        elif (set -C; : > "$ROOT/$repo/.claims/$slug") 2>/dev/null; then
+        elif (set -C; printf '%s\n' "$$" > "$ROOT/$repo/.claims/$slug") 2>/dev/null; then
           # Claimed: two conversations starting at once cannot both take this name. A file made with noclobber
           # (O_EXCL, from bash itself), not mkdir: uutils mkdir can tell two callers that each made the folder.
+          # It holds this ramify's pid, so a claim left by one that was killed can be taken back.
           break
         fi
         n=$((n + 1)); branch="$base-$n"
