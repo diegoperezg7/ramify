@@ -5,8 +5,9 @@ import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
+import { AGENTS } from '../src/catalog.ts'
 import {
-  pluginEnabled, powershellBlock, setupApply, setupStatus, setupUndo, shellAgents, userPathScript, windowsShims, withoutBlock, withoutLegacyHooks,
+  FALLBACK_INSTRUCTION_FILES, instructionFileList, pluginEnabled, powershellBlock, setupApply, setupStatus, setupUndo, shellAgents, userPathScript, windowsShims, withoutBlock, withoutLegacyHooks,
   type SetupContext, type SetupRun,
 } from '../src/setup.ts'
 
@@ -61,6 +62,25 @@ describe('setup: pieces', () => {
   it('takes the wrapped agents from the script, so the list lives in one place', () => {
     const agents = shellAgents(readFileSync(BIN, 'utf8'))
     assert.ok(agents.includes('claude') && agents.includes('codex') && agents.length > 10)
+  })
+
+  it('takes the instruction files from the script, with the list it had as a fallback', () => {
+    const script = readFileSync(BIN, 'utf8')
+    const fromScript = instructionFileList(script)
+    // The files the script's install loop writes: the same set whether it has INSTRUCTION_FILES yet or not.
+    const loop = [...script.matchAll(/"\$HOME\/([^"]+)"/g)].map((m) => m[1]).filter((f) => /(?:CLAUDE|AGENTS|GEMINI)\.md$|copilot-instructions\.md$/.test(f))
+    const expected = /^INSTRUCTION_FILES="/m.test(script) ? fromScript : [...new Set(loop)]
+    assert.deepEqual([...fromScript].sort(), [...new Set(expected)].sort())
+    assert.deepEqual([...FALLBACK_INSTRUCTION_FILES].sort(), [...fromScript].sort(), 'the fallback list matches the script')
+    assert.deepEqual(instructionFileList('INSTRUCTION_FILES="$HOME/.a/X.md ${HOME}/.b/Y.md .c/Z.md"'), ['.a/X.md', '.b/Y.md', '.c/Z.md'])
+    assert.deepEqual(instructionFileList('no list here'), FALLBACK_INSTRUCTION_FILES)
+  })
+
+  it('knows every agent process name the script counts', () => {
+    const names = (/^AGENT_NAMES="([^"]*)"/m.exec(readFileSync(BIN, 'utf8'))?.[1] ?? '').split(/\s+/).filter(Boolean)
+    assert.ok(names.length > 10)
+    const known = new Set(AGENTS.flatMap((a) => [a.id, ...a.bins]))
+    assert.deepEqual(names.filter((n) => !known.has(n)), [], 'names in AGENT_NAMES missing from catalog.ts')
   })
 
   it('writes PowerShell functions that go through ramify run', () => {
