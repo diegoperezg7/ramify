@@ -1242,12 +1242,14 @@ install_guard() {
   log "${G}+${N} ramify.guardMain: git refuses commits on the default branch in the main checkout, and pushes to it (RAMIFY_ALLOW_MAIN=1 lets one through)"
 }
 
+# The instruction files of the agents that read them, relative to $HOME (one line: the app reads it from here).
+INSTRUCTION_FILES=".claude/CLAUDE.md .codex/AGENTS.md .gemini/GEMINI.md .config/opencode/AGENTS.md .copilot/copilot-instructions.md .config/amp/AGENTS.md"
+
 install_instructions() {
   local snippet="$SELF_DIR/snippets/agent-instructions.md" f
   [ -f "$snippet" ] || die "missing $snippet"
-  for f in "$HOME/.claude/CLAUDE.md" "$HOME/.codex/AGENTS.md" "$HOME/.gemini/GEMINI.md" \
-           "$HOME/.config/opencode/AGENTS.md" "$HOME/.copilot/copilot-instructions.md" \
-           "$HOME/.config/amp/AGENTS.md"; do
+  for f in $INSTRUCTION_FILES; do
+    f="$HOME/$f"
     [ -d "$(dirname "$f")" ] || continue
     if grep -qE '^## .*\((ramify|agent-wt)\)' "$f" 2>/dev/null; then
       # Already there: replace it when the snippet changed (a newer ramify), leave it otherwise.
@@ -1383,9 +1385,8 @@ shell_rc() {
 # Remove the "## Worktrees (ramify)" section that install_instructions added (up to the next heading or blank line).
 uninstall_instructions() {
   local f tmp
-  for f in "$HOME/.claude/CLAUDE.md" "$HOME/.codex/AGENTS.md" "$HOME/.gemini/GEMINI.md" \
-           "$HOME/.config/opencode/AGENTS.md" "$HOME/.copilot/copilot-instructions.md" \
-           "$HOME/.config/amp/AGENTS.md"; do
+  for f in $INSTRUCTION_FILES; do
+    f="$HOME/$f"
     grep -qE '^## .*\((ramify|agent-wt)\)' "$f" 2>/dev/null || continue
     backup_once "$f"
     tmp="$f.ramify-tmp"
