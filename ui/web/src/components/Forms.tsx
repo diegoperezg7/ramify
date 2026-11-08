@@ -204,8 +204,8 @@ export function SettingsDialog() {
             <fieldset className="toggles">
               <legend>{t('careTitle')}</legend>
               {check('watchBranches', t('careWatch'), true)}
-              {check('autoDraftPr', t('careDraftPr'), true)}
-              {check('autoClean', t('careClean'), true)}
+              {check('autoDraftPr', t('careDraftPr'), false)}
+              {check('autoClean', t('careClean'), false)}
             </fieldset>
           )}
 

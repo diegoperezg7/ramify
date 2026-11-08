@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
 import { agentTimeByDay, dayLanes, friendlyMerge, lastActivity, MergeError, mergeProblem, lastDays, levels, nextAction, parseDiff, peakParallel, prFor, prSignInHint, shellArg, squashMerged, splitMinor, taskSlug, timeBy, unionMs } from '../../../ui/web/src/logic.ts'
@@ -186,5 +187,16 @@ describe('pull requests outside the control center (read-only)', () => {
     assert.equal(prSignInHint({ configured: false, status: 'signed-out' }, 'a/b'), false)
     assert.equal(prSignInHint({ configured: true, status: 'signed-out' }, null), false)
     assert.equal(prSignInHint(null, 'a/b'), false)
+  })
+})
+
+describe('theme', () => {
+  it('declares the dark theme the same way when it follows the system and when it is chosen by hand', () => {
+    const css = readFileSync(new URL('../../../ui/web/src/styles.css', import.meta.url), 'utf8')
+    const vars = (block: string | undefined) => (block ?? '').split('\n').map((l) => l.trim()).filter(Boolean)
+    const system = /@media \(prefers-color-scheme: dark\) \{\n  :root:not\(\[data-theme='light'\]\) \{\n([\s\S]*?)\n  \}\n\}/.exec(css)?.[1]
+    const chosen = /^:root\[data-theme='dark'\] \{\n([\s\S]*?)\n\}/m.exec(css)?.[1]
+    assert.ok(vars(system).length > 20)
+    assert.deepEqual(vars(system), vars(chosen))
   })
 })

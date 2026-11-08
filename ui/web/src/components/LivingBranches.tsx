@@ -79,8 +79,8 @@ export function LivingBranches() {
 
   // The finished branches under the top bar: fork, a few commits, merge back into the base lane.
   const done = [
-    { color: '#fb923c', yF: top + 150, yM: top + 46 },
-    { color: '#38bdf8', yF: top + 290, yM: top + 186 },
+    { color: 'var(--lb-done-1)', yF: top + 150, yM: top + 46 },
+    { color: 'var(--lb-done-2)', yF: top + 290, yM: top + 186 },
   ].map((b) => ({ ...b, d: `M${xm} ${b.yF} ${curveUp(xm, b.yF, xb)} V${b.yM + FORK} C${xb} ${b.yM + FORK * 0.45} ${xm} ${b.yM + FORK * 0.55} ${xm} ${b.yM}`, commits: [b.yF - FORK - 18, b.yF - FORK - 48] }))
 
   // Commits on the base lane: where every branch forks, and a few along the bottom strip.
