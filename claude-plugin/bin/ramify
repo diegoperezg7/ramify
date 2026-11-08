@@ -1162,17 +1162,28 @@ cmd_hook() {
   esac
 }
 
+# A copy of $1 as it was before ramify first changed it: an existing one is never overwritten.
+backup_once() { [ ! -f "$1" ] || [ -e "$1.bak-ramify" ] || cp "$1" "$1.bak-ramify"; }
+
+# A Claude Code hook entry that runs ramify (any path to it, quoted or not), as jq: the ones install replaces.
+RAMIFY_HOOK_JQ='def ramify_hook: [.hooks[]?.command // "" | test("ramify[\"'"'"']?\\s+hook\\s")] | any;'
+
+# Rewrite the JSON file $1 with jq and the other arguments, through a temporary file: a failure leaves it as it was.
+jq_in_place() {
+  local f="$1"; shift
+  if ! jq "$@" "$f" > "$f.ramify-tmp" || ! mv "$f.ramify-tmp" "$f"; then rm -f "$f.ramify-tmp"; die "could not update $f"; fi
+}
+
 install_claude_hooks() {
   local f="$HOME/.claude/settings.json" bin
   command -v jq >/dev/null || die "jq is required"
   bin=$(cd "$SELF_DIR" && pwd)/ramify
   mkdir -p "$HOME/.claude"; [ -f "$f" ] || echo '{}' > "$f"
-  cp "$f" "$f.bak-ramify"
-  jq --arg c "$bin hook create" --arg r "$bin hook remove" \
-    '.hooks = ((.hooks // {}) + {
-       WorktreeCreate: [{hooks: [{type: "command", command: $c}]}],
-       WorktreeRemove: [{hooks: [{type: "command", command: $r}]}]})' \
-    "$f.bak-ramify" > "$f"
+  backup_once "$f"
+  # Only ramify's own entries are replaced: other hooks on these events stay.
+  jq_in_place "$f" --arg c "$bin hook create" --arg r "$bin hook remove" "$RAMIFY_HOOK_JQ"'
+    def put($cmd): [(. // [])[] | select(ramify_hook | not)] + [{hooks: [{type: "command", command: $cmd}]}];
+    .hooks = (.hooks // {}) | .hooks.WorktreeCreate |= put($c) | .hooks.WorktreeRemove |= put($r)'
   log "${G}+${N} Claude Code hooks in $f (backup: $f.bak-ramify)"
 }
 
@@ -1188,10 +1199,10 @@ install_claude_plugin() {
   claude plugin install ramify@ramify >/dev/null || die "claude plugin install ramify@ramify failed"
   log "${G}+${N} Claude Code plugin ramify@ramify (from $market)"
   if [ -f "$f" ] && command -v jq >/dev/null && jq -e '[.hooks // {} | .[][]? | .hooks[]?.command // "" | select(test("ramify[\"'"'"']?\\s+hook\\s"))] | length > 0' "$f" >/dev/null 2>&1; then
-    cp "$f" "$f.bak-ramify"
-    jq '.hooks |= with_entries(.value as $was | .value |= map(select(([.hooks[]?.command // "" | test("ramify[\"'"'"']?\\s+hook\\s")] | any) | not))
+    backup_once "$f"
+    jq_in_place "$f" "$RAMIFY_HOOK_JQ"'.hooks |= with_entries(.value as $was | .value |= map(select(ramify_hook | not))
                                | select((.value | length > 0) or ($was | length == 0)))
-        | if .hooks == {} then del(.hooks) else . end' "$f.bak-ramify" > "$f"
+        | if .hooks == {} then del(.hooks) else . end'
     log "${G}-${N} older ramify hooks in $f: the plugin has them now (backup: $f.bak-ramify)"
   fi
 }
@@ -1242,14 +1253,15 @@ install_instructions() {
       # Already there: replace it when the snippet changed (a newer ramify), leave it otherwise.
       awk '/^## .*\((ramify|agent-wt)\)/ { on = 1; print; next } on && (/^$/ || /^#/) { exit } on { print }' "$f" \
         | cmp -s - "$snippet" && { log "${D}= $f${N}"; continue; }
-      cp "$f" "$f.bak-ramify"
-      awk '/^## .*\((ramify|agent-wt)\)/ { skip = 1; next } skip && (/^$/ || /^#/) { skip = 0 } !skip { print }' "$f.bak-ramify" \
-        | awk '{ l[NR] = $0 } END { n = NR; while (n > 0 && l[n] == "") n--; for (i = 1; i <= n; i++) print l[i] }' > "$f"
+      backup_once "$f"
+      awk '/^## .*\((ramify|agent-wt)\)/ { skip = 1; next } skip && (/^$/ || /^#/) { skip = 0 } !skip { print }' "$f" \
+        | awk '{ l[NR] = $0 } END { n = NR; while (n > 0 && l[n] == "") n--; for (i = 1; i <= n; i++) print l[i] }' > "$f.ramify-tmp" \
+        && mv "$f.ramify-tmp" "$f"
       { [ -s "$f" ] && printf '\n'; cat "$snippet"; } >> "$f"
       log "${G}~${N} $f"
       continue
     fi
-    [ -f "$f" ] && cp "$f" "$f.bak-ramify"
+    backup_once "$f"
     { [ -s "$f" ] && printf '\n'; cat "$snippet"; } >> "$f"
     log "${G}+${N} $f"
   done
@@ -1375,7 +1387,7 @@ uninstall_instructions() {
            "$HOME/.config/opencode/AGENTS.md" "$HOME/.copilot/copilot-instructions.md" \
            "$HOME/.config/amp/AGENTS.md"; do
     grep -qE '^## .*\((ramify|agent-wt)\)' "$f" 2>/dev/null || continue
-    cp "$f" "$f.bak-ramify"
+    backup_once "$f"
     tmp="$f.ramify-tmp"
     awk '/^## .*\((ramify|agent-wt)\)/ { skip = 1; next } skip && (/^$/ || /^#/) { skip = 0 } !skip { print }' "$f" > "$tmp" && mv "$tmp" "$f"
     log "${G}-${N} $f"
@@ -1386,7 +1398,7 @@ install_shell() {
   local rc bin
   rc=$(shell_rc); bin=$(cd "$SELF_DIR" && pwd)/ramify
   if grep -qF "$SHELL_BEGIN" "$rc" 2>/dev/null; then log "${D}= $rc${N}"; return 0; fi
-  [ -f "$rc" ] && cp "$rc" "$rc.bak-ramify"
+  backup_once "$rc"
   printf '\n%s\n[ -x %q ] && eval "$(%q shell-init)"\n%s\n' "$SHELL_BEGIN" "$bin" "$bin" "$SHELL_END" >> "$rc"
   log "${G}+${N} $rc: agents opened in a main checkout now get their own branch (new terminals)"
 }
@@ -1395,7 +1407,7 @@ uninstall_shell() {
   local rc tmp
   rc=$(shell_rc)
   grep -qF "$SHELL_BEGIN" "$rc" 2>/dev/null || { log "${D}= $rc${N}"; return 0; }
-  cp "$rc" "$rc.bak-ramify"
+  backup_once "$rc"
   tmp="$rc.ramify-tmp"
   awk -v b="$SHELL_BEGIN" -v e="$SHELL_END" '$0 == b { skip = 1 } !skip { print } $0 == e { skip = 0 }' "$rc" > "$tmp" && mv "$tmp" "$rc"
   log "${G}-${N} $rc: agents run as typed again (new terminals)"

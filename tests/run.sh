@@ -180,6 +180,16 @@ check "hook remove deletes it" '[ ! -d "$path" ]'
 check "an unknown hook lists every one, nudge included" '! "$AW" hook nope </dev/null 2>"$T/hook-usage.err" && grep -q "create|remove|session-start|guard|nudge" "$T/hook-usage.err"'
 
 echo "install"
+h2="$T/home-install"; mkdir -p "$h2/.claude"
+printf '{"hooks":{"WorktreeCreate":[{"hooks":[{"type":"command","command":"other-tool create"}]}],"WorktreeRemove":[{"hooks":[{"type":"command","command":"/old/ramify hook remove"}]}]}}\n' > "$h2/.claude/settings.json"
+cp "$h2/.claude/settings.json" "$T/settings-orig"
+HOME="$h2" "$AW" install claude-hooks 2>/dev/null; HOME="$h2" "$AW" install claude-hooks 2>/dev/null
+check "install claude-hooks twice keeps a hook that is not ramify's and has ramify's once" \
+  'jq -e "([.hooks.WorktreeCreate[].hooks[].command] | length == 2 and index(\"other-tool create\") == 0 and (.[1] | endswith(\"ramify hook create\"))) and ([.hooks.WorktreeRemove[].hooks[].command] | length == 1 and (.[0] | endswith(\"ramify hook remove\")) and (.[0] | startswith(\"/old/\") | not))" "$h2/.claude/settings.json" >/dev/null'
+check "install claude-hooks keeps the first backup, not one of its own output" 'cmp -s "$T/settings-orig" "$h2/.claude/settings.json.bak-ramify"'
+echo 'export ORIG=1' > "$h2/.zshrc"
+for c in install uninstall install; do HOME="$h2" SHELL=/bin/zsh "$AW" "$c" shell 2>/dev/null; done
+check "install and uninstall shell keep the first backup" '[ "$(cat "$h2/.zshrc.bak-ramify")" = "export ORIG=1" ] && [ "$(grep -c ">>> ramify" "$h2/.zshrc")" = 1 ]'
 mkdir -p "$HOME/.claude" "$HOME/.codex"
 echo '{"model":"opus","hooks":{"Stop":[]}}' > "$HOME/.claude/settings.json"
 "$AW" install claude-hooks 2>/dev/null
