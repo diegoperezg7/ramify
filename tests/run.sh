@@ -399,6 +399,13 @@ check "the main checkout is left clean" '[ -z "$(git status --porcelain)" ]'
 check "a stash keeps a copy" 'git stash list | grep -q "ramify: moved to feat/moved"'
 check "the new worktree records the agent" 'grep -qx "WT_AGENT=claude" "$mp/.worktree.env"'
 check "move refuses inside a worktree" '! (cd "$mp" && "$AW" move other 2>/dev/null)'
+echo "half" > wip2.txt
+stashes=$(git stash list | wc -l)
+pfull=$(sed -n 's/^PORT=//p' "$mp/.worktree.env")
+RAMIFY_PORT_MIN=$pfull RAMIFY_PORT_MAX=$pfull "$AW" move feat/noports 2>"$T/move-noports.err"; c=$?
+check "move with no free port block fails cleanly (exit $c): no folder, no branch, no lock" '[ "$c" != 0 ] && [ ! -e "$W/feat-noports" ] && ! git show-ref --quiet refs/heads/feat/noports && [ ! -e "$RAMIFY_ROOT/.port-lock" ] && grep -q "no free port block" "$T/move-noports.err"'
+check "move with no free port block brings the work back to the main checkout" '[ -f wip2.txt ] && [ "$(git stash list | wc -l)" = "$stashes" ] && grep -q "changes are back" "$T/move-noports.err"'
+rm -f wip2.txt
 
 echo "shell integration"
 init=$("$AW" shell-init)

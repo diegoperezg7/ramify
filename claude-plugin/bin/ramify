@@ -363,14 +363,14 @@ launch() {
 # bash 3.2 does not keep errexit in command substitutions.
 create() {
   local branch="$1" from="$2" setup="$3" agent="$4" main repo slug wt port base
-  main=$(main_checkout "$PWD")
+  main=$(main_checkout "$PWD") || exit 1
   repo=$(basename "$main")
   slug=$(slugify "$branch")
   [ -n "$slug" ] || die "invalid branch name: '$branch'"
   wt="$ROOT/$repo/$slug"
   [ -e "$wt" ] && die "$wt already exists (use: ramify open $branch)"
   [ -z "$agent" ] || valid_agent "$agent"
-  mkdir -p "$ROOT/$repo"
+  mkdir -p "$ROOT/$repo" || die "could not create $ROOT/$repo"
   wt="$(cd "$ROOT/$repo" && abspwd)/$slug"
 
   local add
@@ -385,16 +385,14 @@ create() {
     add=(-b "$branch" "$wt" "$base")
   fi
   # Several git worktree add at once in one repository can fail (git reads .git/worktrees/<name> while another
-  # one is writing its own): ramify runs them one at a time, under the same lock as the ports.
+  # one is writing its own): ramify runs them one at a time, under the same lock as the ports. Choosing a port and
+  # writing it down is one step too: two worktrees made at once must not both pick the same block. The block is
+  # chosen first, so with none free nothing is made. Every failure here stops ramify explicitly: create may run
+  # where errexit does not (bash 3.2 drops it in $(...), and any bash in a && list).
   port_lock
+  port=$(alloc_port) || { port_unlock; exit 1; }
   git -C "$main" worktree add "${add[@]}" >&2 || { port_unlock; die "git worktree add failed for $branch"; }
-  port_unlock
-
-  copy_included "$main" "$wt"
-  # Choosing a port and writing it down is one step: two worktrees made at once must not both pick the same block.
-  port_lock
-  port=$(alloc_port)
-  cat > "$wt/.worktree.env" <<EOF
+  cat > "$wt/.worktree.env" <<EOF || { port_unlock; die "could not write $wt/.worktree.env"; }
 WT_NAME=$slug
 WT_BRANCH=$branch
 WT_PATH=$wt
@@ -406,7 +404,8 @@ EOF
   # The conversation it is for (hook create), recorded before the setup runs: another one looking now sees it taken.
   [ -z "${CREATE_SESSION:-}" ] || printf 'WT_SESSION=%s\n' "$CREATE_SESSION" >> "$wt/.worktree.env"
   port_unlock
-  exclude_env_file "$wt"
+  exclude_env_file "$wt" || die "could not exclude .worktree.env from git in $wt"
+  copy_included "$main" "$wt" || die "could not copy the files of .worktreeinclude into $wt"
 
   if [ "$setup" = 1 ] && ! run_project_script "$wt" "$main" setup; then
     auto_setup "$wt" || log "${Y}warning: setup failed; the worktree is still at $wt${N}"
@@ -1253,12 +1252,15 @@ cmd_move() {
   fi
   git -C "$main" stash push --include-untracked -m "ramify: moved to $branch" >/dev/null || die "could not stash the changes"
   stash=$(git -C "$main" rev-parse 'stash@{0}')
-  # The branch starts where the work started: the commit the changes were made on.
-  # In a subshell: when create stops (the folder exists, a bad name…) the work comes back before ramify exits.
-  if ! wt=$(create "$branch" "" 1 "$agent" >&2 && printf '%s' "$CREATED_WT"); then
-    git -C "$main" stash pop --index >/dev/null 2>&1 || git -C "$main" stash pop >/dev/null 2>&1
-    die "could not create $branch; the changes are back in the main checkout"
-  fi
+  # The branch starts where the work started: the commit the changes were made on. create runs here, not in
+  # $(...) where bash 3.2 drops errexit; when it stops (the folder exists, a bad name, no free ports…) the work
+  # comes back before ramify exits. (The trap is a fixed string: these variables are local.)
+  # shellcheck disable=SC2064
+  trap "git -C $(printf '%q' "$main") stash pop --index >/dev/null 2>&1 || git -C $(printf '%q' "$main") stash pop >/dev/null 2>&1
+    log $(printf '%q' "${R}ramify:${N} could not create $branch; the changes are back in the main checkout")" EXIT
+  create "$branch" "" 1 "$agent"
+  trap - EXIT
+  wt=$CREATED_WT
   if ! git -C "$wt" stash apply --index "$stash" >/dev/null 2>&1 && ! git -C "$wt" stash apply "$stash" >/dev/null 2>&1; then
     git -C "$main" stash pop >/dev/null 2>&1
     die "the changes did not apply to $branch; they are back in the main checkout"
