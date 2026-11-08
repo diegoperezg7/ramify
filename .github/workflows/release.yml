@@ -7,7 +7,13 @@ permissions:
   contents: write
 
 jobs:
+  # The same jobs as every push (CLI on Ubuntu and macOS, core tests, typecheck, ui/dist and plugin in sync,
+  # versions matching the tag, Windows): nothing is built or published unless they pass.
+  ci:
+    uses: ./.github/workflows/ci.yml
+
   build:
+    needs: ci
     strategy:
       matrix:
         include:
@@ -36,9 +42,18 @@ jobs:
       - run: npm run build:web
       - run: npm run ${{ matrix.script }} -w apps/desktop
         env:
-          # Signing and notarization happen only when these secrets exist; without them the build is unsigned.
+          # macOS: RAMIFY_RELEASE makes dist.mjs stop when a signing or notarization secret is missing, instead of
+          # signing ad hoc. Windows is published unsigned (the release notes say so).
+          RAMIFY_RELEASE: '1'
           CSC_LINK: ${{ runner.os == 'macOS' && secrets.MAC_CERT_P12 || secrets.WIN_CERT_PFX }}
           CSC_KEY_PASSWORD: ${{ runner.os == 'macOS' && secrets.MAC_CERT_PASSWORD || secrets.WIN_CERT_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      - name: notarize the dmg, then verify signatures, Gatekeeper, stapled tickets and architecture
+        if: runner.os == 'macOS'
+        run: ./scripts/mac-release.sh
+        env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -49,7 +64,7 @@ jobs:
         run: npm run package -w apps/vscode && cp apps/vscode/ramify.vsix "apps/desktop/release/ramify-${GITHUB_REF_NAME#v}.vsix"
       - uses: actions/upload-artifact@v4
         with:
-          name: ${{ runner.os }}
+          name: release-${{ runner.os }}
           path: |
             ${{ matrix.files }}
             apps/desktop/release/*.vsix
@@ -58,8 +73,11 @@ jobs:
     needs: build
     runs-on: ubuntu-latest
     steps:
+      # Only this workflow's builds: the CI run above uploads a Windows installer of its own (ramify-windows) whose
+      # checksum is not the one in latest.yml.
       - uses: actions/download-artifact@v4
         with:
+          pattern: release-*
           path: dist
           merge-multiple: true
       - name: GitHub release
