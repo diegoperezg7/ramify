@@ -1,4 +1,5 @@
 // Merging all the way to GitHub, with a real remote (a bare repository) and a fake gh that squash-merges into it.
+import './isolate.ts'
 import { execFileSync } from 'node:child_process'
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync, existsSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -142,12 +143,40 @@ describe('merge into main, all the way to GitHub', { skip: process.platform === 
   it('keeps a local merge and says so when main cannot be pushed', async () => {
     const engine = new Engine({ bin: BIN, env })
     const { path, tip } = await branchWithWork(engine, 'feat/offline')
-    await engine.fetchOrigin(REPO, true)
-    git(REPO, 'remote', 'set-url', 'origin', join(T, 'gone.git'))
+    // Fetching still works, pushing does not (a protected branch, no write access).
+    git(REPO, 'remote', 'set-url', '--push', 'origin', join(T, 'gone.git'))
     try {
       const said = await engine.merge(REPO, path)
       assert.match(said, /^not pushed to origin\/main: /m)
       git(REPO, 'merge-base', '--is-ancestor', tip, 'main')
+    } finally { git(REPO, 'config', '--unset', 'remote.origin.pushurl') }
+  })
+
+  it('does not merge when origin cannot be fetched: it would decide against an old copy of GitHub', async () => {
+    const engine = new Engine({ bin: BIN, env })
+    const { path } = await branchWithWork(engine, 'feat/no-fetch')
+    git(REPO, 'remote', 'set-url', 'origin', join(T, 'gone.git'))
+    const before = git(REPO, 'rev-parse', 'main')
+    try {
+      await assert.rejects(engine.merge(REPO, path), (e: Error) => e instanceof EngineError && /origin could not be fetched/.test(e.message))
+      assert.equal(git(REPO, 'rev-parse', 'main'), before)
     } finally { git(REPO, 'remote', 'set-url', 'origin', ORIGIN) }
+  })
+
+  it('merges into the default branch, and refuses while the main checkout is on another one', async () => {
+    const engine = new Engine({ bin: BIN, env })
+    const { path } = await branchWithWork(engine, 'feat/default')
+    git(REPO, 'checkout', '-q', '-b', 'scratch')
+    try {
+      // The base is main (origin/HEAD), not the branch the main checkout is on.
+      assert.equal((await engine.health(REPO)).base, 'main')
+      assert.equal(await engine.defaultBranch(REPO), 'main')
+      const before = git(REPO, 'rev-parse', 'scratch')
+      await assert.rejects(engine.merge(REPO, path), /the main checkout is on scratch, not on main/)
+      await assert.rejects(engine.updateBase(REPO), /the main checkout is on scratch, not on main/)
+      assert.equal(git(REPO, 'rev-parse', 'scratch'), before)
+    } finally { git(REPO, 'checkout', '-q', 'main'); git(REPO, 'branch', '-q', '-D', 'scratch') }
+    await engine.merge(REPO, path)
+    assert.match(git(REPO, 'log', '-1', '--format=%s', 'main'), /Merge branch 'feat\/default'/)
   })
 })

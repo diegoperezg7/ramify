@@ -81,7 +81,11 @@ export function riskyGitConfig(dir: string): string[] {
     const key = /^([\w-]+)\s*=/.exec(line)?.[1]?.toLowerCase()
     if (!key) continue
     if (section === 'filter' || (section === 'diff' && ['textconv', 'command'].includes(key)) || (section === 'merge' && key === 'driver')
-      || (section === 'core' && ['fsmonitor', 'sshcommand', 'pager', 'editor', 'hookspath', 'askpass'].includes(key))
+      || (section === 'core' && ['fsmonitor', 'sshcommand', 'pager', 'editor', 'hookspath', 'askpass', 'gitproxy'].includes(key))
+      // Run or redirected on fetch and push: a credential helper or proxy program, the remote's own pack programs,
+      // a URL rewritten elsewhere, transports (ext::) allowed that run commands.
+      || (section === 'credential' && key === 'helper') || (section === 'remote' && ['uploadpack', 'receivepack'].includes(key))
+      || (section === 'url' && ['insteadof', 'pushinsteadof'].includes(key)) || (section === 'protocol' && key === 'allow')
       // An included file is not read here, so it could hold any of these; signing runs gpg.program on every commit.
       || ((section === 'include' || section === 'includeif') && key === 'path') || (section === 'gpg' && key === 'program')) found.add(`${section}.${key}`)
   }
@@ -271,8 +275,28 @@ export class Engine {
     return list
   }
 
+  /**
+   * The branch work goes into, as the ramify script picks it (default_branch): what origin/HEAD points at, else
+   * main, master, trunk or develop. Not the branch the main checkout happens to be on. Empty when there is none.
+   */
+  async defaultBranch(repo: string): Promise<string> {
+    const r = await this.run('git', ['-C', repo, 'symbolic-ref', '--quiet', '--short', 'refs/remotes/origin/HEAD'])
+    if (r.code === 0 && r.stdout.trim()) return r.stdout.trim().replace(/^origin\//, '')
+    for (const b of ['main', 'master', 'trunk', 'develop']) {
+      if ((await this.run('git', ['-C', repo, 'show-ref', '--verify', '--quiet', `refs/heads/${b}`])).code === 0) return b
+    }
+    return ''
+  }
+
+  /** The default branch, or the main checkout's own branch in a repository without one (as `ramify ls`). */
   private async base(repo: string): Promise<string> {
-    return (await this.git(repo, 'branch', '--show-current')).trim() || 'HEAD'
+    return (await this.defaultBranch(repo)) || (await this.git(repo, 'branch', '--show-current')).trim() || 'HEAD'
+  }
+
+  /** Merging and updating the base happen in the main checkout: it has to be on the base, or they would land on another branch. */
+  private async onBase(repo: string, base: string): Promise<void> {
+    const current = (await this.git(repo, 'branch', '--show-current')).trim()
+    if (current !== base) throw new EngineError(`the main checkout is on ${current || 'a detached HEAD'}, not on ${base}: switch it to ${base} first, nothing was changed`)
   }
 
   // --- the base against GitHub ----------------------------------------------------
@@ -283,6 +307,8 @@ export class Engine {
    * Offline or without access it just stays as it was. Returns whether the fetch went through.
    */
   async fetchOrigin(repo: string, now = false): Promise<boolean> {
+    // credential.helper is not switched off here: an empty value would also drop the user's own helper (gh, the
+    // keychain) and every private repository would stop fetching. riskyGitConfig names a repository that sets one.
     if (!now && Date.now() - (this.fetchedAt.get(repo) ?? 0) < FETCH_EVERY_MS) return false
     if (!(await this.git(repo, 'remote')).split('\n').includes('origin')) return false
     this.fetchedAt.set(repo, Date.now())
@@ -311,6 +337,7 @@ export class Engine {
    */
   async updateBase(repo: string): Promise<string> {
     const base = await this.base(repo)
+    await this.onBase(repo, base)
     await this.fetchOrigin(repo, true)
     const sync = await this.baseSync(repo, base)
     if (!sync) throw new EngineError(`${base} tracks no remote branch`)
@@ -564,12 +591,21 @@ export class Engine {
   async merge(repo: string, path: string): Promise<string> {
     const wt = await this.find(repo, path)
     if (wt.main || !wt.branch) throw new EngineError('nothing to merge')
+    // A merge someone else left half done (a conflict being resolved by hand): never ours to finish or undo.
+    if ((await this.run('git', ['-C', repo, 'rev-parse', '-q', '--verify', 'MERGE_HEAD'])).code === 0) {
+      throw new EngineError(`a merge is already in progress in ${repo}: finish or abort it first, nothing was changed`)
+    }
     if ((await this.git(repo, 'status', '--porcelain', '--untracked-files=no')).trim()) {
       throw new EngineError('the main checkout has uncommitted changes')
     }
     if ((await this.git(path, 'status', '--porcelain')).trim()) throw new EngineError('the worktree has uncommitted changes')
     const base = await this.base(repo)
-    await this.fetchOrigin(repo, true)
+    await this.onBase(repo, base)
+    // Deciding against an origin as it was the last time someone fetched could push over work there, or merge
+    // locally a branch whose pull request is waiting on GitHub: no fresh fetch, no merge.
+    if ((await this.git(repo, 'remote')).split('\n').includes('origin') && !(await this.fetchOrigin(repo, true))) {
+      throw new EngineError(`origin could not be fetched (offline, or no access?): nothing was changed`)
+    }
     const sync = await this.baseSync(repo, base)
     if (sync?.behind && sync.ahead) {
       throw new EngineError(`${base} and ${sync.upstream} went different ways (${sync.ahead} commit(s) only here, ${sync.behind} only there): bring them together first, nothing was changed`)
@@ -586,6 +622,8 @@ export class Engine {
     const conflicted = (await this.git(repo, 'diff', '--name-only', '-z', '--diff-filter=U')).split('\0').filter(Boolean)
     const rebuilt = conflicted.length ? await this.rebuildGenerated(repo, conflicted) : null
     if (rebuilt?.ok) return [`merged ${wt.branch}; regenerated: ${conflicted.join(', ')}`, await this.pushBase(repo, base, sync)].filter(Boolean).join('\n')
+    // Only a merge this call started and left in conflict is undone; any other refusal changed nothing.
+    if (!conflicted.length) throw new EngineError(`merge failed, nothing was changed:\n${(r.stdout + r.stderr).trim() || 'git merge failed'}`)
     await this.run('git', ['-C', repo, 'merge', '--abort'])
     if (rebuilt) throw new EngineError(`generated files could not be rebuilt, nothing was changed:\n${rebuilt.output}`)
     // One `conflict: <path>` line per file, then git's own words: the UI lists the files from these lines.

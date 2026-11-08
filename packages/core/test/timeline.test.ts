@@ -1,3 +1,4 @@
+import './isolate.ts'
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, realpathSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'

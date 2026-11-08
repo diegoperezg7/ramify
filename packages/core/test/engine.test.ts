@@ -1,3 +1,4 @@
+import './isolate.ts'
 import { execFileSync, spawn } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -223,6 +224,11 @@ describe('engine', () => {
     assert.equal(sh(R, 'rev-parse', 'HEAD'), head)
     assert.equal(existsSync(join(R, '.git', 'index.lock')), true, 'the other process keeps its lock')
     rmSync(join(R, '.git', 'index.lock'))
+    // A merge someone left half done: refused before anything, and theirs stays.
+    writeFileSync(join(R, '.git', 'MERGE_HEAD'), head)
+    await assert.rejects(own.merge(R, wt), /a merge is already in progress/)
+    assert.equal(existsSync(join(R, '.git', 'MERGE_HEAD')), true)
+    rmSync(join(R, '.git', 'MERGE_HEAD'))
     await own.merge(R, wt)
     assert.match(sh(R, 'log', '-1', '--format=%s'), /Merge branch 'feat\/a'/)
     rmSync(T2, { recursive: true, force: true })
@@ -237,6 +243,19 @@ describe('engine', () => {
   it('discovers repositories from worktree env files', async () => {
     await engine.create(REPO, { branch: 'other', agent: '' })
     assert.deepEqual(engine.discover(), [REPO])
+  })
+
+  it('picks the default branch as the script does: origin/HEAD, else main, master, trunk or develop', async () => {
+    const dir = P(T, 'branches')
+    sh(T, 'init', '-q', '-b', 'feature', dir)
+    sh(dir, 'commit', '-q', '--allow-empty', '-m', 'i')
+    assert.equal(await engine.defaultBranch(dir), '')
+    sh(dir, 'branch', 'develop'); sh(dir, 'branch', 'master')
+    assert.equal(await engine.defaultBranch(dir), 'master')
+    sh(dir, 'update-ref', 'refs/remotes/origin/develop', 'HEAD')
+    sh(dir, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/develop')
+    assert.equal(await engine.defaultBranch(dir), 'develop')
+    rmSync(dir, { recursive: true, force: true })
   })
 
   it('quotes for the shell', () => {
@@ -319,5 +338,20 @@ describe('folders from links', () => {
     sh(dir, 'config', 'filter.evil.clean', 'touch pwned')
     sh(dir, 'config', 'diff.x.textconv', 'cat')
     assert.deepEqual(riskyGitConfig(dir).sort(), ['diff.textconv', 'filter.clean'])
+  })
+
+  it('names the settings that run or redirect programs on fetch and push', async () => {
+    const { riskyGitConfig } = await import('../src/engine.ts')
+    const dir = P(T, 'risky-fetch')
+    sh(T, 'init', '-q', '-b', 'main', dir)
+    sh(dir, 'config', 'credential.helper', '!touch pwned')
+    sh(dir, 'config', 'credential.https://example.com.helper', 'evil')
+    sh(dir, 'config', 'core.gitProxy', 'evil')
+    sh(dir, 'config', 'remote.origin.uploadpack', 'evil')
+    sh(dir, 'config', 'remote.origin.receivepack', 'evil')
+    sh(dir, 'config', 'url.ext::sh -c evil.insteadOf', 'https://github.com/')
+    sh(dir, 'config', 'url.ext::sh -c evil.pushInsteadOf', 'https://github.com/')
+    sh(dir, 'config', 'protocol.ext.allow', 'always')
+    assert.deepEqual(riskyGitConfig(dir).sort(), ['core.gitproxy', 'credential.helper', 'protocol.allow', 'remote.receivepack', 'remote.uploadpack', 'url.insteadof', 'url.pushinsteadof'])
   })
 })

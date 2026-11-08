@@ -145,16 +145,29 @@ async function claudeApply(ctx: SetupContext) {
 
 // --- agents (instructions) ---------------------------------------------------------
 
+/** Used when the script does not carry INSTRUCTION_FILES (older scripts). Paths under the home folder. */
+export const FALLBACK_INSTRUCTION_FILES = [
+  '.claude/CLAUDE.md', '.codex/AGENTS.md', '.gemini/GEMINI.md',
+  '.config/opencode/AGENTS.md', '.copilot/copilot-instructions.md', '.config/amp/AGENTS.md',
+]
+
+/**
+ * The instruction files `ramify install instructions` writes, read from the shipped script's one-line
+ * INSTRUCTION_FILES="..." so the list lives in one place. Paths under the home folder ($HOME/ is dropped).
+ */
+export function instructionFileList(script: string): string[] {
+  const m = /^INSTRUCTION_FILES="([^"]*)"/m.exec(script)
+  const list = (m?.[1] ?? '').split(/\s+/).map((f) => f.replace(/^(?:\$HOME|\$\{HOME\}|~)\//, '')).filter(Boolean)
+  return list.length ? list : FALLBACK_INSTRUCTION_FILES
+}
+
 /** Instruction files of the agents that read them, as in `ramify install instructions`. */
-export function instructionFiles(home: string): string[] {
-  return [
-    join(home, '.claude', 'CLAUDE.md'), join(home, '.codex', 'AGENTS.md'), join(home, '.gemini', 'GEMINI.md'),
-    join(home, '.config', 'opencode', 'AGENTS.md'), join(home, '.copilot', 'copilot-instructions.md'), join(home, '.config', 'amp', 'AGENTS.md'),
-  ].filter((f) => existsSync(dirname(f)))
+export function instructionFiles(home: string, script = ''): string[] {
+  return instructionFileList(script).map((f) => join(home, ...f.split('/'))).filter((f) => existsSync(dirname(f)))
 }
 
 function agentsState(ctx: SetupContext): SetupState {
-  const files = instructionFiles(ctx.home)
+  const files = instructionFiles(ctx.home, read(ctx.bin))
   if (!files.length) return { id: 'agents', status: 'unavailable' }
   return { id: 'agents', status: files.every((f) => RULES_MARK.test(read(f))) ? 'done' : 'todo' }
 }
