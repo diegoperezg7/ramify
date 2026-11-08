@@ -805,22 +805,38 @@ shared_branch_at() {
   printf '%s' "$branch"
 }
 
-# The git commands of a terminal line ($1, run from the folder $2), one per line, tab separated:
-#   <subcommand> <folder> <unknown> <abort> <hard> <refs>
+# The git commands of a terminal line ($1, run from the folder $2), one per line, fields separated by \037 (not a
+# tab: read would merge empty fields between tabs):
+#   <subcommand> <folder> <unknown> <abort> <hard> <refs> <options> <arguments>
 # <folder> is where each one runs: its -C folder, else the last `cd <dir>` before it, else $2. git counts by
 # any path (/usr/bin/git) and after global options (-c k=v, -P, --no-pager…). Quotes are honoured, so a commit
 # message that mentions git is no git command, and `bash -c "…"` is read as the line it runs. A folder named
 # by a variable or a command ($WT_PATH, $(…)) cannot be known here: the folder before it stays and <unknown>
 # is 1. <abort> is 1 with --abort or --quit, <hard> with --hard. <refs>: for push, the branches it updates
-# on the remote ("@" the current one, "*" all of them); for pull, the branches it brings in.
+# on the remote ("@" the current one, "*" all of them); for pull, the branches it brings in. <options> and
+# <arguments> are the subcommand's other words, space separated. Only git in command position counts: at the start
+# of the line or after ; && || | ( $( or a backtick, after env, command, time, nohup, xargs, sudo, exec and VAR=x,
+# and the line an eval runs. Writes to files that do not go through git (> a.txt, sed -i, tee) are not judged.
 git_calls() {
   printf '%s' "$1" | awk -v cwd="$2" -v home="$HOME" '
-    function add(w, sep) { n++; W[n] = w; S[n] = sep }
-    function cut() { if (n && !S[n]) add("", 1); start = 1 }
+    function add(w, sep, cmd) { n++; W[n] = w; S[n] = sep; C[n] = cmd }
+    # A command ends: the next word is in command position again. An eval of this depth or above ends with it.
+    function cut(depth) { if (n && !S[n]) add("", 1, 0); start = 1; prefix = 0; if (ev && depth <= evd) ev = 0 }
     function word(w, depth) {
-      if (depth < 3 && shell && n && !S[n] && W[n] ~ /^-[A-Za-z]*c$/) { cut(); line(w, depth + 1); cut(); return }
-      if (start && w !~ /^[A-Za-z_][A-Za-z0-9_]*=/) { start = 0; shell = (w ~ /(^|\/)(ba|z|da|k)?sh$/) }
-      add(w, 0)
+      # The words of `eval` (and of `bash -c`) are read as the line they run.
+      if (ev && depth == evd) { line(w, depth + 1); return }
+      if (depth < 3 && shell && n && !S[n] && W[n] ~ /^-[A-Za-z]*c$/) { cut(depth); line(w, depth + 1); cut(depth); return }
+      if (start) {
+        # Before the command: assignments (VAR=x), the commands that run another (env, sudo…) with their options,
+        # and the shell words after which a command follows (if, then, !…).
+        if (w ~ /^[A-Za-z_][A-Za-z0-9_]*=/ || (prefix && w ~ /^-/)) { add(w, 0, 0); return }
+        if (w ~ /^(env|command|time|nohup|xargs|sudo|exec|builtin|nice)$/) { prefix = 1; add(w, 0, 0); return }
+        if (w ~ /^(if|then|else|elif|do|while|until|!|\{)$/) { add(w, 0, 0); return }
+        start = 0; shell = (w ~ /(^|\/)(ba|z|da|k)?sh$/)
+        if (w == "eval" && depth < 3) { ev = 1; evd = depth; start = 1; prefix = 0; return }
+        add(w, 0, 1); return
+      }
+      add(w, 0, 0)
     }
     # Words and command separators of a shell line, without its quotes.
     function line(s, depth,    i, len, c, w, has, rest, j) {
@@ -840,8 +856,8 @@ git_calls() {
           i++; if (substr(s, i, 1) != "\n") { w = w substr(s, i, 1); has = 1 }
         } else if (c == " " || c == "\t") {
           if (has) word(w, depth); w = ""; has = 0
-        } else if (index(";&|()\n", c)) {
-          if (has) word(w, depth); w = ""; has = 0; cut()
+        } else if (index(";&|()\n`", c)) {
+          if (has) word(w, depth); w = ""; has = 0; cut(depth)
         } else { w = w c; has = 1 }
       }
       if (has) word(w, depth)
@@ -864,18 +880,17 @@ git_calls() {
     { text = text (NR > 1 ? "\n" : "") $0 }
     END {
       start = 1; line(text, 0)
-      dir = cwd; unknown = 0; first = 1
+      dir = cwd; unknown = 0
       for (k = 1; k <= n; k++) {
-        if (S[k]) { first = 1; continue }
+        # Only a word in command position runs: `echo use git commit` runs echo.
+        if (S[k] || !C[k]) continue
         w = W[k]
-        if (first && w ~ /^[A-Za-z_][A-Za-z0-9_]*=/) continue
-        if (first && (w == "cd" || w == "pushd")) {
+        if (w == "cd" || w == "pushd") {
           t = (k < n && !S[k + 1]) ? W[++k] : "~"
           r = resolve(dir, t); if (r == "") unknown = 1; else dir = r
-          first = 0; continue
+          continue
         }
-        first = 0
-        if (w !~ /^`?([^ ]*\/)?git$/) continue
+        if (w !~ /^([^ ]*\/)?git$/) continue
         gdir = dir; gunknown = unknown
         for (k++; k <= n && !S[k]; k++) {
           a = W[k]
@@ -884,22 +899,22 @@ git_calls() {
           else if (a !~ /^-/) break
         }
         if (k > n || S[k]) { k--; continue }
-        verb = W[k]; abort = 0; hard = 0; all = 0; tags = 0; pos = 0; refs = ""
+        verb = W[k]; abort = 0; hard = 0; all = 0; tags = 0; pos = 0; refs = ""; fl = ""; ar = ""
         for (k++; k <= n && !S[k]; k++) {
           a = W[k]
           if (a == "--abort" || a == "--quit") abort = 1
           else if (a == "--hard") hard = 1
           else if (a == "--all" || a == "--mirror" || a == "--branches") all = 1
           else if (a == "--tags") tags = 1
-          else if (a ~ /^-/) continue
+          else if (a ~ /^-/) fl = fl " " a
           else if (a ~ /^[0-9]*[<>]/) { if (a ~ /^[0-9]*[<>]+&?$/ && k < n && !S[k + 1]) k++ }
-          else if (++pos > 1) refs = refs " " ref(verb, a)
+          else { ar = ar " " a; if (++pos > 1) refs = refs " " ref(verb, a) }
         }
         k--
         if (verb == "push" && all) refs = refs " *"
         if (verb == "push" && pos <= 1 && !all && !tags) refs = refs " @"
-        gsub(/[\t\n]/, " ", verb); gsub(/[\t\n]/, " ", gdir)
-        printf "%s\t%s\t%d\t%d\t%d\t%s\n", verb, gdir, gunknown, abort, hard, substr(refs, 2)
+        gsub(/[\037\n]/, " ", verb); gsub(/[\037\n]/, " ", gdir); gsub(/[\037\n]/, " ", fl); gsub(/[\037\n]/, " ", ar)
+        printf "%s\037%s\037%d\037%d\037%d\037%s\037%s\037%s\n", verb, gdir, gunknown, abort, hard, substr(refs, 2), substr(fl, 2), substr(ar, 2)
       }
     }'
 }
@@ -917,13 +932,42 @@ protected_branch() {
 
 # Why a terminal line ($1, run from $2) must not run, if it must not: the first of its git commands that would
 # change the shared branch. On it, in the main checkout: commit, merge, cherry-pick, revert, am, rebase,
-# reset --hard, or a pull of another branch. From anywhere: a push that updates the default branch.
-# fetch and pull --ff-only of the branch itself stay allowed. Prints nothing when the line may run.
+# reset --hard, a pull of another branch, git branch -m/-M renaming it, git update-ref HEAD. From anywhere: a push
+# that updates the default branch, git update-ref of it, git branch -f/-m/-M/-C onto or of it, git checkout -B
+# or git switch -C of it. fetch and pull --ff-only of the branch itself stay allowed. Prints nothing when the
+# line may run.
 git_refusal() {
-  local verb dir unknown abort hard refs b what cur
-  while IFS=$'\t' read -r verb dir unknown abort hard refs; do
-    b=""; what=""
+  local verb dir unknown abort hard refs opts args b what cur first
+  while IFS=$'\037' read -r verb dir unknown abort hard refs opts args; do
+    b=""; what=""; first=${args%% *}
     case "$verb" in
+      update-ref)
+        # git update-ref [-d] refs/heads/main …, or HEAD while main is checked out.
+        b=$(protected_branch "$dir") && [ -n "$b" ] || continue
+        case "$first" in
+          "refs/heads/$b") what="git update-ref" ;;
+          HEAD) shared_branch_at "$dir" >/dev/null && what="git update-ref" ;;
+        esac ;;
+      branch)
+        b=$(protected_branch "$dir") && [ -n "$b" ] || continue
+        case " $opts " in
+          *" -m "*|*" -M "*|*" --move "*)
+            # Renamed (git branch -M main x), overwritten (git branch -M x main), or the one checked out renamed
+            # (git branch -M x on main in the main checkout).
+            case " $args " in *" $b "*) what="git branch $opts" ;; esac
+            case "$args" in *" "*) ;; *) if [ -z "$what" ] && shared_branch_at "$dir" >/dev/null; then what="git branch $opts"; fi ;; esac ;;
+          *" -C "*)
+            # A copy onto it overwrites it: git branch -C x main.
+            case "$args" in *" $b") what="git branch $opts" ;; esac ;;
+          *" -f "*|*" --force "*)
+            # Moved to another commit: git branch -f main HEAD.
+            [ "$first" != "$b" ] || what="git branch $opts" ;;
+        esac ;;
+      checkout|switch)
+        # Reset to a start point (HEAD by default): git checkout -B main, git switch -C main.
+        case " $opts " in *" -B "*|*" -C "*|*" --force-create "*) ;; *) continue ;; esac
+        b=$(protected_branch "$dir") && [ -n "$b" ] || continue
+        [ "$first" != "$b" ] || what="git $verb $opts" ;;
       commit) b=$(shared_branch_at "$dir") && what=commit ;;
       merge|cherry-pick|revert|am|rebase) [ "$abort" = 1 ] || { b=$(shared_branch_at "$dir") && what="git $verb"; } ;;
       reset) [ "$hard" = 0 ] || { b=$(shared_branch_at "$dir") && what="git reset --hard"; } ;;

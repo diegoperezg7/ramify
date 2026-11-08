@@ -277,6 +277,24 @@ done
 check "RAMIFY_ALLOW_MAIN lets one session push to main" '[ -z "$(export RAMIFY_ALLOW_MAIN=1; gb "$p1" "git push origin HEAD:main")" ]'
 check "a command that sets ramify.allowMain is refused, from any folder" 'denied "$(gb "$p1" "git config ramify.allowMain true")"'
 check "a terminal write without git on the shared branch is not judged (documented limit)" '[ -z "$(gb "$T/demo" "echo hi > a.txt")" ]'
+for c in 'eval "git commit -m x"' "git update-ref refs/heads/main HEAD" "git update-ref HEAD HEAD~1" "git branch -f main HEAD" \
+         "git checkout -B main" "git switch -C main" "git branch -M other" "git branch -m main old" "git branch -C x main" \
+         'echo $(git commit -m x)' 'echo `git merge x`' "FOO=1 git commit -m x" "env A=b git commit -m x" "sudo -E git commit" \
+         "nohup git merge x" "time git commit" "command git commit" "echo x | xargs git commit -m" "(git commit -m x)" \
+         "if git merge x; then :; fi" "eval git commit -m x" "eval 'echo hi; git commit -m x'"; do
+  check "on the shared branch the guard denies: $c" 'denied "$(gb "$T/demo" "$c")"'
+done
+for c in "echo use git commit to save" "grep -rn git merge notes.txt" "echo eval git commit" "git status; echo git commit" \
+         "git branch -c main backup" "git branch -f other HEAD" "git checkout -B other" "git update-ref refs/heads/other HEAD" \
+         "git branch new"; do
+  check "on the shared branch the guard allows: $c" '[ -z "$(gb "$T/demo" "$c")" ]'
+done
+for c in "git update-ref refs/heads/main HEAD" "git branch -f main HEAD" "git checkout -B main" "git switch -C main"; do
+  check "from a worktree the guard denies: $c" 'denied "$(gb "$p1" "$c")"'
+done
+for c in "git branch -M other" "git update-ref HEAD HEAD~1" "git checkout -B feat/login"; do
+  check "in its worktree the guard allows: $c" '[ -z "$(gb "$p1" "$c")" ]'
+done
 g=$(printf '{"cwd":"%s","tool_name":"Write","tool_input":{"file_path":"%s/a.txt"}}' "$p1" "$p2" | "$AW" hook guard 2>/dev/null)
 check "an edit from one worktree into another is allowed (ramify who warns)" '[ -z "$g" ]'
 check "a commit from one worktree in another (git -C) is allowed" '[ -z "$(gb "$p1" "git -C $p2 commit -am x")" ]'
