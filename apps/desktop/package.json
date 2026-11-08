@@ -2,7 +2,7 @@
   "name": "ramify-desktop",
   "productName": "Ramify",
   "description": "One git worktree per task, for any coding agent",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "private": true,
   "author": "Diego Pérez",
   "main": "dist/main.cjs",
