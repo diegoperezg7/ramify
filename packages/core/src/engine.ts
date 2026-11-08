@@ -591,6 +591,10 @@ export class Engine {
   async merge(repo: string, path: string): Promise<string> {
     const wt = await this.find(repo, path)
     if (wt.main || !wt.branch) throw new EngineError('nothing to merge')
+    // A merge someone else left half done (a conflict being resolved by hand): never ours to finish or undo.
+    if ((await this.run('git', ['-C', repo, 'rev-parse', '-q', '--verify', 'MERGE_HEAD'])).code === 0) {
+      throw new EngineError(`a merge is already in progress in ${repo}: finish or abort it first, nothing was changed`)
+    }
     if ((await this.git(repo, 'status', '--porcelain', '--untracked-files=no')).trim()) {
       throw new EngineError('the main checkout has uncommitted changes')
     }
@@ -618,6 +622,8 @@ export class Engine {
     const conflicted = (await this.git(repo, 'diff', '--name-only', '-z', '--diff-filter=U')).split('\0').filter(Boolean)
     const rebuilt = conflicted.length ? await this.rebuildGenerated(repo, conflicted) : null
     if (rebuilt?.ok) return [`merged ${wt.branch}; regenerated: ${conflicted.join(', ')}`, await this.pushBase(repo, base, sync)].filter(Boolean).join('\n')
+    // Only a merge this call started and left in conflict is undone; any other refusal changed nothing.
+    if (!conflicted.length) throw new EngineError(`merge failed, nothing was changed:\n${(r.stdout + r.stderr).trim() || 'git merge failed'}`)
     await this.run('git', ['-C', repo, 'merge', '--abort'])
     if (rebuilt) throw new EngineError(`generated files could not be rebuilt, nothing was changed:\n${rebuilt.output}`)
     // One `conflict: <path>` line per file, then git's own words: the UI lists the files from these lines.

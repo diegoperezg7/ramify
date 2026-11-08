@@ -224,6 +224,11 @@ describe('engine', () => {
     assert.equal(sh(R, 'rev-parse', 'HEAD'), head)
     assert.equal(existsSync(join(R, '.git', 'index.lock')), true, 'the other process keeps its lock')
     rmSync(join(R, '.git', 'index.lock'))
+    // A merge someone left half done: refused before anything, and theirs stays.
+    writeFileSync(join(R, '.git', 'MERGE_HEAD'), head)
+    await assert.rejects(own.merge(R, wt), /a merge is already in progress/)
+    assert.equal(existsSync(join(R, '.git', 'MERGE_HEAD')), true)
+    rmSync(join(R, '.git', 'MERGE_HEAD'))
     await own.merge(R, wt)
     assert.match(sh(R, 'log', '-1', '--format=%s'), /Merge branch 'feat\/a'/)
     rmSync(T2, { recursive: true, force: true })

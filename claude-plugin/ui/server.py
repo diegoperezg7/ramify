@@ -1,7 +1,10 @@
 """Local web dashboard for ramify. Python standard library only.
 
 Started by `ramify ui`. Listens on 127.0.0.1, every API call needs the session
-token, and mutating actions go through the ramify CLI so they keep its safety rules.
+token. Opening and removing worktrees go through the ramify CLI so they keep its
+safety rules; merging runs git here, with the same checks as the desktop app
+(packages/core/src/engine.ts): never over another merge, undone only when it is ours.
+Every git runs with the repository's own fsmonitor and hooks switched off.
 """
 import argparse
 import hmac
@@ -22,9 +25,32 @@ MAX_DIFF = 400_000
 IDES = {"xcode", "cursor", "code", "zed", "idea", "Finder"}
 
 
+def hardened_env(env=None):
+    """As hardenedGitEnv in engine.ts: settings in a repository's own config that would run programs, off.
+
+    core.fsmonitor runs a command on status/diff and hooks run on merge/checkout. Passed through the environment
+    (GIT_CONFIG_COUNT, git 2.31+), so the ramify script and its children get it too. External diff drivers and
+    textconv are turned off per call (--no-ext-diff --no-textconv).
+    """
+    out = dict(os.environ if env is None else env)
+    try:
+        n = int(out.get("GIT_CONFIG_COUNT") or 0)
+    except ValueError:
+        n = 0
+    for k, v in (("core.fsmonitor", "false"), ("core.hooksPath", "NUL" if os.name == "nt" else "/dev/null")):
+        out[f"GIT_CONFIG_KEY_{n}"] = k
+        out[f"GIT_CONFIG_VALUE_{n}"] = v
+        n += 1
+    out["GIT_CONFIG_COUNT"] = str(n)
+    # A remote asking for a password fails instead of waiting on a terminal nobody sees.
+    out["GIT_TERMINAL_PROMPT"] = "0"
+    return out
+
+
 def run(args, cwd=None, check=True):
     # git output is bytes: a file or a commit in another encoding must not fail the whole request.
-    p = subprocess.run(args, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace")
+    p = subprocess.run(args, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace",
+                       env=hardened_env())
     if check and p.returncode != 0:
         raise RuntimeError((p.stderr or p.stdout).strip() or f"{args[0]} failed")
     return p
@@ -45,8 +71,18 @@ class Dashboard:
         out = run([self.bin, "ls", "--json"], cwd=self.main).stdout
         return json.loads(out)
 
+    def default_branch(self):
+        """As default_branch in the ramify script: origin/HEAD, else main, master, trunk or develop. "" if none."""
+        b = git(self.main, "symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD", check=False).strip()
+        if b:
+            return b[len("origin/"):] if b.startswith("origin/") else b
+        for b in ("main", "master", "trunk", "develop"):
+            if run(["git", "-C", self.main, "show-ref", "--verify", "--quiet", f"refs/heads/{b}"], check=False).returncode == 0:
+                return b
+        return ""
+
     def base(self):
-        return git(self.main, "branch", "--show-current").strip() or "HEAD"
+        return self.default_branch() or git(self.main, "branch", "--show-current").strip() or "HEAD"
 
     def state(self):
         wts = self.worktrees()
@@ -92,7 +128,7 @@ class Dashboard:
                 detail["commits"].append({"hash": h, "subject": s, "time": int(t)})
         # -z everywhere: paths with spaces, accents or renames come through verbatim.
         files = {}
-        rec = git(path, "diff", "-z", "--numstat", mb, check=False).split("\0")
+        rec = git(path, "diff", "--no-ext-diff", "--no-textconv", "-z", "--numstat", mb, "--", check=False).split("\0")
         i = 0
         while i < len(rec):
             if rec[i]:
@@ -103,7 +139,7 @@ class Dashboard:
                 if name:
                     files[name] = {"file": name, "status": "M", "add": add, "del": rem}
             i += 1
-        rec = git(path, "diff", "-z", "--name-status", mb, check=False).split("\0")
+        rec = git(path, "diff", "--no-ext-diff", "--no-textconv", "-z", "--name-status", mb, "--", check=False).split("\0")
         i = 0
         while i < len(rec):
             st = rec[i]
@@ -141,11 +177,14 @@ class Dashboard:
         mb = git(path, "merge-base", base, "HEAD", check=False).strip() or "HEAD"
         if path == self.main:
             mb = "HEAD"
-        untracked = git(path, "ls-files", "--others", "--exclude-standard", "--", file, check=False).strip()
+        # A file name, not a pattern: [ab].txt or :memo.txt mean that one file.
+        literal = f":(literal){file}"
+        untracked = git(path, "ls-files", "--others", "--exclude-standard", "--", literal, check=False).strip()
         if untracked:
-            text = run(["git", "-C", path, "diff", "--no-index", "--", "/dev/null", file], check=False).stdout
+            text = run(["git", "-C", path, "diff", "--no-ext-diff", "--no-textconv", "--no-index", "--", "/dev/null", file],
+                       check=False).stdout
         else:
-            text = git(path, "diff", mb, "--", file, check=False)
+            text = git(path, "diff", "--no-ext-diff", "--no-textconv", mb, "--", literal, check=False)
         return text[:MAX_DIFF]
 
     def commit_ref(self, hash_):
@@ -200,7 +239,7 @@ class Dashboard:
     def commit_diff(self, hash_, file):
         full, parents = self.commit_ref(hash_)
         text = git(self.main, "diff-tree", "-p", "-M", "--no-commit-id", "--no-ext-diff", "--no-textconv",
-                   *self.tree_range(full, parents), "--", file, check=False)
+                   *self.tree_range(full, parents), "--", f":(literal){file}", check=False)
         return text[:MAX_DIFF]
 
     def find(self, path):
@@ -243,15 +282,32 @@ class Dashboard:
         wt = self.find(path)
         if wt["main"] or not wt["branch"]:
             raise ValueError("nothing to merge")
+        # A merge someone else left half done (a conflict being resolved by hand): never ours to finish or undo.
+        if run(["git", "-C", self.main, "rev-parse", "-q", "--verify", "MERGE_HEAD"], check=False).returncode == 0:
+            raise RuntimeError(f"a merge is already in progress in {self.main}: finish or abort it first, nothing was changed")
         if git(self.main, "status", "--porcelain", "--untracked-files=no").strip():
             raise RuntimeError("the main checkout has uncommitted changes")
         if git(path, "status", "--porcelain").strip():
             raise RuntimeError("the worktree has uncommitted changes")
+        base = self.base()
+        current = git(self.main, "branch", "--show-current").strip()
+        if current != base:
+            raise RuntimeError(f"the main checkout is on {current or 'a detached HEAD'}, not on {base}: "
+                               f"switch it to {base} first, nothing was changed")
         p = run(["git", "-C", self.main, "merge", "--no-ff", "--no-edit", wt["branch"]], check=False)
-        if p.returncode != 0:
+        if p.returncode == 0:
+            return p.stdout.strip()
+        # Another git process holds the index (a merge from the desktop app or another window): git refused before
+        # touching anything. Said plainly, and no merge --abort: that would undo the other one.
+        if "index.lock" in p.stderr:
+            raise RuntimeError(f"another merge is running in {self.main}: wait for it, nothing was changed")
+        conflicted = [f for f in git(self.main, "diff", "--name-only", "-z", "--diff-filter=U", check=False).split("\0") if f]
+        # Only a merge this call started and left in conflict is undone; any other refusal changed nothing.
+        if conflicted:
             run(["git", "-C", self.main, "merge", "--abort"], check=False)
-            raise RuntimeError("merge conflict, nothing was changed:\n" + (p.stdout + p.stderr).strip())
-        return p.stdout.strip()
+            raise RuntimeError("\n".join(["merge conflict, nothing was changed:", *[f"conflict: {f}" for f in conflicted],
+                                          (p.stdout + p.stderr).strip()]))
+        raise RuntimeError("merge failed, nothing was changed:\n" + ((p.stdout + p.stderr).strip() or "git merge failed"))
 
 
 class Server(ThreadingHTTPServer):
@@ -324,7 +380,7 @@ def make_handler(dash, token, port):
             if not self.guard():
                 return
             try:
-                length = int(self.headers.get("Content-Length") or 0)
+                length = max(0, min(int(self.headers.get("Content-Length") or 0), 1_000_000))
                 body = json.loads(self.rfile.read(length) or b"{}")
                 path = body.get("path", "")
                 if self.path == "/api/open":

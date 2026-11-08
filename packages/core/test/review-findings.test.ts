@@ -405,4 +405,69 @@ describe('browser host server (ui/server.py)', () => {
     ].join('\n')], { encoding: 'utf8' })
     assert.equal(r.status, 0, r.stderr)
   })
+
+  it('merges like the desktop app: never over another merge, undoing only a conflict of its own', { skip: process.platform === 'win32' }, () => {
+    const r = repo()
+    git(r, 'config', 'core.autocrlf', 'false')
+    writeFileSync(join(r, 'a.txt'), 'a\n'); git(r, 'add', '.'); git(r, 'commit', '-qm', 'a')
+    const wt = join(T, `wt${++n}`)
+    git(r, 'worktree', 'add', '-q', '-b', 'feat/x', wt)
+    writeFileSync(join(wt, 'a.txt'), 'branch\n'); git(wt, 'commit', '-qam', 'branch')
+    const merge = () => spawnSync('python3', ['-I', '-B', '-c', [
+      'import sys', `sys.path.insert(0, ${JSON.stringify(join(ROOT_DIR, 'ui'))})`, 'import server',
+      `d = server.Dashboard(${JSON.stringify(r)}, ${JSON.stringify(BIN)})`,
+      'try:', `    print(d.merge(${JSON.stringify(wt)}))`, 'except Exception as e:', '    print("ERR " + str(e))',
+    ].join('\n')], { encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' } }).stdout
+    const head = () => git(r, 'rev-parse', 'HEAD')
+
+    // Another git process holds the index: said, and its lock stays.
+    const before = head()
+    writeFileSync(join(r, '.git', 'index.lock'), '')
+    assert.match(merge(), /^ERR another merge is running in .*: wait for it/)
+    assert.equal(existsSync(join(r, '.git', 'index.lock')), true)
+    assert.equal(head(), before)
+    rmSync(join(r, '.git', 'index.lock'))
+
+    // Someone resolving a conflict by hand: their merge is left as it is.
+    git(r, 'branch', 'other', 'HEAD~0')
+    writeFileSync(join(r, 'a.txt'), 'main\n'); git(r, 'commit', '-qam', 'main')
+    const other = join(T, `wt${++n}`)
+    git(r, 'worktree', 'add', '-q', other, 'other')
+    writeFileSync(join(other, 'a.txt'), 'other\n'); git(other, 'commit', '-qam', 'other')
+    spawnSync('git', [...ID, 'merge', 'other'], { cwd: r })
+    assert.equal(existsSync(join(r, '.git', 'MERGE_HEAD')), true)
+    assert.match(merge(), /^ERR a merge is already in progress/)
+    assert.equal(existsSync(join(r, '.git', 'MERGE_HEAD')), true, 'the other merge is still there')
+    git(r, 'merge', '--abort')
+
+    // A conflict of its own is undone and its files are named.
+    const mine = head()
+    const out = merge()
+    assert.match(out, /^ERR merge conflict, nothing was changed:/)
+    assert.match(out, /^conflict: a\.txt$/m)
+    assert.equal(head(), mine)
+    assert.equal(existsSync(join(r, '.git', 'MERGE_HEAD')), false)
+
+    // On another branch than the default one, nothing is merged.
+    git(r, 'checkout', '-q', '-b', 'scratch')
+    assert.match(merge(), /^ERR the main checkout is on scratch, not on main/)
+  })
+
+  it('never runs a repository\'s fsmonitor or external diff while reading it', { skip: process.platform === 'win32' }, () => {
+    const r = repo()
+    writeFileSync(join(r, 'f'), 'a\n'); git(r, 'add', '.'); git(r, 'commit', '-qm', 'f')
+    const mark = (k: string) => join(T, `pwned-ui-${k}`)
+    git(r, 'config', 'core.fsmonitor', `touch '${mark('fsmonitor')}'; false`)
+    git(r, 'config', 'diff.external', `sh -c "touch '${mark('diff')}'"`)
+    writeFileSync(join(r, 'f'), 'b\n')
+    const res = spawnSync('python3', ['-I', '-B', '-c', [
+      'import sys', `sys.path.insert(0, ${JSON.stringify(join(ROOT_DIR, 'ui'))})`, 'import server',
+      `d = server.Dashboard(${JSON.stringify(r)}, ${JSON.stringify(BIN)})`,
+      `d.worktree(${JSON.stringify(r)})`, `print(d.diff(${JSON.stringify(r)}, 'f'))`,
+    ].join('\n')], { encoding: 'utf8' })
+    assert.equal(res.status, 0, res.stderr)
+    assert.match(res.stdout, /^\+b$/m)
+    assert.equal(existsSync(mark('fsmonitor')), false, 'fsmonitor ran')
+    assert.equal(existsSync(mark('diff')), false, 'external diff ran')
+  })
 })
