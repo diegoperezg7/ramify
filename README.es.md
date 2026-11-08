@@ -236,8 +236,7 @@ instalar esas piezas, compilar desde el código o saber cómo funciona por dentr
 **Versión 0.9.0.** App de escritorio para macOS (Apple silicon) y Windows (x64), extensión de VS Code / Cursor,
 CLI y plugin de Claude Code, todo compilado desde este repositorio.
 
-- **Probado:** 171 tests del núcleo, 15 tests de la interfaz en un navegador real y 181 del CLI en cada push; la batería
-  del núcleo, el instalador de Windows y una prueba de humo que abre la app empaquetada también corren en Windows.
+- **Probado:** la CI ejecuta las baterías de tests del CLI, del núcleo y de la app (ver [Tests](#tests)).
 - **Descargas:** todas las versiones están en [Releases](https://github.com/diegoperezg7/ramify/releases). Para compilarla
   tú: `npm ci && npm run build:desktop` (los instaladores quedan en `apps/desktop/release/`).
 - **Firma:** la app de macOS está firmada con Developer ID y notarizada. El instalador de Windows aún no está firmado y
@@ -268,8 +267,11 @@ git clone https://github.com/diegoperezg7/ramify.git
 cd ramify && ./install.sh          # deja ramify en ~/.local/bin
 ```
 
-Necesita `git` 2.20+ y `bash` 3.2+, y `jq` para los hooks del plugin de Claude Code (viene con macOS 15+; `brew install jq`
-en versiones anteriores). Opcional: `python3` para `ramify ui` y `tmux` para `--tmux`.
+Necesita `git` 2.20+ y `bash` 3.2+, y `jq` para los hooks de Claude Code (viene con macOS 15+; `brew install jq`
+en versiones anteriores). Sin `jq` los hooks nunca bloquean tu trabajo, pero no se pueden crear worktrees para
+`EnterWorktree` y la guarda de `main` lee su entrada con un parser mínimo; cada sesión de Claude Code lo avisa al empezar.
+Opcional: `python3` para `ramify ui` y `tmux` para `--tmux`. La app de escritorio y la extensión de VS Code / Cursor
+necesitan `git` 2.31+.
 
 **Plugin de Claude Code**: todos los worktrees que crea Claude Code (`--worktree`, sesiones en segundo plano,
 `/batch`, subagentes) pasan por Ramify.
@@ -352,9 +354,25 @@ ramify app                                      # abre este repo en la app de es
 ramify rm fix/cart                              # se niega si algo se perdería
 ramify prune                                    # borra los worktrees limpios ya mergeados
 
+ramify ls --json                                # lo mismo, para scripts
+ramify graph -n 50                              # los últimos 50 commits
+ramify ui --port 4977                           # el panel en un puerto fijo
+ramify path fix/cart                            # imprime la carpeta de un worktree: cd "$(ramify path fix/cart)"
+ramify rm fix/cart --force                      # descarta lo no commiteado (una rama con commits sin mergear se queda)
+
+ramify install all                              # el plugin de Claude Code (sus hooks si no hay claude) y las reglas de los agentes
+ramify install claude-plugin                    # solo el plugin de Claude Code
+ramify install claude-hooks                     # solo los dos hooks de worktree en ~/.claude/settings.json
+ramify install instructions                     # las reglas de worktrees en las instrucciones globales de cada agente instalado
 ramify install shell                            # los agentes abiertos en el checkout principal reciben su rama
+ramify install secrets                          # en un repositorio: gitleaks antes de cada commit y push
 ramify install guard                            # en un repositorio: git rechaza commits en main y pushes a main
+ramify uninstall shell                          # deshace install shell (también: ramify uninstall instructions)
+ramify run claude                               # abre un agente; desde un checkout principal en main recibe antes su rama
 ramify move feat/tax -a claude                  # lleva el trabajo sin commitear de main a su propia rama
+ramify shell-init                               # las funciones que carga install shell (claude() ejecuta ramify run claude)
+ramify hook guard < entrada.json                # los hooks de Claude Code: create, remove, session-start, guard, nudge
+ramify version
 ```
 
 `-f <ref>` elige la base, `--no-setup` omite la preparación y lo que va después de `--` se pasa al agente.
@@ -378,15 +396,22 @@ o cualquier otro comando; `-p` se pasa como lo espera cada agente, o se copia al
 
 Cada worktree tiene un `.worktree.env`, excluido de git, que se exporta al agente:
 
-| Variable       | Ejemplo                                  |
-|----------------|------------------------------------------|
-| `WT_NAME`      | `feat-login`                             |
-| `WT_BRANCH`    | `feat/login`                             |
-| `WT_PATH`      | `~/.worktrees/shop/feat-login`           |
-| `WT_MAIN`      | `~/code/shop`                            |
-| `WT_AGENT`     | `claude`                                 |
-| `PORT`         | `4100` (usa del `4100` al `4109`)        |
-| `DERIVED_DATA` | `~/.worktrees/shop/.derived-data/feat-login` |
+| Variable        | Ejemplo                                      | Significado |
+|-----------------|----------------------------------------------|-------------|
+| `WT_NAME`       | `feat-login`                                 | Nombre de la carpeta |
+| `WT_BRANCH`     | `feat/login`                                 | Rama |
+| `WT_PATH`       | `~/.worktrees/shop/feat-login`               | El worktree |
+| `WT_MAIN`       | `~/code/shop`                                | El checkout principal |
+| `WT_AGENT`      | `claude`                                     | Último agente abierto en él |
+| `PORT`          | `4100` (usa del `4100` al `4109`)            | Primer puerto de su bloque de 10 |
+| `DERIVED_DATA`  | `~/.worktrees/shop/.derived-data/feat-login` | Carpeta de build de Xcode propia (`xcodebuild -derivedDataPath`) |
+| `WT_SESSION`    | `0b7c…`                                      | La conversación de Claude Code que lo creó (`EnterWorktree`): la misma conversación lo reutiliza, otra recibe el suyo |
+| `WT_READY`      | un commit                                    | Lo pone `ramify ready`: el commit marcado como listo para mergear |
+| `WT_READY_BASE` | un commit                                    | El commit de `main` contra el que se comprobó; si `main` se mueve, la marca pasa a `stale` |
+| `WT_READY_WAIT` | un commit                                    | Se pone cuando `ramify ready` sale con 1: espera su turno en este commit de `main` |
+| `SIM_UDID`      | un id de simulador                           | No lo pone Ramify: la preparación del ejemplo [`ios-xcodegen`](examples/ios-xcodegen) añade el simulador del worktree |
+
+`WT_SESSION` y las variables `WT_READY*` solo están cuando aplican.
 
 Los agentes conocen las reglas por un bloque corto en sus instrucciones globales:
 
@@ -421,7 +446,8 @@ checkout principal. Ejemplos en [`examples/`](examples):
 El plugin (ver [Instalación](#instalación), o `ramify install claude-plugin`) registra Ramify como hooks
 `WorktreeCreate` y `WorktreeRemove` de Claude Code, más una guarda que protege la rama compartida (ediciones,
 commits, merges y pushes: ver [Qué garantiza Ramify](#qué-garantiza-ramify)). Sin el plugin, `ramify install claude-hooks` escribe solo los dos hooks de worktree en
-`~/.claude/settings.json` (con copia); al instalar el plugin después se quitan, así nunca se ejecutan dos veces. Desde entonces `claude --worktree`, las sesiones en segundo plano,
+`~/.claude/settings.json` (reemplaza solo sus propias entradas: los demás hooks se quedan, y la primera copia,
+`settings.json.bak-ramify`, nunca se sobrescribe); al instalar el plugin después se quitan, así nunca se ejecutan dos veces. Desde entonces `claude --worktree`, las sesiones en segundo plano,
 `/batch`, los workflows y los subagentes con `isolation: worktree` crean sus worktrees con Ramify,
 con la misma estructura, puertos y preparación que el resto de agentes. Claude Code conserva los
 worktrees de los subagentes al terminar, así que conviene lanzar `ramify prune` de vez en cuando.
@@ -458,8 +484,10 @@ Una parte está bloqueada de verdad; el resto son instrucciones que reciben los 
 
 - **Claude Code con el plugin.** En el checkout principal sobre `main`, la guarda rechaza editar archivos y los
   comandos de git que cambian `main`: `commit`, `merge`, `cherry-pick`, `revert`, `am`, `rebase`, `reset --hard` y un
-  `pull` de otra rama. Desde cualquier carpeta rechaza un push que actualice `main` (`git push origin HEAD:main`,
-  `:main`, `origin main`, `--all`, o `git push` a secas estando en ella). `fetch`, `pull --ff-only` y `--abort` siguen
+  `pull` de otra rama, y `git branch -M`/`git update-ref HEAD` sobre ella. Desde cualquier carpeta rechaza un push que
+  actualice `main` (`git push origin HEAD:main`, `:main`, `origin main`, `--all`, o `git push` a secas estando en
+  ella), y mover o sobrescribir la propia `main` (`git update-ref refs/heads/main`, `git branch -f`/`-m`/`-M`/`-C`
+  hacia ella o de ella, `git checkout -B main`, `git switch -C main`). `fetch`, `pull --ff-only` y `--abort` siguen
   funcionando. Claude Code no puede quitar la guarda: un comando que fije `ramify.allowMain` también se rechaza.
 - **Cualquier agente, con `ramify install guard`** en el repositorio (Codex, Gemini, Cursor, una terminal sin más):
   el propio git rechaza `git commit` en `main` en el checkout principal y cualquier push que actualice `main`, con los
@@ -470,8 +498,14 @@ Una parte está bloqueada de verdad; el resto son instrucciones que reciben los 
 
 **Solo instrucciones** (al agente se le dice; nada lo impide)
 
-- Escrituras desde la terminal que no hacen commit (`echo > archivo`, `sed -i`, un script) en el checkout principal.
-  Se quedan como cambios sin commitear, y `ramify move` los lleva a una rama propia.
+- Escrituras desde la terminal que no hacen commit (`echo > archivo`, `sed -i`, `tee`, un script) en el checkout
+  principal. La guarda no intenta juzgarlas (rechazaría demasiado que es inofensivo). Se quedan como cambios sin
+  commitear, y `ramify move` los lleva a una rama propia.
+- El git que la guarda no ve en la línea de comandos. Lee `git` donde se ejecuta como comando: al principio de la
+  línea o tras `;`, `&&`, `||`, `|`, `(`, `$(` o una comilla invertida, tras `env`, `command`, `time`, `nohup`,
+  `xargs`, `sudo` o `VAR=x`, y dentro de lo que ejecutan `eval` o `bash -c`. El git que se lanza desde un script, un
+  alias o una función, o un comando guardado en una variable, pasa; también `echo git commit` (con razón: solo
+  imprime). Sin `jq`, un comando cuyo JSON lleva escapes `\u` no se juzga.
 - Ediciones y commits en el worktree de otro agente. Permitido a propósito, porque una sesión puede coordinar
   varias: `ramify who` y la skill `coordinar` avisan antes.
 - Agentes lanzados desde un IDE o una app, sin `ramify install guard`: solo tienen las reglas de
@@ -492,13 +526,15 @@ Una parte está bloqueada de verdad; el resto son instrucciones que reciben los 
 ### Tests
 
 ```bash
-bash tests/run.sh             # CLI, contra repos desechables con agentes simulados (macOS y Linux)
-npm run test:core             # motor, detección de sesiones, login de GitHub, validación del IPC, línea de tiempo (también en Windows)
+bash tests/run.sh             # CLI, contra repos desechables con agentes simulados
+npm run test:core             # motor, detección de sesiones, login de GitHub, validación del IPC, línea de tiempo
 npm run test:e2e -w packages/core   # la UI real en Chromium: navegador, editor y nada cortado de 390 a 1920 px
 ```
 
-Todos corren en la CI; la batería del motor, el instalador de Windows y las comprobaciones de `ramify install guard`
-(`bash tests/git-guard.sh` en Git Bash, también dentro de `tests/run.sh`) corren también en Windows.
+La CI ejecuta las baterías de tests del CLI, del núcleo y de la app. `tests/run.sh` prueba el CLI de punta a punta:
+crear worktrees, puertos, agentes, la seguridad de `rm`, los hooks de Claude Code y la guarda de `main` (con y sin
+`jq`), instalar y desinstalar, `ready`, `move` y la integración con la shell. `tests/git-guard.sh` (también dentro de
+`tests/run.sh`) comprueba `ramify install guard` solo con bash y git, así que corre también en Git Bash.
 
 ### Contribuir
 

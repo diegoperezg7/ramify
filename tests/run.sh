@@ -44,6 +44,17 @@ check ".worktree.env not visible to git" '[ -z "$(git -C "$W/feat-login" status 
 "$AW" new pagos 2>/dev/null >/dev/null
 p1=$(sed -n 's/^PORT=//p' "$W/feat-login/.worktree.env"); p2=$(sed -n 's/^PORT=//p' "$W/pagos/.worktree.env")
 check "each worktree gets its own port block" '[ "$p1" != "$p2" ] && [ $((p2 - p1)) -ge 10 ]'
+# A block where anything listens, on any of its ports, is skipped (not only when its first port is taken).
+if command -v lsof >/dev/null && command -v python3 >/dev/null; then
+  python3 -c 'import socket, time; s = socket.socket(); s.bind(("127.0.0.1", 47103)); s.listen(1); time.sleep(20)' &
+  lpid=$!; sleep 1
+  pl=$(RAMIFY_PORT_MIN=47100 RAMIFY_PORT_MAX=47190 "$AW" new portblock --no-setup --no-launch 2>/dev/null)
+  check "a port block with something listening on one of its ports is skipped" '[ "$(sed -n "s/^PORT=//p" "$pl/.worktree.env")" = 47110 ]'
+  kill "$lpid" 2>/dev/null; wait "$lpid" 2>/dev/null
+  "$AW" rm portblock 2>/dev/null
+else
+  echo "  skip: lsof or python3 is not installed"
+fi
 
 git init -q "$T/empty"
 check "new fails cleanly in a repo without commits" '! (cd "$T/empty" && "$AW" new x 2>/dev/null) && [ ! -e "$RAMIFY_ROOT/empty/x" ]'
@@ -169,6 +180,16 @@ check "hook remove deletes it" '[ ! -d "$path" ]'
 check "an unknown hook lists every one, nudge included" '! "$AW" hook nope </dev/null 2>"$T/hook-usage.err" && grep -q "create|remove|session-start|guard|nudge" "$T/hook-usage.err"'
 
 echo "install"
+h2="$T/home-install"; mkdir -p "$h2/.claude"
+printf '{"hooks":{"WorktreeCreate":[{"hooks":[{"type":"command","command":"other-tool create"}]}],"WorktreeRemove":[{"hooks":[{"type":"command","command":"/old/ramify hook remove"}]}]}}\n' > "$h2/.claude/settings.json"
+cp "$h2/.claude/settings.json" "$T/settings-orig"
+HOME="$h2" "$AW" install claude-hooks 2>/dev/null; HOME="$h2" "$AW" install claude-hooks 2>/dev/null
+check "install claude-hooks twice keeps a hook that is not ramify's and has ramify's once" \
+  'jq -e "([.hooks.WorktreeCreate[].hooks[].command] | length == 2 and index(\"other-tool create\") == 0 and (.[1] | endswith(\"ramify hook create\"))) and ([.hooks.WorktreeRemove[].hooks[].command] | length == 1 and (.[0] | endswith(\"ramify hook remove\")) and (.[0] | startswith(\"/old/\") | not))" "$h2/.claude/settings.json" >/dev/null'
+check "install claude-hooks keeps the first backup, not one of its own output" 'cmp -s "$T/settings-orig" "$h2/.claude/settings.json.bak-ramify"'
+echo 'export ORIG=1' > "$h2/.zshrc"
+for c in install uninstall install; do HOME="$h2" SHELL=/bin/zsh "$AW" "$c" shell 2>/dev/null; done
+check "install and uninstall shell keep the first backup" '[ "$(cat "$h2/.zshrc.bak-ramify")" = "export ORIG=1" ] && [ "$(grep -c ">>> ramify" "$h2/.zshrc")" = 1 ]'
 mkdir -p "$HOME/.claude" "$HOME/.codex"
 echo '{"model":"opus","hooks":{"Stop":[]}}' > "$HOME/.claude/settings.json"
 "$AW" install claude-hooks 2>/dev/null
@@ -266,6 +287,35 @@ done
 check "RAMIFY_ALLOW_MAIN lets one session push to main" '[ -z "$(export RAMIFY_ALLOW_MAIN=1; gb "$p1" "git push origin HEAD:main")" ]'
 check "a command that sets ramify.allowMain is refused, from any folder" 'denied "$(gb "$p1" "git config ramify.allowMain true")"'
 check "a terminal write without git on the shared branch is not judged (documented limit)" '[ -z "$(gb "$T/demo" "echo hi > a.txt")" ]'
+for c in 'eval "git commit -m x"' "git update-ref refs/heads/main HEAD" "git update-ref HEAD HEAD~1" "git branch -f main HEAD" \
+         "git checkout -B main" "git switch -C main" "git branch -M other" "git branch -m main old" "git branch -C x main" \
+         'echo $(git commit -m x)' 'echo `git merge x`' "FOO=1 git commit -m x" "env A=b git commit -m x" "sudo -E git commit" \
+         "nohup git merge x" "time git commit" "command git commit" "echo x | xargs git commit -m" "(git commit -m x)" \
+         "if git merge x; then :; fi" "eval git commit -m x" "eval 'echo hi; git commit -m x'"; do
+  check "on the shared branch the guard denies: $c" 'denied "$(gb "$T/demo" "$c")"'
+done
+for c in "echo use git commit to save" "grep -rn git merge notes.txt" "echo eval git commit" "git status; echo git commit" \
+         "git branch -c main backup" "git branch -f other HEAD" "git checkout -B other" "git update-ref refs/heads/other HEAD" \
+         "git branch new"; do
+  check "on the shared branch the guard allows: $c" '[ -z "$(gb "$T/demo" "$c")" ]'
+done
+for c in "git update-ref refs/heads/main HEAD" "git branch -f main HEAD" "git checkout -B main" "git switch -C main"; do
+  check "from a worktree the guard denies: $c" 'denied "$(gb "$p1" "$c")"'
+done
+for c in "git branch -M other" "git update-ref HEAD HEAD~1" "git checkout -B feat/login"; do
+  check "in its worktree the guard allows: $c" '[ -z "$(gb "$p1" "$c")" ]'
+done
+# Without jq: session start warns, the guard reads its input itself and still refuses; create needs jq.
+gnj() { jq -n --arg d "$1" --arg c "$2" '{cwd: $d, tool_name: "Bash", tool_input: {command: $c}}' | RAMIFY_NO_JQ=1 "$AW" hook guard 2>/dev/null; }
+ss=$(printf '{"cwd":"%s"}' "$T/demo" | RAMIFY_NO_JQ=1 "$AW" hook session-start 2>/dev/null)
+check "without jq, session start on the shared branch warns that the protection is partial" 'printf "%s" "$ss" | jq -e "(.systemMessage | contains(\"jq is not installed\")) and (.hookSpecificOutput.additionalContext | contains(\"new <branch> --no-launch\"))" >/dev/null'
+ss=$(printf '{"cwd":"%s"}' "$T" | RAMIFY_NO_JQ=1 "$AW" hook session-start 2>/dev/null)
+check "without jq, session start warns outside a repository too" 'printf "%s" "$ss" | jq -e ".systemMessage | contains(\"jq is not installed\")" >/dev/null'
+g=$(printf '{"cwd":"%s","tool_name":"Write","tool_input":{"file_path":"%s/new.txt","content":"{\\"file_path\\": \\"/tmp/x\\"}"}}' "$T/demo" "$T/demo" | RAMIFY_NO_JQ=1 "$AW" hook guard 2>/dev/null)
+check "without jq, an edit on the shared branch is still denied" 'denied "$g"'
+check "without jq, a commit on the shared branch is still denied" 'denied "$(gnj "$T/demo" "git commit -m \"say \\\"hi\\\"\"")"'
+check "without jq, other commands are allowed" '[ -z "$(gnj "$T/demo" "echo use git commit")" ] && [ -z "$(gnj "$p1" "git commit -m x")" ]'
+check "without jq, hook create fails with the reason" '! (printf "{}" | RAMIFY_NO_JQ=1 "$AW" hook create >/dev/null 2>"$T/nojq.err") && grep -q "jq is required" "$T/nojq.err"'
 g=$(printf '{"cwd":"%s","tool_name":"Write","tool_input":{"file_path":"%s/a.txt"}}' "$p1" "$p2" | "$AW" hook guard 2>/dev/null)
 check "an edit from one worktree into another is allowed (ramify who warns)" '[ -z "$g" ]'
 check "a commit from one worktree in another (git -C) is allowed" '[ -z "$(gb "$p1" "git -C $p2 commit -am x")" ]'
@@ -276,6 +326,16 @@ ss=$(printf '{"cwd":"%s"}' "$p1" | "$AW" hook session-start 2>/dev/null)
 check "a session inside a worktree gets no warning" '[ -z "$ss" ]'
 g=$(printf '{"cwd":"/","tool_name":"Write","tool_input":{"file_path":"%s/notes.txt"}}' "$T" | "$AW" hook guard 2>/dev/null)
 check "files outside any repository are allowed" '[ -z "$g" ]'
+mkdir -p "$W/.claims"
+sh -c 'exit 0' & dead=$!; wait "$dead"
+echo "$dead" > "$W/.claims/feat-stale"
+sc=$(printf '{"name":"feat-stale","cwd":"%s","session_id":"s-stale"}' "$T/demo" | "$AW" hook create 2>/dev/null | tail -1)
+check "a claim left by a ramify that is no longer running is taken back" '[ "$(git -C "$sc" branch --show-current)" = feat/stale ] && [ ! -e "$W/.claims/feat-stale" ]'
+echo "$$" > "$W/.claims/feat-live"
+sl=$(printf '{"name":"feat-live","cwd":"%s","session_id":"s-live"}' "$T/demo" | "$AW" hook create 2>/dev/null | tail -1)
+check "a claim of a ramify still running keeps its name taken" '[ "$(git -C "$sl" branch --show-current)" = feat/live-2 ] && [ -e "$W/.claims/feat-live" ]'
+rm -f "$W/.claims/feat-live"
+"$AW" rm "$sc" --force 2>/dev/null; "$AW" rm "$sl" --force 2>/dev/null
 git config ramify.allowMain true
 g=$(printf '{"cwd":"%s","tool_name":"Write","tool_input":{"file_path":"%s/x.txt"}}' "$T/demo" "$T/demo" | "$AW" hook guard 2>/dev/null)
 check "git config ramify.allowMain lets this repository edit on main" '[ -z "$g" ]'
@@ -378,6 +438,13 @@ check "the main checkout is left clean" '[ -z "$(git status --porcelain)" ]'
 check "a stash keeps a copy" 'git stash list | grep -q "ramify: moved to feat/moved"'
 check "the new worktree records the agent" 'grep -qx "WT_AGENT=claude" "$mp/.worktree.env"'
 check "move refuses inside a worktree" '! (cd "$mp" && "$AW" move other 2>/dev/null)'
+echo "half" > wip2.txt
+stashes=$(git stash list | wc -l)
+pfull=$(sed -n 's/^PORT=//p' "$mp/.worktree.env")
+RAMIFY_PORT_MIN=$pfull RAMIFY_PORT_MAX=$pfull "$AW" move feat/noports 2>"$T/move-noports.err"; c=$?
+check "move with no free port block fails cleanly (exit $c): no folder, no branch, no lock" '[ "$c" != 0 ] && [ ! -e "$W/feat-noports" ] && ! git show-ref --quiet refs/heads/feat/noports && [ ! -e "$RAMIFY_ROOT/.port-lock" ] && grep -q "no free port block" "$T/move-noports.err"'
+check "move with no free port block brings the work back to the main checkout" '[ -f wip2.txt ] && [ "$(git stash list | wc -l)" = "$stashes" ] && grep -q "changes are back" "$T/move-noports.err"'
+rm -f wip2.txt
 
 echo "shell integration"
 init=$("$AW" shell-init)
