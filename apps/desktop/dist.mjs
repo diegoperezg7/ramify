@@ -15,7 +15,7 @@ if (process.env.RAMIFY_RELEASE === '1') {
 }
 
 const signed = !!process.env.CSC_LINK
-// Signed builds sign the .dmg too, so it can carry a notarization ticket (scripts/mac-release.sh staples it).
+// Signed builds sign the .dmg too (scripts/mac-release.sh checks its signature).
 const args = ['electron-builder', '--mac', '--publish', 'never', ...(signed ? ['-c.dmg.sign=true'] : ['-c.mac.identity=-', '-c.mac.hardenedRuntime=false'])]
 const env = { ...process.env, ...(signed ? {} : { CSC_IDENTITY_AUTO_DISCOVERY: 'false' }) }
 // the release workflow passes the secrets even when they are not set, as empty strings: electron-builder would take an empty

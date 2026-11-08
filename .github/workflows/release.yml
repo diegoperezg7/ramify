@@ -50,13 +50,9 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-      - name: notarize the dmg, then verify signatures, Gatekeeper, stapled tickets and architecture
+      - name: verify signatures, Gatekeeper, the app's stapled ticket and architecture
         if: runner.os == 'macOS'
         run: ./scripts/mac-release.sh
-        env:
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       - name: the packaged app renders
         run: npm run smoke -w apps/desktop
       - name: VS Code extension
