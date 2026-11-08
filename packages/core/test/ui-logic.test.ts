@@ -192,7 +192,7 @@ describe('pull requests outside the control center (read-only)', () => {
 
 describe('theme', () => {
   it('declares the dark theme the same way when it follows the system and when it is chosen by hand', () => {
-    const css = readFileSync(new URL('../../../ui/web/src/styles.css', import.meta.url), 'utf8')
+    const css = readFileSync(new URL('../../../ui/web/src/styles.css', import.meta.url), 'utf8').replace(/\r\n/g, '\n')
     const vars = (block: string | undefined) => (block ?? '').split('\n').map((l) => l.trim()).filter(Boolean)
     const system = /@media \(prefers-color-scheme: dark\) \{\n  :root:not\(\[data-theme='light'\]\) \{\n([\s\S]*?)\n  \}\n\}/.exec(css)?.[1]
     const chosen = /^:root\[data-theme='dark'\] \{\n([\s\S]*?)\n\}/m.exec(css)?.[1]
