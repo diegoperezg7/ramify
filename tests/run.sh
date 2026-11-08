@@ -295,6 +295,17 @@ done
 for c in "git branch -M other" "git update-ref HEAD HEAD~1" "git checkout -B feat/login"; do
   check "in its worktree the guard allows: $c" '[ -z "$(gb "$p1" "$c")" ]'
 done
+# Without jq: session start warns, the guard reads its input itself and still refuses; create needs jq.
+gnj() { jq -n --arg d "$1" --arg c "$2" '{cwd: $d, tool_name: "Bash", tool_input: {command: $c}}' | RAMIFY_NO_JQ=1 "$AW" hook guard 2>/dev/null; }
+ss=$(printf '{"cwd":"%s"}' "$T/demo" | RAMIFY_NO_JQ=1 "$AW" hook session-start 2>/dev/null)
+check "without jq, session start on the shared branch warns that the protection is partial" 'printf "%s" "$ss" | jq -e "(.systemMessage | contains(\"jq is not installed\")) and (.hookSpecificOutput.additionalContext | contains(\"new <branch> --no-launch\"))" >/dev/null'
+ss=$(printf '{"cwd":"%s"}' "$T" | RAMIFY_NO_JQ=1 "$AW" hook session-start 2>/dev/null)
+check "without jq, session start warns outside a repository too" 'printf "%s" "$ss" | jq -e ".systemMessage | contains(\"jq is not installed\")" >/dev/null'
+g=$(printf '{"cwd":"%s","tool_name":"Write","tool_input":{"file_path":"%s/new.txt","content":"{\\"file_path\\": \\"/tmp/x\\"}"}}' "$T/demo" "$T/demo" | RAMIFY_NO_JQ=1 "$AW" hook guard 2>/dev/null)
+check "without jq, an edit on the shared branch is still denied" 'denied "$g"'
+check "without jq, a commit on the shared branch is still denied" 'denied "$(gnj "$T/demo" "git commit -m \"say \\\"hi\\\"\"")"'
+check "without jq, other commands are allowed" '[ -z "$(gnj "$T/demo" "echo use git commit")" ] && [ -z "$(gnj "$p1" "git commit -m x")" ]'
+check "without jq, hook create fails with the reason" '! (printf "{}" | RAMIFY_NO_JQ=1 "$AW" hook create >/dev/null 2>"$T/nojq.err") && grep -q "jq is required" "$T/nojq.err"'
 g=$(printf '{"cwd":"%s","tool_name":"Write","tool_input":{"file_path":"%s/a.txt"}}' "$p1" "$p2" | "$AW" hook guard 2>/dev/null)
 check "an edit from one worktree into another is allowed (ramify who warns)" '[ -z "$g" ]'
 check "a commit from one worktree in another (git -C) is allowed" '[ -z "$(gb "$p1" "git -C $p2 commit -am x")" ]'
