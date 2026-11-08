@@ -53,15 +53,18 @@ const legacyConfig = join(app.getPath('appData'), 'agent-wt', 'config.json')
 if (!existsSync(configFile) && existsSync(legacyConfig)) {
   try { mkdirSync(app.getPath('userData'), { recursive: true }); copyFileSync(legacyConfig, configFile) } catch { /* start fresh */ }
 }
+// Opening pull requests and removing worktrees without being asked are off until the user turns them on.
 const defaultSettings: Settings = {
   terminal: 'Terminal', defaultAgent: 'claude', projectsDir: defaultProjectsDir(), autoDetect: true,
-  notifications: true, openAtLogin: false, menuBar: true, historyDays: 90, watchBranches: true, autoDraftPr: true, autoClean: true, autoUpdate: true,
+  notifications: true, openAtLogin: false, menuBar: true, historyDays: 90, watchBranches: true, autoDraftPr: false, autoClean: false, autoUpdate: true,
 }
+/** What a config written before those two were off by default meant when it did not name them. */
+const legacyDefaults: Partial<Settings> = { autoDraftPr: true, autoClean: true }
 
 function readConfig(): Config {
   try {
     const c = JSON.parse(readFileSync(configFile, 'utf8')) as Partial<Config>
-    return { repos: c.repos ?? [], settings: { ...defaultSettings, ...c.settings }, bounds: c.bounds, hidden: Array.isArray(c.hidden) ? c.hidden : [] }
+    return { repos: c.repos ?? [], settings: { ...defaultSettings, ...legacyDefaults, ...c.settings }, bounds: c.bounds, hidden: Array.isArray(c.hidden) ? c.hidden : [] }
   } catch {
     return { repos: [], settings: { ...defaultSettings } }
   }
@@ -415,6 +418,21 @@ async function monitor() {
 // Warns about what will hurt at merge time and tidies up what is done. Each part has its own switch in Settings.
 
 const told = new Set<string>()
+/** Keys of `told` that name a worktree path (kind:path or kind:path:state), so they can go with the worktree. */
+function forgetGone() {
+  for (const key of told) {
+    const path = /^(?:kept|clean|merged|behind|stale|waited|pr):(.+?)(?::[^:/\\]*)?$/.exec(key)?.[1]
+    if (path && !existsSync(path)) told.delete(key)
+  }
+}
+/** The last error health or tidying up hit, per repository: logged once each time it changes. */
+const careErrors = new Map<string, string>()
+function careFailed(repo: string, what: string, e: unknown) {
+  const msg = `${what}: ${e instanceof Error ? e.message : String(e)}`
+  if (careErrors.get(repo) === msg) return
+  careErrors.set(repo, msg)
+  console.error(`[ramify] branch care, ${repo}: ${msg}`)
+}
 function tell(key: string, title: string, body: string, payload: Payload) {
   if (told.has(key) || !config.settings.notifications || !Notification.isSupported()) return
   told.add(key)
@@ -423,11 +441,20 @@ function tell(key: string, title: string, body: string, payload: Payload) {
   n.show()
 }
 
+let caring = false
 async function careForBranches() {
+  // A pass can take longer than the 2 minutes between them (a slow fetch, many repositories): one at a time.
+  if (caring) return
+  caring = true
+  try { await careOnce() } finally { caring = false }
+}
+
+async function careOnce() {
+  forgetGone()
   const nextReady = new Map<string, { repo: string; branch: string; path: string; lastCommit: number | null }>()
   for (const repo of presentRepos()) {
     let health
-    try { health = await engine.health(repo) } catch { continue }
+    try { health = await engine.health(repo) } catch (e) { careFailed(repo, 'health', e); continue }
     const name = repo.split('/').pop()
     let baseTip: string | undefined
     // The base behind GitHub: new branches start from an old main, and a merge would land on it. Said once per state.
@@ -458,7 +485,7 @@ async function careForBranches() {
           try {
             await engine.remove(repo, b.path, false)
             tell(`clean:${b.path}`, es() ? 'Worktree recogido' : 'Worktree tidied up', es() ? `${name} · ${b.branch} ya estaba en ${health.base}` : `${name} · ${b.branch} was already in ${health.base}`, { repo })
-          } catch { /* something left in it: keep */ }
+          } catch (e) { careFailed(repo, `tidying up ${b.path}`, e) /* something left in it: keep */ }
         } else if (config.settings.watchBranches) {
           tell(`merged:${b.path}`, es() ? 'Rama ya mergeada' : 'Branch already merged', es() ? `${name} · ${b.branch} está en ${health.base}: puedes quitar su worktree.` : `${name} · ${b.branch} is in ${health.base}: its worktree can go.`, { repo, path: b.path })
         }
