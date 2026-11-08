@@ -1,3 +1,4 @@
+import './isolate.ts'
 import { execFile } from 'node:child_process'
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'

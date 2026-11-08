@@ -1,6 +1,7 @@
 // Bugs confirmed in the review of 2026-11-05. Each test states the behaviour the code should have and fails today,
 // so it is marked `todo`: the run reports it without failing. Drop the `todo` when its fix lands: the test then
 // guards against the bug coming back.
+import './isolate.ts'
 import { execFile, execFileSync, spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'

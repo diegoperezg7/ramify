@@ -1,6 +1,7 @@
 // End-to-end: the real web UI against a real repository, in two hosts.
 //  - browser: ui/server.py (what `ramify ui` starts)
 //  - editor:  the VS Code webview protocol, answered by the same handlers the extension uses
+import './isolate.ts'
 import { execFileSync, spawn, type ChildProcess } from 'node:child_process'
 import { createServer as netServer } from 'node:net'
 import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
