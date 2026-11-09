@@ -130,6 +130,11 @@ h2 { font-size: 15px; }
 
 html, body, #root { height: 100%; }
 :root { --gap: clamp(10px, 1.1vw, 16px); --pad-x: clamp(12px, 1.8vw, 28px); --sidebar-w: 248px; --rail-w: 64px; --topbar-h: 56px; }
+/* The rail holds the macOS window buttons above it (x 16 to 68 px in the window): at 64 px it was narrower than them. */
+[data-host='desktop'] { --rail-w: 92px; }
+/* No visible scrollbars anywhere: panels still scroll with the trackpad and the wheel. */
+* { scrollbar-width: none; }
+::-webkit-scrollbar { display: none; }
 [data-density='compact'] { --gap: clamp(8px, 0.8vw, 12px); --topbar-h: 48px; }
 [data-density='compact'] body { font-size: 13px; }
 
@@ -575,19 +580,8 @@ html, body, #root { height: 100%; }
 .app.is-sm .new-btn { width: 34px; padding: 0; }
 .app.is-sm .graph-row .meta span { display: none; }
 
-/* Narrow windows: the sidebar collapses to icons. */
-@media (max-width: 1100px) and (min-width: 761px) {
-  .shell.has-sidebar { grid-template-columns: var(--rail-w) minmax(0, 1fr); }
-  .sidebar { padding: 0 8px 12px; align-items: center; }
-  .sidebar-drag { padding-left: 0 !important; justify-content: center; height: calc(var(--topbar-h) + 24px); align-items: flex-end; padding-bottom: 6px; }
-  .sidebar .icon-btn.rail-toggle { display: none; }
-  .sidebar-label { font-size: 0; padding: 10px 0 4px; justify-content: center; }
-  .sidebar-label:not(:has(.pulse))::before { content: ''; display: block; width: 18px; height: 1px; background: var(--border-strong); }
-  .repo-item { padding: 5px; justify-content: center; }
-  .repo-text, .repo-count, .repo-remove, .side-btn span, .repo-icon { display: none; }
-  .repo-initial { display: block; }
-  .side-btn { justify-content: center; padding: 9px; }
-}
+/* Narrow windows: the sidebar collapses to icons (is-rail, set by Sidebar.tsx), with no way to expand it. */
+.sidebar.is-auto-rail .icon-btn.rail-toggle { display: none; }
 
 /* Phones and very narrow windows: one column, page scroll, sidebar as a slide-over menu. */
 @media (max-width: 760px) {
@@ -803,7 +797,6 @@ kbd {
 .side-brand-name { font: 700 14px var(--mono); letter-spacing: -0.02em; }
 .sidebar.is-rail .side-brand-name { display: none; }
 .sidebar.is-rail .side-brand { padding: 2px 0 10px; }
-@media (max-width: 1100px) and (min-width: 761px) { .side-brand-name { display: none; } .side-brand { padding: 2px 0 10px; } }
 
 /* graph adapts to its own width instead of scrolling sideways */
 .graph-pane { container: graph / inline-size; }
@@ -928,7 +921,6 @@ kbd {
 .welcome-name { font-size: 34px; color: var(--text); margin-bottom: 4px; }
 .welcome p { max-width: 42ch; }
 .sidebar.is-rail .side-brand .logo-mark { width: 36px; height: 36px; }
-@media (max-width: 1100px) and (min-width: 761px) { .side-brand .logo-mark { width: 36px; height: 36px; } }
 .live-card { position: relative; overflow: hidden; }
 .live-card::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--c); }
 .live-card.is-inferred { border-style: dashed; box-shadow: none; }
@@ -1601,3 +1593,11 @@ button.ref { cursor: pointer; font: inherit; font-size: 11px; display: inline-fl
 @container graph (max-width: 400px) {
   .side .graph-row .refs { display: inline-flex; flex: none; max-width: 58%; overflow: hidden; }
 }
+
+/* Full screen (data-fullscreen, set by the desktop app): no window buttons, so the sidebar moves up into their room. */
+.sidebar-drag { transition: height 0.25s ease, padding 0.25s ease; }
+[data-fullscreen] .sidebar-drag { padding-left: 8px; height: 40px; }
+[data-fullscreen] .sidebar.is-rail .sidebar-drag { padding-left: 0; height: var(--topbar-h); }
+[data-fullscreen] .sidebar.is-auto-rail .sidebar-drag { height: 20px; }
+[data-fullscreen] .shell:not(.has-sidebar) .topbar { padding-left: 0; }
+@media (prefers-reduced-motion: reduce) { .sidebar-drag { transition: none; } }

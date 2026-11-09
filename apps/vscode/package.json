@@ -2,7 +2,7 @@
   "name": "ramify",
   "displayName": "Ramify",
   "description": "One git worktree per task for any coding agent: live branch tree, diffs, merge and launch agents from the editor.",
-  "version": "0.10.0",
+  "version": "0.10.1",
   "publisher": "diegoperezg7",
   "license": "MIT",
   "icon": "media/icon.png",
