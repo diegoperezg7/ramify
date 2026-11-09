@@ -363,9 +363,12 @@ async function mayNotifyReady(): Promise<boolean> {
   if (!config.settings.notifications || !Notification.isSupported()) return false
   if (config.settings.notifyReady !== undefined) return config.settings.notifyReady
   if (asking || process.env.RAMIFY_SMOKE_TEST) return false
+  // Attached to the window, never app-modal: a free-floating question could open behind other windows or on another
+  // display and, while open, block the whole app (no full screen, no resizing). No visible window: ask on a later scan.
+  if (!win || !win.isVisible() || win.isMinimized()) return false
   asking = true
   try {
-    const { response } = await dialog.showMessageBox({
+    const { response } = await dialog.showMessageBox(win, {
       type: 'question',
       buttons: es() ? ['Avisarme', 'No, gracias'] : ['Notify me', 'No, thanks'],
       defaultId: 0, cancelId: 1,
@@ -1094,7 +1097,8 @@ async function openTarget(target: string) {
     focus({ repo: info.path, path: wt?.path })
   } catch (e) {
     focus()
-    dialog.showErrorBox('Ramify', (e as Error).message)
+    // A sheet on the window, not showErrorBox: that one is app-modal and blocks the whole app while open.
+    if (win) void dialog.showMessageBox(win, { type: 'error', message: 'Ramify', detail: (e as Error).message })
   }
 }
 
@@ -1134,6 +1138,14 @@ function createWindow() {
       app.exit(ok ? 0 : 1)
     }, 3000))
   }
+  // Full screen hides the window buttons: the page marks it so the sidebar can use the room they left.
+  const markFullScreen = () => {
+    if (!win) return
+    void win.webContents.executeJavaScript(`document.documentElement.toggleAttribute('data-fullscreen', ${win.isFullScreen()})`).catch(() => { /* page reloading */ })
+  }
+  win.on('enter-full-screen', markFullScreen)
+  win.on('leave-full-screen', markFullScreen)
+  win.webContents.on('did-finish-load', markFullScreen)
   win.webContents.on('did-finish-load', () => { if (pending) { const p = pending; pending = null; setTimeout(() => send(p), 300) } })
   win.webContents.on('will-navigate', (e) => e.preventDefault())
   win.webContents.setWindowOpenHandler(({ url }) => {

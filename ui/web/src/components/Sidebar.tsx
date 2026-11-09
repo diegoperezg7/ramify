@@ -1,10 +1,24 @@
 import { ChevronDown, CircleAlert, FolderGit2, LayoutDashboard, Loader2, MessagesSquare, PanelLeftClose, PanelLeftOpen, Plus, Search, Settings, X } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { GithubIcon } from './GithubIcon'
 import { agentName, agentVar } from '../agents'
 import { Logo, Wordmark } from './Logo'
 import { useStore } from '../store'
 import type { RepoInfo } from '../types'
+
+// Narrow windows: the sidebar collapses to icons. Same class as the manual rail, so both look the same.
+const AUTO_RAIL = '(max-width: 1100px) and (min-width: 761px)'
+
+function useMediaQuery(query: string) {
+  const [match, setMatch] = useState(() => window.matchMedia(query).matches)
+  useEffect(() => {
+    const mq = window.matchMedia(query)
+    const on = () => setMatch(mq.matches)
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [query])
+  return match
+}
 
 export function Sidebar() {
   const repos = useStore((s) => s.repos)
@@ -12,7 +26,9 @@ export function Sidebar() {
   const busy = useStore((s) => s.busy)
   const setModal = useStore((s) => s.setModal)
   const caps = useStore((s) => s.caps)
-  const rail = useStore((s) => s.rail)
+  const userRail = useStore((s) => s.rail)
+  const autoRail = useMediaQuery(AUTO_RAIL)
+  const rail = userRail || autoRail
   const setRail = useStore((s) => s.setRail)
   const menuOpen = useStore((s) => s.menuOpen)
   const setMenuOpen = useStore((s) => s.setMenuOpen)
@@ -41,9 +57,9 @@ export function Sidebar() {
   return (
     <>
       <div className={`sidebar-scrim${menuOpen ? ' is-open' : ''}`} onClick={() => setMenuOpen(false)} />
-      <aside className={`sidebar${rail ? ' is-rail' : ''}${menuOpen ? ' is-open' : ''}`}>
+      <aside className={`sidebar${rail ? ' is-rail' : ''}${autoRail ? ' is-auto-rail' : ''}${menuOpen ? ' is-open' : ''}`}>
         <div className="sidebar-drag">
-          <button type="button" className="icon-btn ghost rail-toggle" onClick={() => setRail(!rail)}
+          <button type="button" className="icon-btn ghost rail-toggle" onClick={() => setRail(!userRail)}
             aria-label={rail ? t('expand') : t('collapse')} title={rail ? t('expand') : t('collapse')}>
             {rail ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
           </button>
