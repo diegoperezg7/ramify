@@ -611,7 +611,13 @@ export class Engine {
       throw new EngineError(`${base} and ${sync.upstream} went different ways (${sync.ahead} commit(s) only here, ${sync.behind} only there): bring them together first, nothing was changed`)
     }
     if (sync?.behind) await this.updateBase(repo)
-    const pr = sync ? (await this.prsOf(repo, true)).find((p) => p.branch === wt.branch && p.state === 'OPEN') : undefined
+    const prs = sync ? await this.prsOf(repo, true) : []
+    // Squashed on GitHub at this very tip (a second click, or a list not refreshed yet): none of its commits are in
+    // the base, so git would merge them all over again with a merge commit of its own.
+    const tip = (await this.git(repo, 'rev-parse', `refs/heads/${wt.branch}`)).trim()
+    const squashed = prs.find((p) => p.branch === wt.branch && p.state === 'MERGED' && p.head === tip)
+    if (squashed) throw new EngineError(`${wt.branch} is already in ${base}: pull request #${squashed.number} was merged on GitHub, nothing was changed`)
+    const pr = prs.find((p) => p.branch === wt.branch && p.state === 'OPEN')
     if (sync && pr) return this.mergeOnGithub(repo, wt.branch, base, sync.upstream, pr)
     const r = await this.run('git', ['-C', repo, 'merge', '--no-ff', '--no-edit', wt.branch])
     if (r.code === 0) return [r.stdout.trim(), await this.pushBase(repo, base, sync)].filter(Boolean).join('\n')

@@ -96,6 +96,15 @@ describe('merge into main, all the way to GitHub', { skip: process.platform === 
     assert.equal(git(REPO, 'status', '--porcelain'), '')
   })
 
+  it('refuses to merge a squash-merged branch a second time, and changes nothing here or on GitHub', async () => {
+    const engine = new Engine({ bin: BIN, env })
+    const path = (await engine.health(REPO)).branches.find((x) => x.branch === 'feat/pr')!.path
+    const before = git(REPO, 'rev-parse', 'main')
+    await assert.rejects(engine.merge(REPO, path), /feat\/pr is already in main: pull request #7 was merged on GitHub/)
+    assert.equal(git(REPO, 'rev-parse', 'main'), before)
+    assert.equal(remoteHead('main'), before)
+  })
+
   it('counts a squash-merged branch as merged and removes its worktree, then its branch (no "used by worktree")', async () => {
     const engine = new Engine({ bin: BIN, env })
     const b = (await engine.health(REPO)).branches.find((x) => x.branch === 'feat/pr')
