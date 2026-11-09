@@ -1,6 +1,6 @@
 {
   "name": "ramify",
-  "version": "0.10.1",
+  "version": "0.10.2",
   "description": "Every Claude Code session works on a branch and folder of its own: before changing files on the shared branch it enters a ramify worktree (own ports, copied .env files, project setup), so parallel agents never share a branch. Plus skills to start, move, review and finish tasks.",
   "author": {
     "name": "Diego Pérez"
