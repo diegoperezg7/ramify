@@ -218,13 +218,16 @@ html, body, #root { height: 100%; }
 .sidebar.is-rail { padding: 0 8px 12px; align-items: center; }
 .sidebar.is-rail .sidebar-drag { padding-left: 0; justify-content: center; height: calc(var(--topbar-h) + 24px); align-items: flex-end; padding-bottom: 6px; }
 .sidebar.is-rail .sidebar-label { font-size: 0; padding: 10px 0 4px; justify-content: center; }
-.sidebar.is-rail .sidebar-label:not(:has(.pulse))::before { content: ''; display: block; width: 18px; height: 1px; background: var(--border-strong); }
+/* Every heading becomes the same short divider: the live one's dot alone floated above the first repository. */
+.sidebar.is-rail .sidebar-label::before { content: ''; display: block; width: 18px; height: 1px; background: var(--border-strong); }
+.sidebar.is-rail .sidebar-label .pulse { display: none; }
 .sidebar.is-rail .repo-item { padding: 5px; justify-content: center; }
 .sidebar.is-rail .repo-text, .sidebar.is-rail .repo-count, .sidebar.is-rail .repo-remove, .sidebar.is-rail .side-btn span { display: none; }
 .sidebar.is-rail .side-filter, .sidebar.is-rail .side-empty, .sidebar.is-rail .side-dormant span, .sidebar.is-rail .repo-attn b { display: none; }
 .sidebar.is-rail .side-dormant { justify-content: center; width: auto; }
 .sidebar.is-rail .repo-item { position: relative; }
-.sidebar.is-rail .repo-attn { position: absolute; top: 1px; right: 4px; padding: 1px; border-radius: 50%; background: var(--sidebar-bg, var(--bg)); }
+/* Bottom-right corner of the avatar, so it never covers the live dot on its top-right corner. */
+.sidebar.is-rail .repo-attn { position: absolute; top: auto; right: auto; bottom: 0; left: calc(50% + 7px); padding: 1px; border-radius: 50%; background: var(--sidebar-bg, var(--bg)); }
 .sidebar.is-rail .repo-icon { display: none; }
 .sidebar.is-rail .repo-initial { display: block; }
 .sidebar.is-rail .side-btn { justify-content: center; padding: 9px; }
@@ -603,6 +606,8 @@ html, body, #root { height: 100%; }
   .sidebar.is-rail .side-empty, .sidebar.is-rail .side-dormant span, .sidebar.is-rail .repo-attn b { display: revert; }
   .sidebar.is-rail .repo-attn { position: static; padding: 0; background: none; }
   .sidebar.is-rail .sidebar-label { font-size: 11px; justify-content: flex-start; }
+  .sidebar.is-rail .sidebar-label::before { content: none; }
+  .sidebar.is-rail .sidebar-label .pulse { display: revert; }
   .sidebar-drag { padding-left: 0 !important; }
   .sidebar-scrim { display: block; position: fixed; inset: 0; z-index: 49; background: rgb(0 0 0 / 0.35); opacity: 0; pointer-events: none; transition: opacity 0.25s; }
   .sidebar-scrim.is-open { opacity: 1; pointer-events: auto; }
